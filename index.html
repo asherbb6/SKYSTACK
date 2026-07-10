@@ -30,11 +30,12 @@
 // Tutorial, chiptune music, XP levels, achievements, settings.
 // Single file, zero deps.
 // ============================================================
-const W = 180;
-// portrait: logical height matches the device aspect ratio and the canvas stretches to fill
-// 100% of the screen (any tiny mismatch from browser chrome becomes invisible stretch, not bars)
-const PORTRAIT = innerHeight >= innerWidth;
-const H = PORTRAIT ? Math.max(300, Math.min(480, Math.round(W * innerHeight / Math.max(innerWidth, 1)))) : 320;
+// logical resolution matches the device aspect ratio EXACTLY in both dimensions, so filling
+// the screen never distorts pixels — tall screens get more H, wide screens get more W, and
+// every element repositions off W/H instead of stretching.
+const AR = Math.max(innerWidth, 1) / Math.max(innerHeight, 1);
+const H = AR <= 1 ? Math.min(520, Math.max(300, Math.round(180 / AR))) : 320;
+const W = AR <= 1 ? Math.max(150, Math.round(H * AR)) : Math.min(640, Math.round(H * AR));
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = W; canvas.height = H;
@@ -42,10 +43,12 @@ ctx.imageSmoothingEnabled = false;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function fitCanvas() {
-  if (PORTRAIT) {
-    // fill every pixel of the screen; dvh tracks the browser bar collapsing (vh = fallback)
+  // logical aspect matches the window by construction, so 100% fill keeps pixels square;
+  // if the window aspect drifted (rotation, extreme cap), fall back to centered aspect-fit
+  const arWin = innerWidth / Math.max(innerHeight, 1), arGame = W / H;
+  if (Math.abs(arWin - arGame) < arGame * 0.04) {
     canvas.style.width = '100vw';
-    canvas.style.height = '100vh'; canvas.style.height = '100dvh';
+    canvas.style.height = '100vh'; canvas.style.height = '100dvh';  // dvh tracks browser bars
   } else {
     const scale = Math.min(innerWidth / W, innerHeight / H);
     canvas.style.width = (W * scale) + 'px';
@@ -506,7 +509,6 @@ const LOADOUT = [
 ];
 let loadout = { shield:false, aura:false, slow:false };
 let shopInfo = 'TAP A BOOST TO BUY IT';
-let drag = null;
 // tutorial
 let tutDone = store.get('skystack-tut', false);
 let tutStep = 0;
@@ -536,7 +538,7 @@ function resetRun() {
   nextPickupRow = 8; completedThisRun = []; achThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
-  balance = 0; swayX = 0; drag = null;
+  balance = 0; swayX = 0;
   timeLeft = m.time || 0;
   PERFECT_PX = 2.6;
   mascot.hop = 0; mascot.expr = 'normal'; mascot.exprT = 0;
@@ -750,7 +752,7 @@ function afterPlace(f, updateBalance, placedCenter) {
 }
 
 function gameOver(cause) {
-  state = 'gameover'; faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; drag = null;
+  state = 'gameover'; faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0;
   overCause = cause || 'miss';
   shake = reduceMotion ? 2 : (cause === 'topple' ? 8 : 6); overLock = 40;
   if (cause === 'topple') { sfx.topple();
@@ -875,7 +877,6 @@ const SHARE_BTN = { x:W/2-32, y:H-96, w:64, h:16 };
 // ---------- input ----------
 function pos(e) { if (!canvasRect) canvasRect = canvas.getBoundingClientRect(); const r = canvasRect; return { x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H }; }
 function inR(p, r, pad) { pad = pad||0; return p.x>=r.x-pad && p.x<=r.x+r.w+pad && p.y>=r.y-pad && p.y<=r.y+r.h+pad; }
-function nudge(dx) { if (!slider) return; slider.x = clamp(slider.x + dx, -slider.w*.55, W - slider.w*.45); }
 function startRun() { resetRun(); state = 'playing'; sfx.start(); }
 function navHit(p) {
   if (p.y < NAV_Y) return false;
@@ -931,31 +932,15 @@ function pressDown(e) {
   } else if (state === 'playing' || state === 'dropping') {
     if (p && inR(p, SND_BTN, 3)) { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); return; }
     if (p && inR(p, HOME_BTN, 3)) { gameOver('quit'); return; }
-    if (state === 'playing' && slider && p) drag = { startX: p.x, blockX: slider.x, moved: false };
+    if (state === 'playing' && slider) drop();          // no steering — tap drops instantly
   } else if (state === 'gameover' && overLock <= 0) {
     if (p && inR(p, SHARE_BTN, 3)) { shareScore(); return; }
     state = 'home'; fadeT = 1;
   }
 }
-function pressMove(e) {
-  if (!drag || !slider || state !== 'playing') return;
-  const p = pos(e);
-  const dx = p.x - drag.startX;
-  if (Math.abs(dx) > 2) { drag.moved = true; if (tutStep === 1) tutStep = 2; }
-  if (drag.moved) slider.x = clamp(drag.blockX + dx * 1.2, -slider.w*.55, W - slider.w*.45);   // 1.2x: snappier steering
-}
-function pressUp() {
-  if (state === 'playing' && drag && !drag.moved) drop();
-  drag = null;
-}
 canvas.addEventListener('pointerdown', e => { e.preventDefault(); pressDown(e); });
-canvas.addEventListener('pointermove', e => { e.preventDefault(); pressMove(e); });
-canvas.addEventListener('pointerup', e => { e.preventDefault(); pressUp(); });
-canvas.addEventListener('pointercancel', () => { drag = null; });
 addEventListener('keydown', e => {
   if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { previewIdx = (previewIdx + (e.code==='ArrowLeft'?SKINS.length-1:1)) % SKINS.length; demo.n=1; sfx.tap(); e.preventDefault(); return; }
-  if (state === 'playing' && e.code === 'ArrowLeft') { nudge(-6); e.preventDefault(); return; }
-  if (state === 'playing' && e.code === 'ArrowRight') { nudge(6); e.preventDefault(); return; }
   if (e.code==='Space'||e.code==='Enter'||e.code==='ArrowDown') {
     e.preventDefault();
     if (state === 'playing') drop(); else pressDown(null);
@@ -1002,15 +987,12 @@ function update(dt) {
   } else wind = null;
 
   if (slider && state === 'playing') {
-    const dragging = drag && drag.moved;
-    if (!dragging) {
-      const feverSlow = fever ? 0.78 : 1;
-      slider.x += slider.dir * slider.speed * feverSlow * dt;
-      if (wind) { const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI); slider.x += wind.dir * wind.str * env * dt; }
-      const min = -slider.w*.55, max = W - slider.w*.45;
-      if (slider.x < min) { slider.x = min; slider.dir = 1; }
-      if (slider.x > max) { slider.x = max; slider.dir = -1; }
-    }
+    const feverSlow = fever ? 0.78 : 1;
+    slider.x += slider.dir * slider.speed * feverSlow * dt;
+    if (wind) { const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI); slider.x += wind.dir * wind.str * env * dt; }
+    const min = -slider.w*.55, max = W - slider.w*.45;
+    if (slider.x < min) { slider.x = min; slider.dir = 1; }
+    if (slider.x > max) { slider.x = max; slider.dir = -1; }
   }
   if (faller && state === 'dropping') {
     faller.vy += .9*dt; faller.y += faller.vy*dt;
@@ -1155,10 +1137,9 @@ function render() {
   for (let y = -bandOff; y < H; y += 40) ctx.fillRect(0, y, W, 12);
   ctx.globalAlpha = 1;
 
-  const sMag = shake>0 ? (reduceMotion?.4:1) : 0;
-  const shX = shake>0 ? (Math.random()-.5)*shake*sMag : 0;
-  const shY = shake>0 ? (Math.random()-.5)*shake*sMag : 0;
-  const cy = cameraY + shY;
+  // camera stays perfectly centered — no shake offsets
+  const shX = 0;
+  const cy = cameraY;
 
   if (dark > 0.32) {
     const twSpeed = combo >= 7 ? .12 : .05;          // stars get excited during hot streaks
@@ -1566,7 +1547,7 @@ function renderHUD(h) {
   }
   // first-run tutorial hints (one calm strip, bottom third)
   if (tutStep >= 0) {
-    const msgs = ['TAP TO DROP THE BLOCK', 'HOLD + DRAG TO STEER IT', 'CENTER IT FOR A PERFECT'];
+    const msgs = ['TAP TO DROP THE BLOCK', 'CENTER IT FOR A PERFECT', 'STACK HIGH - DONT TOPPLE'];
     ctx.fillStyle = 'rgba(11,14,26,0.55)'; ctx.fillRect(0, H-84, W, 18);
     ctx.fillStyle = 'rgba(255,215,94,0.5)'; ctx.fillRect(0, H-84, W, 1);
     if (Math.floor(tick/25)%4 !== 3) txt(msgs[tutStep], W/2, H-78, 1, '#FFF6E8', 'center');
