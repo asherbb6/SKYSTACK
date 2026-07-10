@@ -31,8 +31,10 @@
 // Single file, zero deps.
 // ============================================================
 const W = 180;
-// logical height matches the device aspect ratio (min 320, max 424) so the game fills any phone
-const H = Math.max(320, Math.min(424, Math.round(W * innerHeight / Math.max(innerWidth, 1))));
+// portrait: logical height matches the device aspect ratio and the canvas stretches to fill
+// 100% of the screen (any tiny mismatch from browser chrome becomes invisible stretch, not bars)
+const PORTRAIT = innerHeight >= innerWidth;
+const H = PORTRAIT ? Math.max(300, Math.min(480, Math.round(W * innerHeight / Math.max(innerWidth, 1)))) : 320;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = W; canvas.height = H;
@@ -40,10 +42,15 @@ ctx.imageSmoothingEnabled = false;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function fitCanvas() {
-  // fractional scale: fill the screen edge-to-edge (pixelated rendering keeps the look)
-  const scale = Math.min(innerWidth / W, innerHeight / H);
-  canvas.style.width = (W * scale) + 'px';
-  canvas.style.height = (H * scale) + 'px';
+  if (PORTRAIT) {
+    // fill every pixel of the screen; dvh tracks the browser bar collapsing (vh = fallback)
+    canvas.style.width = '100vw';
+    canvas.style.height = '100vh'; canvas.style.height = '100dvh';
+  } else {
+    const scale = Math.min(innerWidth / W, innerHeight / H);
+    canvas.style.width = (W * scale) + 'px';
+    canvas.style.height = (H * scale) + 'px';
+  }
   if (booted) render();
 }
 var booted = false;
@@ -146,7 +153,15 @@ const sfx = {
 // ---------- music (procedural chiptune; tempo rises with tower height + streak) ----------
 const BASS = [110, 87.31, 130.81, 98];                    // A F C G
 const PENT = [220, 261.63, 293.66, 329.63, 392, 440];     // A minor pentatonic-ish
-let musicNext = 0, musicBar = 0, hatBuf = null;
+let musicNext = 0, musicBar = 0, hatBuf = null, barT0 = 0, barDurCur = 0;
+function beatPulse() {   // 0..1, peaks on each music bar so UI breathes in time with the tune
+  if (AC && AC.state === 'running' && !muted && musicOn && musicNext > 0 && barDurCur > 0) {
+    let ph = ((AC.currentTime - barT0) / barDurCur) % 1;
+    if (ph < 0) ph += 1;
+    return Math.max(0, 1 - ph * 2.2);
+  }
+  return .5 + .5 * Math.sin(tick * .1);
+}
 function curBarDur() {
   const playing = state === 'playing' || state === 'dropping';
   let d = 1.85;                                                        // menus: calm
@@ -156,6 +171,7 @@ function curBarDur() {
 }
 function scheduleBar(t, bar, dur) {
   const ac = AC;
+  barT0 = t; barDurCur = dur;
   const playing = state === 'playing' || state === 'dropping';
   const hot = fever || nova;
   const SB = (typeof EV !== 'undefined' && EV && EV.music) ? EV.music.bass : BASS;
@@ -352,8 +368,9 @@ function drawEventFx(menu) {
   ctx.globalAlpha = 1;
   if (menu) {   // string of party lights along the very top of menu screens
     ctx.fillStyle = 'rgba(255,246,232,0.15)'; ctx.fillRect(0, 0, W, 1);
+    const bp = beatPulse();
     for (let x = 4, i = 0; x < W; x += 9, i++) {
-      ctx.globalAlpha = .55 + .45*Math.sin(tick*.08 + i*1.7);
+      ctx.globalAlpha = .35 + .65 * Math.min(1, bp*.6 + (.5+.5*Math.sin(tick*.08 + i*1.7))*.5);
       ctx.fillStyle = EV.cols[i % EV.cols.length];
       ctx.fillRect(x, 1 + (i % 2), 2, 2);
     }
@@ -459,7 +476,7 @@ const POW_DESC = {
 const BH = 14, BASE_W = 96, GROUND_Y = H - 20, METERS_PER = 3;
 const TOPPLE = 34;
 let PERFECT_PX = 2.6;
-let state = 'home';               // home | shop | me | playing | dropping | gameover
+let state = 'splash';             // splash | home | shop | me | playing | dropping | gameover
 let blocks = [], slider = null, faller = null;
 let debris = [], particles = [], floaters = [], trails = [], coinFx = [], pickups = [];
 let balloon = null, lastBalloonRow = 0;
@@ -870,6 +887,7 @@ function navHit(p) {
 function pressDown(e) {
   const p = e ? pos(e) : null;
   audio();
+  if (state === 'splash') { state = 'home'; fadeT = 1; musicNext = 0; sfx.tap(); return; }
   if (state === 'home') {
     if (!p) { if (!modePicker) startRun(); return; }
     if (modePicker) {                                  // picker overlay swallows all input
@@ -922,8 +940,8 @@ function pressMove(e) {
   if (!drag || !slider || state !== 'playing') return;
   const p = pos(e);
   const dx = p.x - drag.startX;
-  if (Math.abs(dx) > 3) { drag.moved = true; if (tutStep === 1) tutStep = 2; }
-  if (drag.moved) slider.x = clamp(drag.blockX + dx, -slider.w*.55, W - slider.w*.45);
+  if (Math.abs(dx) > 2) { drag.moved = true; if (tutStep === 1) tutStep = 2; }
+  if (drag.moved) slider.x = clamp(drag.blockX + dx * 1.2, -slider.w*.55, W - slider.w*.45);   // 1.2x: snappier steering
 }
 function pressUp() {
   if (state === 'playing' && drag && !drag.moved) drop();
@@ -1114,7 +1132,7 @@ function topBar(title) {
 // ---------- background & world render ----------
 function render() {
   const h = blocks.length;
-  const menu = state === 'home' || state === 'shop' || state === 'me';
+  const menu = state === 'home' || state === 'shop' || state === 'me' || state === 'splash';
   const virtualH = menu ? tick * 0.05 : h;
   const sky = skyColor(virtualH), dark = 1 - lum(sky);
   ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')'; ctx.fillRect(0,0,W,H);
@@ -1171,7 +1189,8 @@ function render() {
 
   if (!menu) renderWorld(cy, shX);
 
-  if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); }
+  if (state === 'splash') renderSplash();
+  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); }
   else if (state === 'shop') { renderShop(); drawNav(); }
   else if (state === 'me') { renderMe(); drawNav(); }
   else if (state === 'gameover') renderGameOver();
@@ -1298,7 +1317,7 @@ function renderHome() {
   if (mode === 'daily' && daily.streak > 0) txt('STREAK ' + daily.streak + ' - TODAY ' + daily.best*METERS_PER + 'M', W/2, 106, 1, '#FF9E5E', 'center');
   else if (bestBlocksFor(mode) > 0) txt('BEST ' + bestBlocksFor(mode)*METERS_PER + 'M' + (bestScoreFor(mode) > 0 ? ' - ' + fmtPts(bestScoreFor(mode)) + ' PTS' : ''), W/2, 106, 1, 'rgba(255,246,232,0.55)', 'center');
 
-  const pulse = .5+.5*Math.sin(tick*.1);
+  const pulse = beatPulse();   // PLAY breathes on the music's bar
   ctx.fillStyle = playA(.55+pulse*.35); ctx.fillRect(PLAY_BTN.x, PLAY_BTN.y, PLAY_BTN.w, PLAY_BTN.h);
   ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(PLAY_BTN.x, PLAY_BTN.y, PLAY_BTN.w, 1);
   txt('PLAY', W/2, PLAY_BTN.y+9, 2, EV ? '#141414' : '#08301F', 'center');
@@ -1324,6 +1343,22 @@ function renderHome() {
     ctx.fillStyle = 'rgba(98,232,181,'+gl+')'; ctx.fillRect(INSTALL_BTN.x, INSTALL_BTN.y, INSTALL_BTN.w, INSTALL_BTN.h);
     txt('INSTALL APP', W/2, INSTALL_BTN.y+4, 1, '#08301F', 'center');
   }
+}
+
+// ---------- splash (start gate: browsers require a tap before audio can play) ----------
+function renderSplash() {
+  const bob = Math.sin(tick*.04)*2, cy2 = Math.round(H*.28);
+  txt('SKYSTACK', W/2+1, cy2+1+bob, 3, 'rgba(0,0,0,0.35)', 'center');
+  txt('SKYSTACK', W/2, cy2+bob, 3, '#FFF6E8', 'center');
+  txt('STACK TO THE STARS', W/2, cy2+26+bob, 1, EV ? EV.acc : '#FFD75E', 'center');
+  // looping pixel tower builds itself while you decide
+  const cyc = Math.floor(tick/16) % 9, baseY = Math.round(H*.58);
+  for (let i = 0; i < cyc; i++) {
+    const w2 = 46 - i*4;
+    drawBlock(Math.round(W/2 - w2/2), baseY - i*8, w2, 7, { h:(tick*.5 + i*26)%360, s:74, l:58 }, i === cyc-1, i === cyc-1 ? .3 : 0, 'gloss');
+  }
+  if (Math.floor(tick/26)%2 === 0) txt('TAP TO START', W/2, Math.round(H*.76), 1, '#62E8B5', 'center');
+  txt('SKYSTACK 1.0', W/2, H-22, 1, 'rgba(255,246,232,0.4)', 'center');
 }
 
 // ---------- mode picker overlay ----------
