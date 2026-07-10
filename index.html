@@ -1270,6 +1270,12 @@ function renderHome() {
   grd.addColorStop(0,'rgba(255,255,255,0)'); grd.addColorStop(.5,'rgba(255,255,255,0.45)'); grd.addColorStop(1,'rgba(255,255,255,0)');
   ctx.fillStyle = grd; ctx.fillRect(sx-12, 24+bob, 24, 22); ctx.restore();
   const tag = EV ? (Math.floor(tick/180)%2 ? '+25% COINS ALL WEEK' : EV.name) : 'STACK TO THE STARS';
+  if (EV) {   // dark ribbon so the event title reads on any sky
+    const tw = tag.length * 6 - 1;
+    ctx.fillStyle = 'rgba(11,14,26,0.66)'; ctx.fillRect(Math.round(W/2 - tw/2) - 5, 49+bob, tw + 10, 12);
+    ctx.fillStyle = uiA(0.85); ctx.fillRect(Math.round(W/2 - tw/2) - 5, 49+bob, tw + 10, 1);
+    ctx.fillStyle = uiA(0.85); ctx.fillRect(Math.round(W/2 - tw/2) - 5, 60+bob, tw + 10, 1);
+  }
   txt(tag, W/2, 52+bob, 1, EV ? EV.acc : '#FFD75E', 'center');
 
   // one fat finger-friendly mode button -> full picker
