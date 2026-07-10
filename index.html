@@ -561,7 +561,8 @@ function spawnSlider() {
 }
 function drop() {
   if (!slider) return;
-  faller = { x: slider.x, w: slider.w, y: slider.y, vy: 0, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
+  // launch with downward velocity so the tap reads as instant, not delayed
+  faller = { x: slider.x, w: slider.w, y: slider.y, vy: 2.6, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
   slider = null; state = 'dropping';
   if (tutStep === 0) tutStep = 1;
 }
@@ -1012,7 +1013,7 @@ function update(dt) {
     }
   }
   if (faller && state === 'dropping') {
-    faller.vy += .55*dt; faller.y += faller.vy*dt;
+    faller.vy += .9*dt; faller.y += faller.vy*dt;
     if (!reduceMotion && tick % 2 < dt) trails.push({ x:faller.x, y:faller.y, w:faller.w, life:.6, h:faller.col.h });
     if (faller.y >= towerTopY() - BH) { faller.y = towerTopY() - BH; land(); }
   }
@@ -1060,25 +1061,37 @@ function drawBlock(x, y, w, h, col, isTop, glow, style) {
   if (isTop && flashT > 0) { ctx.globalAlpha = flashT*.85; ctx.fillStyle = '#FFF'; ctx.fillRect(x,y,w,h); ctx.globalAlpha = 1; }
 }
 function drawCoin(x, y) { ctx.fillStyle='#B8860B'; ctx.fillRect(x,y,6,6); ctx.fillStyle='#FFD75E'; ctx.fillRect(x+1,y+1,4,4); ctx.fillStyle='#FFF6C8'; ctx.fillRect(x+1,y+1,2,2); }
-function drawIcon(type, x, y) {
+function drawIcon(type, x, y, bare) {
   const P = POW[type];
   if (type === 'coin') { drawCoin(x+1, y+1); return; }
-  ctx.fillStyle = P.c2; ctx.fillRect(x, y, 8, 8);
+  if (!bare) { ctx.fillStyle = P.c2; ctx.fillRect(x, y, 8, 8); }
   ctx.fillStyle = P.c1;
-  if (type === 'shield') { ctx.fillRect(x+2,y+1,4,1); ctx.fillRect(x+1,y+2,6,3); ctx.fillRect(x+2,y+5,4,1); ctx.fillRect(x+3,y+6,2,1); }
-  else if (type === 'wide') { ctx.fillRect(x+1,y+3,6,2); ctx.fillRect(x+1,y+2,1,4); ctx.fillRect(x+6,y+2,1,4); }
-  else if (type === 'slow') { ctx.fillRect(x+2,y+1,4,1); ctx.fillRect(x+1,y+2,6,4); ctx.fillRect(x+2,y+6,4,1); ctx.fillStyle='#FFF'; ctx.fillRect(x+3,y+3,1,2); ctx.fillRect(x+3,y+3,2,1); }
-  else if (type === 'aura') { ctx.fillRect(x+3,y+1,2,1); ctx.fillRect(x+1,y+3,1,2); ctx.fillRect(x+6,y+3,1,2); ctx.fillRect(x+3,y+6,2,1); ctx.fillStyle='#FFF'; ctx.fillRect(x+3,y+3,2,2); }
-  else if (type === 'gold') { ctx.fillRect(x+3,y+1,2,2); ctx.fillRect(x+1,y+3,6,2); ctx.fillRect(x+2,y+5,4,1); ctx.fillRect(x+3,y+6,2,1); }
-  else if (type === 'fever') { ctx.fillRect(x+3,y+1,2,1); ctx.fillRect(x+2,y+2,3,2); ctx.fillRect(x+1,y+4,6,3); ctx.fillStyle='#FFE28A'; ctx.fillRect(x+3,y+5,2,2); }
+  if (type === 'shield') { ctx.fillRect(x+2,y+1,4,1); ctx.fillRect(x+1,y+2,6,3); ctx.fillRect(x+2,y+5,4,1); ctx.fillRect(x+3,y+6,2,1); ctx.fillStyle=P.c2; ctx.fillRect(x+3,y+2,1,3); ctx.fillRect(x+2,y+3,3,1); }
+  else if (type === 'wide') { ctx.fillRect(x+1,y+3,6,2); ctx.fillRect(x+2,y+2,1,1); ctx.fillRect(x+2,y+5,1,1); ctx.fillRect(x+5,y+2,1,1); ctx.fillRect(x+5,y+5,1,1); ctx.fillStyle='#FFF'; ctx.fillRect(x+3,y+3,2,1); }
+  else if (type === 'slow') { ctx.fillRect(x+2,y+1,4,1); ctx.fillRect(x+1,y+2,6,4); ctx.fillRect(x+2,y+6,4,1); ctx.fillStyle=P.c2; ctx.fillRect(x+3,y+2,1,1); ctx.fillStyle='#FFF'; ctx.fillRect(x+3,y+3,1,2); ctx.fillRect(x+3,y+3,2,1); }
+  else if (type === 'aura') { ctx.fillRect(x+3,y+1,2,1); ctx.fillRect(x+1,y+3,1,2); ctx.fillRect(x+6,y+3,1,2); ctx.fillRect(x+3,y+6,2,1); ctx.fillRect(x+1,y+1,1,1); ctx.fillRect(x+6,y+1,1,1); ctx.fillRect(x+1,y+6,1,1); ctx.fillRect(x+6,y+6,1,1); ctx.fillStyle='#FFF'; ctx.fillRect(x+3,y+3,2,2); }
+  else if (type === 'gold') { ctx.fillRect(x+3,y+1,2,2); ctx.fillRect(x+1,y+3,6,2); ctx.fillRect(x+2,y+5,4,1); ctx.fillRect(x+3,y+6,2,1); ctx.fillStyle='#FFF'; ctx.fillRect(x+3,y+3,1,1); }
+  else if (type === 'fever') { ctx.fillRect(x+3,y+1,2,1); ctx.fillRect(x+2,y+2,3,2); ctx.fillRect(x+1,y+4,6,3); ctx.fillStyle='#FFE28A'; ctx.fillRect(x+3,y+5,2,2); ctx.fillStyle='#FFF'; ctx.fillRect(x+3,y+5,1,1); }
+}
+// pixel-art filled disc (no anti-aliasing, no glow)
+function pixDisc(cx2, cy2, r, color) {
+  ctx.fillStyle = color;
+  for (let yy = -r; yy <= r; yy++) {
+    const ww = Math.floor(Math.sqrt(r*r - yy*yy + .5));
+    ctx.fillRect(cx2 - ww, cy2 + yy, ww*2 + 1, 1);
+  }
 }
 function drawPow(p, cy) {
   if (p.got) return;
   const y = GROUND_Y - p.row*BH - BH/2 - cy + Math.sin(tick*.08 + p.row)*2;
-  if (y < -12 || y > H + 12) return;
+  if (y < -14 || y > H + 14) return;
   const P = POW[p.type], pulse = .5 + .5*Math.sin(tick*.12 + p.row);
-  ctx.globalAlpha = .3 + pulse*.35; ctx.fillStyle = P.c1; ctx.fillRect(Math.round(p.x-7), Math.round(y-3), 14, 14); ctx.globalAlpha = 1;
-  drawIcon(p.type, Math.round(p.x-4), Math.round(y));
+  const cx2 = Math.round(p.x), cy3 = Math.round(y) + 4;
+  pixDisc(cx2, cy3, 7, P.c2);                                          // rim base
+  ctx.globalAlpha = .35 + pulse*.5; pixDisc(cx2, cy3, 7, P.c1); ctx.globalAlpha = 1;  // rim pulses bright
+  pixDisc(cx2, cy3, 5, '#141022');                                     // dark coin face
+  drawIcon(p.type, cx2-4, cy3-4, true);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(cx2-3, cy3-5, 2, 1); ctx.fillRect(cx2-5, cy3-3, 1, 1);  // glint
 }
 function drawBalloon(cy) {
   if (!balloon) return;
@@ -1115,7 +1128,7 @@ function panel(x, y, w, h) {
   ctx.fillStyle = uiA(0.4); ctx.fillRect(x, y, w, 1);
 }
 function drawNav() {
-  ctx.fillStyle = 'rgba(11,14,26,0.78)'; ctx.fillRect(0, NAV_Y, W, NAV_H);
+  ctx.fillStyle = 'rgba(11,14,26,0.58)'; ctx.fillRect(0, NAV_Y, W, NAV_H);
   ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, NAV_Y, W, 1);
   for (const t of NAV_TABS) {
     const active = state === t.id;
@@ -1347,17 +1360,30 @@ function renderHome() {
 
 // ---------- splash (start gate: browsers require a tap before audio can play) ----------
 function renderSplash() {
-  const bob = Math.sin(tick*.04)*2, cy2 = Math.round(H*.28);
+  const bob = Math.sin(tick*.04)*2, cy2 = Math.round(H*.24);
+  const acc = EV ? EV.acc : '#FFD75E';
+  // title with shadow + accent underline sweep
   txt('SKYSTACK', W/2+1, cy2+1+bob, 3, 'rgba(0,0,0,0.35)', 'center');
   txt('SKYSTACK', W/2, cy2+bob, 3, '#FFF6E8', 'center');
-  txt('STACK TO THE STARS', W/2, cy2+26+bob, 1, EV ? EV.acc : '#FFD75E', 'center');
-  // looping pixel tower builds itself while you decide
+  const uw = 70 + Math.round(Math.sin(tick*.06)*8);
+  ctx.fillStyle = acc; ctx.fillRect(Math.round(W/2-uw/2), cy2+20+bob, uw, 1);
+  txt('STACK TO THE STARS', W/2, cy2+26+bob, 1, acc, 'center');
+  // looping pixel tower builds itself while you decide; mascot rides the top
   const cyc = Math.floor(tick/16) % 9, baseY = Math.round(H*.58);
   for (let i = 0; i < cyc; i++) {
     const w2 = 46 - i*4;
     drawBlock(Math.round(W/2 - w2/2), baseY - i*8, w2, 7, { h:(tick*.5 + i*26)%360, s:74, l:58 }, i === cyc-1, i === cyc-1 ? .3 : 0, 'gloss');
   }
-  if (Math.floor(tick/26)%2 === 0) txt('TAP TO START', W/2, Math.round(H*.76), 1, '#62E8B5', 'center');
+  if (cyc > 0) drawMascot(W/2, baseY - (cyc-1)*8);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(W/2-28), baseY+8, 56, 2);   // ground shadow
+  // steady pulsing start button (framed, not blinking)
+  const btnW = 88, btnH = 15, bx = Math.round(W/2-btnW/2), by = Math.round(H*.74);
+  const gl = .5 + .5*Math.sin(tick*.09);
+  ctx.fillStyle = 'rgba(98,232,181,'+(0.10+gl*.14).toFixed(3)+')'; ctx.fillRect(bx, by, btnW, btnH);
+  ctx.fillStyle = 'rgba(98,232,181,'+(0.45+gl*.55).toFixed(3)+')';
+  ctx.fillRect(bx, by, btnW, 1); ctx.fillRect(bx, by+btnH-1, btnW, 1);
+  ctx.fillRect(bx, by, 1, btnH); ctx.fillRect(bx+btnW-1, by, 1, btnH);
+  txt('TAP TO START', W/2, by+5, 1, '#62E8B5', 'center');
   txt('SKYSTACK 1.0', W/2, H-22, 1, 'rgba(255,246,232,0.4)', 'center');
 }
 
@@ -1491,8 +1517,7 @@ function renderMe() {
     ctx.fillStyle = on ? '#08301F' : 'rgba(255,246,232,0.5)';
     txt(on ? 'ON' : 'OFF', t.x + t.w/2, ry + 2, 1, on ? '#08301F' : 'rgba(255,246,232,0.5)', 'center');
   }
-  txt('SKYSTACK 1.0', W/2, H-58, 1, 'rgba(255,246,232,0.55)', 'center');
-  txt('MADE WITH CLAUDE', W/2, H-46, 1, 'rgba(255,246,232,0.55)', 'center');
+  txt('SKYSTACK 1.0', W/2, H-50, 1, 'rgba(255,246,232,0.55)', 'center');
 }
 
 // ---------- in-run HUD ----------
