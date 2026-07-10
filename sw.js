@@ -1,5 +1,5 @@
-// SKYSTACK service worker — offline app shell (cache-first).
-const CACHE = 'skystack-v9';
+// SKYSTACK service worker — network-first app shell (fresh code when online, cache when offline).
+const CACHE = 'skystack-v12';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -10,11 +10,24 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  e.respondWith(
-    caches.match(e.request).then(hit => hit || fetch(e.request).then(resp => {
-      const copy = resp.clone();
-      caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
-      return resp;
-    }).catch(() => caches.match('./index.html')))
-  );
+  const shell = e.request.mode === 'navigate' || e.request.url.indexOf('index.html') !== -1;
+  if (shell) {
+    // network-first: players always get the latest game; cache is the offline fallback
+    e.respondWith(
+      fetch(e.request).then(resp => {
+        const copy = resp.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+        return resp;
+      }).catch(() => caches.match(e.request).then(hit => hit || caches.match('./index.html')))
+    );
+  } else {
+    // static assets (icons/manifest): cache-first
+    e.respondWith(
+      caches.match(e.request).then(hit => hit || fetch(e.request).then(resp => {
+        const copy = resp.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+        return resp;
+      }))
+    );
+  }
 });
