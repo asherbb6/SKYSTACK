@@ -43,10 +43,11 @@ ctx.imageSmoothingEnabled = false;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function fitCanvas() {
-  // logical aspect matches the window by construction, so 100% fill keeps pixels square;
-  // if the window aspect drifted (rotation, extreme cap), fall back to centered aspect-fit
+  // logical aspect matches the window by construction, so 100% fill keeps pixels square.
+  // small drift (browser bars collapsing, entering fullscreen) becomes invisible stretch;
+  // only a big mismatch (rotation) falls back to centered aspect-fit
   const arWin = innerWidth / Math.max(innerHeight, 1), arGame = W / H;
-  if (Math.abs(arWin - arGame) < arGame * 0.04) {
+  if (Math.abs(arWin - arGame) < arGame * 0.15) {
     canvas.style.width = '100vw';
     canvas.style.height = '100vh'; canvas.style.height = '100dvh';  // dvh tracks browser bars
   } else {
@@ -484,6 +485,8 @@ let blocks = [], slider = null, faller = null;
 let debris = [], particles = [], floaters = [], trails = [], coinFx = [], pickups = [];
 let balloon = null, lastBalloonRow = 0;
 let cameraY = 0, cameraTarget = 0, shake = 0, fadeT = 0;
+let paused = false;
+let dropPending = 0;   // tiny grace window between tap and release (people pre-tap expecting delay)
 let combo = 0, maxCombo = 0, hueBase = Math.random() * 360;
 let squash = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
 let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, coinPop = 0, tick = 0;
@@ -538,7 +541,7 @@ function resetRun() {
   nextPickupRow = 8; completedThisRun = []; achThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
-  balance = 0; swayX = 0;
+  balance = 0; swayX = 0; paused = false; dropPending = 0;
   timeLeft = m.time || 0;
   PERFECT_PX = 2.6;
   mascot.hop = 0; mascot.expr = 'normal'; mascot.exprT = 0;
@@ -562,6 +565,10 @@ function spawnSlider() {
   goldenNext = false;
 }
 function drop() {
+  if (!slider || dropPending > 0) return;
+  dropPending = 5;                                     // ~85ms grace: the block keeps sliding briefly
+}
+function releaseBlock() {
   if (!slider) return;
   // launch with downward velocity so the tap reads as instant, not delayed
   faller = { x: slider.x, w: slider.w, y: slider.y, vy: 2.6, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
@@ -752,7 +759,7 @@ function afterPlace(f, updateBalance, placedCenter) {
 }
 
 function gameOver(cause) {
-  state = 'gameover'; faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0;
+  state = 'gameover'; faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; paused = false; dropPending = 0;
   overCause = cause || 'miss';
   shake = reduceMotion ? 2 : (cause === 'topple' ? 8 : 6); overLock = 40;
   if (cause === 'topple') { sfx.topple();
@@ -861,7 +868,7 @@ const INSTALL_BTN = { x:W/2-42, y:H-58, w:84, h:14 };
 const SKIN_L = { x:PAD, y:66, w:20, h:26 };
 const SKIN_R = { x:W-PAD-20, y:66, w:20, h:26 };
 const EQUIP_BTN = { x:W/2-46, y:138, w:92, h:18 };
-const LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: 8 + i * 56, y: 196, w: 52, h: 26, id: l.id, cost: l.cost }));
+const LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: 196, w: 52, h: 26, id: l.id, cost: l.cost }));
 // me
 const TOGGLES = [
   { id:'sound',   label:'SOUND' },
@@ -870,7 +877,9 @@ const TOGGLES = [
 ].map((t, i) => ({ ...t, x: W-PAD-30, y: 216 + i * 15, w: 30, h: 11 }));
 // in-run
 const SND_BTN = { x:W-17, y:4, w:13, h:13 };
-const HOME_BTN = { x:4, y:4, w:13, h:13 };
+const PAUSE_BTN = { x:4, y:4, w:13, h:13 };
+const PAUSE_ROWS = ['resume','restart','sound','music','quit'].map((id, i) =>
+  ({ id, x: Math.round(W/2-44), y: Math.round(H/2-56) + i*20, w: 88, h: 16 }));
 // game over
 const SHARE_BTN = { x:W/2-32, y:H-96, w:64, h:16 };
 
@@ -886,10 +895,31 @@ function navHit(p) {
   }
   return true;
 }
+// mobile browsers: go real fullscreen on the first gesture so OS bars sit over the game
+function tryFullscreen() {
+  try {
+    const installed = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone;
+    if (installed || !matchMedia('(pointer: coarse)').matches || document.fullscreenElement) return;
+    const el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } catch (err) {}
+}
 function pressDown(e) {
   const p = e ? pos(e) : null;
   audio();
-  if (state === 'splash') { state = 'home'; fadeT = 1; musicNext = 0; sfx.tap(); return; }
+  if (paused) {
+    if (p) for (const rw of PAUSE_ROWS) if (inR(p, rw, 2)) {
+      if (rw.id === 'resume') { paused = false; sfx.tap(); }
+      else if (rw.id === 'restart') { sfx.tap(); startRun(); }
+      else if (rw.id === 'sound') { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); }
+      else if (rw.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
+      else if (rw.id === 'quit') { paused = false; gameOver('quit'); }
+      return;
+    }
+    return;                                            // stray taps never resume-drop by accident
+  }
+  if (state === 'splash') { state = 'home'; fadeT = 1; musicNext = 0; sfx.tap(); tryFullscreen(); return; }
   if (state === 'home') {
     if (!p) { if (!modePicker) startRun(); return; }
     if (modePicker) {                                  // picker overlay swallows all input
@@ -931,7 +961,7 @@ function pressDown(e) {
     }
   } else if (state === 'playing' || state === 'dropping') {
     if (p && inR(p, SND_BTN, 3)) { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); return; }
-    if (p && inR(p, HOME_BTN, 3)) { gameOver('quit'); return; }
+    if (p && inR(p, PAUSE_BTN, 3)) { paused = true; sfx.tap(); return; }
     if (state === 'playing' && slider) drop();          // no steering — tap drops instantly
   } else if (state === 'gameover' && overLock <= 0) {
     if (p && inR(p, SHARE_BTN, 3)) { shareScore(); return; }
@@ -940,15 +970,20 @@ function pressDown(e) {
 }
 canvas.addEventListener('pointerdown', e => { e.preventDefault(); pressDown(e); });
 addEventListener('keydown', e => {
+  if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; sfx.tap(); e.preventDefault(); return; }
+  if (paused) { if (e.code === 'Space' || e.code === 'Enter') { paused = false; sfx.tap(); e.preventDefault(); } return; }
   if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { previewIdx = (previewIdx + (e.code==='ArrowLeft'?SKINS.length-1:1)) % SKINS.length; demo.n=1; sfx.tap(); e.preventDefault(); return; }
   if (e.code==='Space'||e.code==='Enter'||e.code==='ArrowDown') {
     e.preventDefault();
     if (state === 'playing') drop(); else pressDown(null);
   }
 });
+// leaving the app mid-run pauses it so the player can come back and resume
+document.addEventListener('visibilitychange', () => { if (document.hidden && (state === 'playing' || state === 'dropping')) paused = true; });
 
 // ---------- update ----------
 function update(dt) {
+  if (paused) return;                 // full freeze — world, music scheduling, timers
   tick += dt;
   musicStep();
   updateEventFx(dt);
@@ -986,6 +1021,10 @@ function update(dt) {
     if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = 280 + Math.random()*320; } }
   } else wind = null;
 
+  if (dropPending > 0 && state === 'playing') {
+    dropPending -= dt;
+    if (dropPending <= 0) { dropPending = 0; releaseBlock(); }
+  }
   if (slider && state === 'playing') {
     const feverSlow = fever ? 0.78 : 1;
     slider.x += slider.dir * slider.speed * feverSlow * dt;
@@ -1190,6 +1229,8 @@ function render() {
   else if (state === 'gameover') renderGameOver();
   else renderHUD(h);
 
+  if (paused && (state === 'playing' || state === 'dropping')) renderPause();
+
   if (bannerT > 0) {
     const a = Math.min(1,bannerT*2.2)*(bannerT>.85?(1-bannerT)/.15:1);
     ctx.globalAlpha = Math.max(0,a); ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(0,84,W,22);
@@ -1341,31 +1382,70 @@ function renderHome() {
 
 // ---------- splash (start gate: browsers require a tap before audio can play) ----------
 function renderSplash() {
-  const bob = Math.sin(tick*.04)*2, cy2 = Math.round(H*.24);
+  // staged intro: title drops in with a bounce, then subtitle, tower and button fade in
+  const t = reduceMotion ? 999 : tick;
+  const eb = q => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3*Math.pow(q-1,3) + c1*Math.pow(q-1,2); };
+  const p = Math.min(1, t/38), settled = p >= 1;
+  const cy2 = Math.round(H*.24);
+  const bob = settled ? Math.sin(tick*.04)*2 : 0;
+  const titleY = Math.round(-36 + (cy2 + 36) * eb(p)) + bob;
   const acc = EV ? EV.acc : '#FFD75E';
-  // title with shadow + accent underline sweep
-  txt('SKYSTACK', W/2+1, cy2+1+bob, 3, 'rgba(0,0,0,0.35)', 'center');
-  txt('SKYSTACK', W/2, cy2+bob, 3, '#FFF6E8', 'center');
-  const uw = 70 + Math.round(Math.sin(tick*.06)*8);
-  ctx.fillStyle = acc; ctx.fillRect(Math.round(W/2-uw/2), cy2+20+bob, uw, 1);
-  txt('STACK TO THE STARS', W/2, cy2+26+bob, 1, acc, 'center');
-  // looping pixel tower builds itself while you decide; mascot rides the top
-  const cyc = Math.floor(tick/16) % 9, baseY = Math.round(H*.58);
-  for (let i = 0; i < cyc; i++) {
-    const w2 = 46 - i*4;
-    drawBlock(Math.round(W/2 - w2/2), baseY - i*8, w2, 7, { h:(tick*.5 + i*26)%360, s:74, l:58 }, i === cyc-1, i === cyc-1 ? .3 : 0, 'gloss');
+  txt('SKYSTACK', W/2+1, titleY+1, 3, 'rgba(0,0,0,0.35)', 'center');
+  txt('SKYSTACK', W/2, titleY, 3, '#FFF6E8', 'center');
+  const subA = Math.max(0, Math.min(1, (t-30)/18));
+  if (subA > 0) {
+    ctx.globalAlpha = subA;
+    const uw = 70 + Math.round(Math.sin(tick*.06)*8);
+    ctx.fillStyle = acc; ctx.fillRect(Math.round(W/2-uw/2), titleY+20, uw, 1);
+    txt('STACK TO THE STARS', W/2, titleY+26, 1, acc, 'center');
+    ctx.globalAlpha = 1;
   }
-  if (cyc > 0) drawMascot(W/2, baseY - (cyc-1)*8);
-  ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(W/2-28), baseY+8, 56, 2);   // ground shadow
+  // looping pixel tower builds itself while you decide; mascot rides the top
+  if (t > 44) {
+    const cyc = Math.floor((t-44)/16) % 9, baseY = Math.round(H*.58);
+    for (let i = 0; i < cyc; i++) {
+      const w2 = 46 - i*4;
+      drawBlock(Math.round(W/2 - w2/2), baseY - i*8, w2, 7, { h:(tick*.5 + i*26)%360, s:74, l:58 }, i === cyc-1, i === cyc-1 ? .3 : 0, 'gloss');
+    }
+    if (cyc > 0) drawMascot(W/2, baseY - (cyc-1)*8);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(W/2-28), baseY+8, 56, 2);   // ground shadow
+  }
   // steady pulsing start button (framed, not blinking)
-  const btnW = 88, btnH = 15, bx = Math.round(W/2-btnW/2), by = Math.round(H*.74);
-  const gl = .5 + .5*Math.sin(tick*.09);
-  ctx.fillStyle = 'rgba(98,232,181,'+(0.10+gl*.14).toFixed(3)+')'; ctx.fillRect(bx, by, btnW, btnH);
-  ctx.fillStyle = 'rgba(98,232,181,'+(0.45+gl*.55).toFixed(3)+')';
-  ctx.fillRect(bx, by, btnW, 1); ctx.fillRect(bx, by+btnH-1, btnW, 1);
-  ctx.fillRect(bx, by, 1, btnH); ctx.fillRect(bx+btnW-1, by, 1, btnH);
-  txt('TAP TO START', W/2, by+5, 1, '#62E8B5', 'center');
-  txt('SKYSTACK 1.0', W/2, H-22, 1, 'rgba(255,246,232,0.4)', 'center');
+  const btnA = Math.max(0, Math.min(1, (t-58)/16));
+  if (btnA > 0) {
+    ctx.globalAlpha = btnA;
+    const btnW = 88, btnH = 15, bx = Math.round(W/2-btnW/2), by = Math.round(H*.74);
+    const gl = .5 + .5*Math.sin(tick*.09);
+    ctx.fillStyle = 'rgba(98,232,181,'+(0.10+gl*.14).toFixed(3)+')'; ctx.fillRect(bx, by, btnW, btnH);
+    ctx.fillStyle = 'rgba(98,232,181,'+(0.45+gl*.55).toFixed(3)+')';
+    ctx.fillRect(bx, by, btnW, 1); ctx.fillRect(bx, by+btnH-1, btnW, 1);
+    ctx.fillRect(bx, by, 1, btnH); ctx.fillRect(bx+btnW-1, by, 1, btnH);
+    txt('TAP TO START', W/2, by+5, 1, '#62E8B5', 'center');
+    txt('SKYSTACK 1.0', W/2, H-22, 1, 'rgba(255,246,232,0.4)', 'center');
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- pause overlay ----------
+function renderPause() {
+  ctx.fillStyle = 'rgba(11,14,26,0.85)'; ctx.fillRect(0, 0, W, H);
+  txt('PAUSED', W/2+1, PAUSE_ROWS[0].y - 27, 2, 'rgba(0,0,0,0.4)', 'center');
+  txt('PAUSED', W/2, PAUSE_ROWS[0].y - 28, 2, '#FFF6E8', 'center');
+  const labels = {
+    resume: 'RESUME', restart: 'RESTART',
+    sound: 'SOUND ' + (muted ? 'OFF' : 'ON'),
+    music: 'MUSIC ' + (musicOn ? 'ON' : 'OFF'),
+    quit: 'QUIT RUN'
+  };
+  for (const rw of PAUSE_ROWS) {
+    const main = rw.id === 'resume';
+    ctx.fillStyle = main ? 'rgba(98,232,181,0.9)' : 'rgba(255,246,232,0.10)';
+    ctx.fillRect(rw.x, rw.y, rw.w, rw.h);
+    ctx.fillStyle = main ? 'rgba(255,255,255,0.45)' : uiA(0.35);
+    ctx.fillRect(rw.x, rw.y, rw.w, 1);
+    txt(labels[rw.id], W/2, rw.y + 6, 1, main ? '#08301F' : '#FFF6E8', 'center');
+  }
+  txt('YOUR RUN IS WAITING', W/2, PAUSE_ROWS[PAUSE_ROWS.length-1].y + 28, 1, 'rgba(255,246,232,0.45)', 'center');
 }
 
 // ---------- mode picker overlay ----------
@@ -1435,7 +1515,10 @@ function renderShop() {
       ctx.fillStyle = on ? 'rgba(98,232,181,0.85)' : 'rgba(0,0,0,0.28)';
       ctx.fillRect(c.x, c.y, c.w, c.h);
       if (on) { ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.fillRect(c.x, c.y, c.w, 1); }
-      drawIcon(c.id, c.x+3, c.y+3);
+      const IP = POW[c.id];                            // circular badge, same style as in-world pickups
+      pixDisc(c.x+7, c.y+7, 6, on ? '#08301F' : IP.c2);
+      pixDisc(c.x+7, c.y+7, 5, on ? 'rgba(0,0,0,0.35)' : '#141022');
+      drawIcon(c.id, c.x+3, c.y+3, true);
       txt(POW_NAME[c.id], c.x+14, c.y+5, 1, on ? '#08301F' : '#FFF6E8', 'left');
       if (on) txt('OK', c.x+c.w/2, c.y+16, 1, '#08301F', 'center');
       else { drawCoin(c.x+14, c.y+15); txt(c.cost, c.x+23, c.y+16, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
@@ -1505,8 +1588,8 @@ function renderMe() {
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
   const m = curMode();
-  ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(HOME_BTN.x-1,HOME_BTN.y-1,HOME_BTN.w+2,HOME_BTN.h+2);
-  ctx.fillStyle='#FFF6E8'; ctx.fillRect(HOME_BTN.x+6,HOME_BTN.y+2,1,1); ctx.fillRect(HOME_BTN.x+5,HOME_BTN.y+3,3,1); ctx.fillRect(HOME_BTN.x+4,HOME_BTN.y+4,5,1); ctx.fillRect(HOME_BTN.x+5,HOME_BTN.y+5,3,5);
+  ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(PAUSE_BTN.x-1,PAUSE_BTN.y-1,PAUSE_BTN.w+2,PAUSE_BTN.h+2);
+  ctx.fillStyle='#FFF6E8'; ctx.fillRect(PAUSE_BTN.x+3,PAUSE_BTN.y+3,3,8); ctx.fillRect(PAUSE_BTN.x+8,PAUSE_BTN.y+3,3,8);
   drawCoin(22, 7); txt(coins, 31, 7, 1, '#FFD75E', 'left');
   txt(score, W/2+1, 6, 2, shadow, 'center'); txt(score, W/2, 5, 2, '#FFF6E8', 'center');
   if (m.time) { const s = Math.ceil(timeLeft/60); txt(s+'S', W-24, 7, 1, s<=10?(Math.floor(tick/8)%2?'#FF5E7E':'#FFD75E'):'rgba(255,246,232,0.9)', 'right'); }
@@ -1589,7 +1672,7 @@ function renderGameOver() {
 
 // ---------- loop ----------
 let last = performance.now();
-function frame(now) { rafId = 0; let dt=(now-last)/16.667; last=now; if (dt>3) dt=3; update(dt); render(); rafId = requestAnimationFrame(frame); }
+function frame(now) { rafId = 0; let dt=(now-last)/16.667; last=now; if (dt>3) dt=3; if (dt<0) dt=0; update(dt); render(); rafId = requestAnimationFrame(frame); }
 blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
 cameraY = towerTopY()-(H - 100); cameraTarget = cameraY; fadeT = 0;
 previewIdx = Math.max(0, SKINS.findIndex(s => s.id === skinId));
