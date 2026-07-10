@@ -215,7 +215,12 @@ const SKINS = [
   { id:'mint',   name:'JADE',   rare:'RARE',      cost:180, style:'facet',   base:(i)=>({h:158+(i%3)*8,s:58,l:56}) },
   { id:'neon',   name:'NEON',   rare:'EPIC',      cost:260, style:'glow',    base:(i,hb)=>({h:(hb+i*24)%360,s:98,l:56}) },
   { id:'mono',   name:'FROST',  rare:'EPIC',      cost:320, style:'sparkle', base:(i)=>({h:206,s:36,l:64+(i%4)*5}) },
-  { id:'gold',   name:'GOLD',   rare:'LEGENDARY', cost:600, style:'shimmer', base:(i)=>({h:44,s:86,l:54+(Math.sin(i*.9)*.5+.5)*12}) }
+  { id:'gold',   name:'GOLD',   rare:'LEGENDARY', cost:600, style:'shimmer', base:(i)=>({h:44,s:86,l:54+(Math.sin(i*.9)*.5+.5)*12}) },
+  { id:'ocean',  name:'OCEAN',  rare:'RARE',      cost:220, style:'gloss',   base:(i)=>({h:190+Math.sin(i*.7)*14,s:70,l:52+(i%3)*6}) },
+  { id:'sakura', name:'SAKURA', rare:'EPIC',      cost:420, style:'facet',   base:(i)=>({h:330+(i%3)*8,s:55,l:70}) },
+  { id:'void',   name:'VOID',   rare:'EPIC',      cost:500, style:'glow',    base:(i)=>({h:265+(i%4)*6,s:80,l:38}) },
+  { id:'royal',  name:'ROYAL',  rare:'LEGENDARY', cost:750, style:'stripe',  base:(i)=>(i%2?{h:270,s:65,l:45}:{h:46,s:86,l:56}) },
+  { id:'prism',  name:'PRISM',  rare:'LEGENDARY', cost:900, style:'shimmer', base:(i,hb)=>({h:(hb*2+i*30)%360,s:95,l:60}) }
 ];
 const RARE_COL = { COMMON:'#9FB4C7', RARE:'#5EC8F2', EPIC:'#C77EFF', LEGENDARY:'#FFD75E' };
 let coins = store.get('skystack-coins', 0);
@@ -669,6 +674,10 @@ function land() {
     sfx.land(); sfx.slice(); setExpr('normal', 12);
     burst(offset>0?oR:f.x, towerTopY()-BH/2, 8, f.col, false);
     shake = Math.max(shake, Math.min(cutW*.18, 3.5));
+  }
+  if (!reduceMotion) for (let k = 0; k < 6; k++) {   // landing dust at the block's feet
+    const sideX = (k % 2 ? nx : nx + nw) + (Math.random()-.5)*4;
+    particles.push({ x: sideX, y: towerTopY() - 2, vx: (k%2?-1:1)*(.3+Math.random()*.7), vy: -Math.random()*.5, life: .55, color: 'rgba(255,246,232,0.75)' });
   }
   if (f.golden) { addCoins(10, nx + nw/2, towerTopY()-BH); floaters.push({ text:'GOLDEN X5', x:W/2, y:towerTopY()-BH-16, vy:-.4, life:1.3, color:'#FFE28A' }); sfx.golden(); }
   if (widenNext) { const grow2 = Math.min(14, BASE_W - nw); if (grow2 > 0) { nx -= grow2/2; nw += grow2; nx = clamp(nx, 0, W - nw); } widenNext = false; }
