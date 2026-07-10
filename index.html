@@ -270,6 +270,12 @@ function activeEvent() {
   return null;
 }
 const EV = activeEvent();
+// dev tour: ?tour=1 cycles through every event theme, ~10s each (top-level nav; iframes don't render in some embedded panes)
+if (new URLSearchParams(location.search).get('tour')) {
+  const ids = EVENTS.map(e => e.id);
+  const cur = Math.max(0, ids.indexOf(new URLSearchParams(location.search).get('event')));
+  setTimeout(() => location.replace('index.html?tour=1&event=' + ids[(cur + 1) % ids.length]), 10000);
+}
 if (EV) {
   RARE_COL.EVENT = EV.acc;
   SKINS.push(Object.assign({ rare:'EVENT', cost:0 }, EV.skin));
