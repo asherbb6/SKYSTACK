@@ -483,11 +483,13 @@ function skyColor(h) {
 }
 const lum = c => (c[0]*.299 + c[1]*.587 + c[2]*.114) / 255;
 const TIERS = [
-  { n:10,  name:'ROOFTOPS',     c:'#FF9E5E' },
-  { n:25,  name:'TREETOPS',     c:'#62E8B5' },
-  { n:50,  name:'CLOUD NINE',   c:'#BFE8FF' },
-  { n:75,  name:'JET STREAM',   c:'#5EC8F2' },
-  { n:100, name:'STRATOSPHERE', c:'#C77EFF' },
+  { n:6,   name:'CAVES',        c:'#7A8595' },
+  { n:12,  name:'SURFACE',      c:'#8FD46A' },
+  { n:22,  name:'TREETOPS',     c:'#62E8B5' },
+  { n:34,  name:'ROOFTOPS',     c:'#FF9E5E' },
+  { n:55,  name:'CLOUD NINE',   c:'#BFE8FF' },
+  { n:80,  name:'JET STREAM',   c:'#5EC8F2' },
+  { n:105, name:'STRATOSPHERE', c:'#C77EFF' },
   { n:150, name:'AURORA',       c:'#7EF2C5' },
   { n:200, name:'SPACE',        c:'#8FA8FF' },
   { n:300, name:'ORBIT',        c:'#FFD75E' },
@@ -1492,22 +1494,24 @@ const mixCol = (a, b, t) => 'rgb(' + Math.round(lerp(a[0],b[0],t)) + ',' + Math.
 // bright cloud, thinning blue, a sunset, then night, then out into black space. Each tier's
 // sky is a full-height gradient (top = higher/darker, bottom = lower/lighter horizon).
 const SKY_STOPS = [
-  [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 0 ROOFTOPS   — clear sunny day
-  [[0,'#4A93D6'],[0.5,'#84C2E8'],[1,'#DCEFDE']],                                    // 1 TREETOPS   — warm afternoon
-  [[0,'#6FB0E8'],[0.5,'#A6D2F2'],[1,'#EBF7FF']],                                    // 2 CLOUD NINE — bright, sunlit high
-  [[0,'#1C56AA'],[0.55,'#3E86D0'],[1,'#93C4EC']],                                   // 3 JET STREAM — deep thin-air blue
-  [[0,'#141A4E'],[0.42,'#5A3A86'],[0.7,'#C85E7A'],[0.87,'#F0904E'],[1,'#FFC46A']],  // 4 STRATOSPHERE — sunset / golden hour
-  [[0,'#04081C'],[0.6,'#08152A'],[1,'#0E2740']],                                    // 5 AURORA     — polar night
-  [[0,'#03050F'],[1,'#080E26']],                                                    // 6 SPACE      — deep cosmos
-  [[0,'#02040C'],[1,'#060B20']],                                                    // 7 ORBIT      — black, Earth below
-  [[0,'#0A0620'],[1,'#150B2E']]                                                     // 8 THE STARS  — cosmic summit
+  [[0,'#241C22'],[0.5,'#3A2E33'],[1,'#5A4A48']],                                    // 0 CAVES        — dark earth (walls overpaint in P3)
+  [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 1 SURFACE      — clear sunny day
+  [[0,'#4A93D6'],[0.5,'#84C2E8'],[1,'#DCEFDE']],                                    // 2 TREETOPS     — green-horizon afternoon
+  [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 3 ROOFTOPS     — bright day over the city
+  [[0,'#6FB0E8'],[0.5,'#A6D2F2'],[1,'#EBF7FF']],                                    // 4 CLOUD NINE   — bright, sunlit high
+  [[0,'#1C56AA'],[0.55,'#3E86D0'],[1,'#93C4EC']],                                   // 5 JET STREAM   — deep thin-air blue
+  [[0,'#141A4E'],[0.42,'#5A3A86'],[0.7,'#C85E7A'],[0.87,'#F0904E'],[1,'#FFC46A']],  // 6 STRATOSPHERE — sunset / golden hour
+  [[0,'#04081C'],[0.6,'#08152A'],[1,'#0E2740']],                                    // 7 AURORA       — polar night
+  [[0,'#03050F'],[1,'#080E26']],                                                    // 8 SPACE        — deep cosmos
+  [[0,'#02040C'],[1,'#060B20']],                                                    // 9 ORBIT        — black, Earth below
+  [[0,'#0A0620'],[1,'#150B2E']]                                                     // 10 THE STARS   — cosmic summit
 ];
 // how dark the sky reads at a given height (drives stars/moon/HUD) — night arrives with altitude
 function atmoDark(h) {
-  if (h < 50)  return 0.10;
-  if (h < 75)  return 0.10 + (h - 50) / 25 * 0.13;
-  if (h < 100) return 0.23 + (h - 75) / 25 * 0.42;
-  if (h < 150) return 0.65 + (h - 100) / 50 * 0.28;
+  if (h < 34)  return 0.10;
+  if (h < 55)  return 0.10 + (h - 34) / 21 * 0.13;
+  if (h < 105) return 0.23 + (h - 55) / 50 * 0.42;
+  if (h < 150) return 0.65 + (h - 105) / 45 * 0.28;
   return 0.95;
 }
 // which tier fills the screen + how strongly the neighbour stage bleeds in near a boundary
@@ -1518,12 +1522,25 @@ function currentBiome(cy) {
     wUp: ti < TIERS.length-1 ? clamp((BLEND - (upN - centerA)) / BLEND, 0, 1) : 0,
     wDn: ti > 0             ? clamp((BLEND - (centerA - dnN)) / BLEND, 0, 1) : 0 };
 }
-// the atmospheric backdrop gradient (+ sun), painted early so stars/clouds/structures sit on top
+// altitude (in blocks) -> fractional stage index in [0, TIERS.length-1]. Unlike the old
+// boundary-band blend, this ramps 0->1 across an ENTIRE stage span, so the sky is always in
+// gentle transition and never hard-swaps between stages.
+function stageFloat(A) {
+  for (let i = 0; i < TIERS.length - 1; i++) {
+    const up = TIERS[i].n, dn = i ? TIERS[i - 1].n : 0;
+    if (A < up) return i + (A - dn) / (up - dn);
+  }
+  return TIERS.length - 1;
+}
+// the atmospheric backdrop gradient (+ sun): the base stage sky, with the next stage's sky
+// washing in continuously as you climb through the stage — painted early so stars/clouds/
+// structures sit on top
 function drawBiomeSky(cy, h) {
-  const b = currentBiome(cy);
-  skyWash(SKY_STOPS[b.ti], 1);
-  if (b.wUp > 0) skyWash(SKY_STOPS[b.ti + 1], b.wUp);
-  if (b.wDn > 0) skyWash(SKY_STOPS[b.ti - 1], b.wDn);
+  const centerA = (GROUND_Y - cy - (H - 100)) / BH;
+  const sf = clamp(stageFloat(centerA), 0, TIERS.length - 1);
+  const i = Math.min(sf | 0, TIERS.length - 2), f = sf - i;
+  skyWash(SKY_STOPS[i], 1);
+  if (f > 0) skyWash(SKY_STOPS[i + 1], f);
   drawSun(h);
 }
 // the sun: high & white on the ground, sinking huge and orange into the sunset, gone by night

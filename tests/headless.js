@@ -80,17 +80,17 @@ function check(name, fn) {
 // ---------- fresh-profile context ----------
 const fresh = makeGame();
 check('boots without throwing (fresh profile)', () => fresh.run('booted === true'));
-check('TIERS has 9 stages', () => fresh.run('TIERS.length === 9'));
-check('TIERS names are the 9-stage ladder', () => fresh.run(
-  `JSON.stringify(TIERS.map(t=>t.name)) === JSON.stringify(['ROOFTOPS','TREETOPS','CLOUD NINE','JET STREAM','STRATOSPHERE','AURORA','SPACE','ORBIT','THE STARS'])`));
+check('TIERS has 11 stages', () => fresh.run('TIERS.length === 11'));
+check('TIERS names are the 11-stage continuous world', () => fresh.run(
+  `JSON.stringify(TIERS.map(t=>t.name)) === JSON.stringify(['CAVES','SURFACE','TREETOPS','ROOFTOPS','CLOUD NINE','JET STREAM','STRATOSPHERE','AURORA','SPACE','ORBIT','THE STARS'])`));
 check('every tier has a theme color', () => fresh.run(`TIERS.every(t => /^#[0-9A-F]{6}$/i.test(t.c))`));
 check('fresh profile: prog=0, no active level', () => fresh.run('prog === 0 && runLevel === -1'));
 check('extras picker excludes the campaign mode', () => fresh.run(
   `EXTRAS.length === 4 && !EXTRAS.some(m => m.id === 'level')`));
-check('skyMapNodes: 9 pts + start + gate', () => fresh.run(
-  '(() => { const L = skyMapNodes(); return L.pts.length === 9 && L.start && L.gate; })()'));
+check('skyMapNodes: 11 pts + start + gate', () => fresh.run(
+  '(() => { const L = skyMapNodes(); return L.pts.length === 11 && L.start && L.gate; })()'));
 check('skyMapNodes: badge rows evenly spaced in altitude', () => fresh.run(
-  '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.gate.y === L.pts[8].y - MAP_ROW; })()'));
+  '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.gate.y === L.pts[10].y - MAP_ROW; })()'));
 check('skyMapNodes: trail weaves left/right but stays inside the column', () => fresh.run(
   '(() => { const L = skyMapNodes(); const xs = L.pts.map(p=>p.x); return xs.every(x => x >= L.colX && x <= L.colX + L.colW) && new Set(xs).size > 1; })()'));
 check('skyMapNodes: column centered and inside canvas', () => fresh.run(
@@ -98,7 +98,7 @@ check('skyMapNodes: column centered and inside canvas', () => fresh.run(
 check('openSkyMap clamps scroll and selects the next level', () => fresh.run(
   '(() => { openSkyMap(); return skyMap === true && mapScroll >= 0 && mapScroll <= mapScrollMax && selLevel === 0; })()'));
 check('renderSkyMap runs without throwing (prog=0)', () => { fresh.run('renderSkyMap()'); return true; });
-check('drawStageDeco runs for all 9 stages', () => { fresh.run('for (let i=0;i<9;i++) drawStageDeco(i, 100, 100)'); return true; });
+check('drawStageDeco runs for all 11 stages', () => { fresh.run('for (let i=0;i<TIERS.length;i++) drawStageDeco(i, 100, 100)'); return true; });
 check('renderHome runs without throwing', () => { fresh.run('state="home"; skyMap=false; renderHome()'); return true; });
 
 // ---------- campaign level runs ----------
@@ -115,8 +115,9 @@ check('level win: coins rewarded', () => lv.run('winReward > 0 && coins >= winRe
 check('level win: no endless records written', () => lv.run('best === 0 && bestHeight === 0'));
 check('renderLevelWin runs without throwing', () => { lv.run('winT = 60; renderLevelWin()'); return true; });
 check('win screen NEXT starts the next level', () => lv.run(
-  '(() => { winT = 60; relayout(); pressDown(null); return state === "playing" && runLevel === 1 && runLaunch === 10 && blocks.length === 10; })()'));
-check('level 2 slider is faster than level 0 base', () => lv.run('slider.speed > 1.15'));
+  '(() => { winT = 60; relayout(); pressDown(null); return state === "playing" && runLevel === 1 && runLaunch === 6 && blocks.length === 6; })()'));
+check('a campaign level slider carries the per-level speed bump', () => lv.run(
+  '(() => { const cur = slider.speed; const rl = runLevel; runLevel = 0; spawnSlider(); const base = slider.speed; runLevel = rl; return cur > base; })()'));
 
 // fail path
 lv.run('score = 300; while (blocks.length < 20) blocks.push({x:0,w:96,col:"#fff"});');
@@ -125,7 +126,7 @@ check('failing a level shows the fail screen', () => lv.run('state === "levelfai
 check('level fail: records still untouched', () => lv.run('best === 0 && bestHeight === 0'));
 check('renderLevelFail runs without throwing', () => { lv.run('failT = 60; renderLevelFail()'); return true; });
 check('fail screen RETRY restarts the same level', () => lv.run(
-  '(() => { failT = 60; pressDown(null); return state === "playing" && runLevel === 1 && blocks.length === 10; })()'));
+  '(() => { failT = 60; pressDown(null); return state === "playing" && runLevel === 1 && blocks.length === 6; })()'));
 lv.run('gameOver("fall"); failT = 60; state = "home";');
 
 // second visit is not a first clear
@@ -139,11 +140,11 @@ const vet = makeGame({
   'skystack-height': '60',
   'skystack-best': '900'
 });
-check('prog seeded from lifetime best (60 blocks -> 3 levels)', () => vet.run('prog === 3'));
+check('prog seeded from lifetime best (60 blocks -> 5 levels)', () => vet.run('prog === 5'));
 
 // level runs pre-stack to the previous stage
 vet.run('startLevel(2)');
-check('level 3 pre-stacks to TREETOPS (25 blocks)', () => vet.run('runLaunch === 25 && blocks.length === 25'));
+check('level 3 pre-stacks to SURFACE (12 blocks)', () => vet.run('runLaunch === 12 && blocks.length === 12'));
 check('level 3 skips pre-stacked tiers (tier=2)', () => vet.run('tier === 2'));
 check('level run: pickups pushed above the pre-stack', () => vet.run('nextPickupRow >= blocks.length + 4'));
 check('level run: score starts at 0', () => vet.run('score === 0'));
@@ -178,17 +179,17 @@ const lc = makeGame();
 lc.run('mode = "endless"; resetRun();');
 lc.run('while (blocks.length < 10) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
-check('endless first reach of stage 1: LEVEL CLEAR banner', () => lc.run('bannerText === "LEVEL CLEAR - ROOFTOPS"'));
+check('endless first reach of stage 1: LEVEL CLEAR banner', () => lc.run('bannerText === "LEVEL CLEAR - CAVES"'));
 check('endless first reach of stage 1: prog -> 1', () => lc.run('prog === 1'));
 check('prog persisted to storage', () => lc.mem.get('skystack-tiers') === '1' ? true : 'stored: ' + lc.mem.get('skystack-tiers'));
 lc.run('resetRun(); while (blocks.length < 10) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
-check('endless re-reaching a cleared stage: plain milestone banner', () => lc.run('bannerText === "30M - ROOFTOPS"'));
-lc.run('prog = 8; resetRun(); tier = 8;');
+check('endless re-reaching a cleared stage: plain milestone banner', () => lc.run('bannerText === "18M - CAVES"'));
+lc.run('prog = 10; resetRun(); tier = 10;');
 lc.run('while (blocks.length < 500) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
 check('endless reaching THE STARS first time: SKY CONQUERED banner', () => lc.run('bannerText === "SKY CONQUERED!"'));
-check('game beaten: prog = 9 (all stages)', () => lc.run('prog === 9'));
+check('game beaten: prog = 11 (all stages)', () => lc.run('prog === 11'));
 check('renderSkyMap champion state runs (crown/gate)', () => { lc.run('renderSkyMap()'); return true; });
 check('renderHome conquered state runs', () => { lc.run('state = "home"; renderHome()'); return true; });
 
@@ -200,16 +201,16 @@ tap.run('var __p = {x:0,y:0}; pos = () => __p;');
 tap.run('var __T = (x, y) => { __p = {x:x, y:y}; pressDown({}); pressUp({}); };');
 // center a badge row in the viewport before tapping it (as dragging would)
 tap.run('var __C = (i) => { let L = skyMapNodes(); mapScroll = clamp(mapScroll + ((L.viewTop+L.viewBot)/2 - L.pts[i].y), 0, mapScrollMax); return skyMapNodes(); };');
-check('openSkyMap pre-selects the next level (3)', () => tap.run('selLevel === 3'));
+check('openSkyMap pre-selects the next level (5)', () => tap.run('selLevel === 5'));
 check('map tap: first tap on a cleared badge selects it', () => tap.run(
   '(() => { const L = __C(1); __T(L.pts[1].x, L.pts[1].y); return selLevel === 1 && skyMap === true && state === "home"; })()'));
 check('map tap: second tap on the selected badge launches it', () => tap.run(
-  '(() => { const L = __C(1); __T(L.pts[1].x, L.pts[1].y); return state === "playing" && runLevel === 1 && runLaunch === 10 && skyMap === false; })()'));
+  '(() => { const L = __C(1); __T(L.pts[1].x, L.pts[1].y); return state === "playing" && runLevel === 1 && runLaunch === 6 && skyMap === false; })()'));
 tap.run('gameOver("fall"); failT = 60; state = "home"; openSkyMap();');
 check('map tap: locked badge refuses', () => tap.run(
-  '(() => { const L = __C(6); __T(L.pts[6].x, L.pts[6].y); return selLevel === 3 && skyMap === true; })()'));
+  '(() => { const L = __C(7); __T(L.pts[7].x, L.pts[7].y); return selLevel === 5 && skyMap === true; })()'));
 check('map tap: tapping the pre-selected next badge plays it', () => tap.run(
-  '(() => { const L = __C(3); __T(L.pts[3].x, L.pts[3].y); return state === "playing" && runLevel === 3 && runLaunch === 50; })()'));
+  '(() => { const L = __C(5); __T(L.pts[5].x, L.pts[5].y); return state === "playing" && runLevel === 5 && runLaunch === 55; })()'));
 tap.run('gameOver("fall"); failT = 60; state = "home"; openSkyMap();');
 check('map tap: sealed gate refuses, map stays open', () => tap.run(
   '(() => { mapScroll = mapScrollMax; const L = skyMapNodes(); __T(L.gate.x, L.gate.y); return skyMap === true && state === "home"; })()'));
@@ -218,9 +219,9 @@ check('map tap: empty space does not close or select', () => tap.run(
 check('map tap: header tap closes the map', () => tap.run(
   '(() => { __T(Math.round(W/2), 20); return skyMap === false; })()'));
 check('map drag: scrolls without selecting or launching', () => tap.run(
-  '(() => { openSkyMap(); const s0 = mapScroll; const L = skyMapNodes(); __p = {x:L.colX+3, y:L.pts[1].y}; pressDown({}); __p = {x:L.colX+3, y:L.pts[1].y + 40}; pressMove({}); pressUp({}); return mapScroll !== s0 && selLevel === 3 && state === "home" && skyMap === true; })()'));
+  '(() => { openSkyMap(); const s0 = mapScroll; const L = skyMapNodes(); __p = {x:L.colX+3, y:L.pts[1].y}; pressDown({}); __p = {x:L.colX+3, y:L.pts[1].y + 40}; pressMove({}); pressUp({}); return mapScroll !== s0 && selLevel === 5 && state === "home" && skyMap === true; })()'));
 check('map renders the redesigned winding trail at every scroll', () => {
-  const r = makeGame({ 'skystack-height': '900', 'skystack-tiers': '9' });   // champion: gate open
+  const r = makeGame({ 'skystack-height': '900', 'skystack-tiers': '11' });   // champion: gate open
   r.run('state = "home"; openSkyMap();');
   r.run('for (let s = 0; s <= mapScrollMax; s += 40) { mapScroll = s; renderSkyMap(); }');
   return true;
@@ -231,7 +232,7 @@ check('liteHex lightens a hex color toward white', () => tap.run('liteHex("#0000
 check('drawMapDecor + drawIsland run for every stage without throwing', () => {
   const r = makeGame({ 'skystack-height': '200', 'skystack-tiers': '6' });
   r.run('state = "home"; openSkyMap();');
-  r.run('const L = skyMapNodes(); drawMapDecor(L, 100); for (let i = 0; i < 9; i++) drawIsland(i, W/2, 100 + i);');
+  r.run('const L = skyMapNodes(); drawMapDecor(L, 100); for (let i = 0; i < TIERS.length; i++) drawIsland(i, W/2, 100 + i);');
   return true;
 });
 check('map helpers exist (mapNode3D, dkHex, openSkyMap, mapTapAt, drawIsland, mapBadge)', () => tap.run(
@@ -293,8 +294,8 @@ check('fail RETRY starts a fresh run with the revive back', () => lr.run(
 // ---------- stage clear celebration screen ----------
 const cel = makeGame();
 cel.run('winStars = 3; winReward = 40; winFirst = true; runLaunch = 0; runPerfects = 5; state = "levelwin";');
-check('themed win screen renders for all 9 stages at every phase', () => {
-  cel.run('for (let i = 0; i < 9; i++) { runLevel = i; for (const t of [5, 20, 40, 70, 120]) { winT = t; renderLevelWin(); } }');
+check('themed win screen renders for all 11 stages at every phase', () => {
+  cel.run('for (let i = 0; i < TIERS.length; i++) { runLevel = i; for (const t of [5, 20, 40, 70, 120]) { winT = t; renderLevelWin(); } }');
   return true;
 });
 check('drawStageDecoScaled helper exists', () => cel.run('typeof drawStageDecoScaled === "function"'));
@@ -318,14 +319,14 @@ check('quitting never offers revive', () => nx.run('reviveOffered === false'));
 
 // ---------- home screen ----------
 const home = makeGame({ 'skystack-height': '60' });
-check('home: next-level card shows LEVEL 4', () => {
+check('home: next-level card shows LEVEL 6', () => {
   home.run('mode = "endless"; state = "home";');
   home.run('var __texts = []; var __txt0 = txt; txt = function(t,...a){ __texts.push(String(t)); return __txt0(t,...a); };');
   home.run('renderHome()');
-  return home.run('__texts.some(t => t === "LEVEL 4 - JET STREAM") && __texts.some(t => t === "EXTRA MODES")');
+  return home.run('__texts.some(t => t === "LEVEL 6 - JET STREAM") && __texts.some(t => t === "EXTRA MODES")');
 });
 check('home PLAY starts the next level', () => home.run(
-  '(() => { const p = {x: PLAY_BTN.x + 5, y: PLAY_BTN.y + 5}; pos = () => p; pressDown({}); return state === "playing" && runLevel === 3 && runLaunch === 50; })()'));
+  '(() => { const p = {x: PLAY_BTN.x + 5, y: PLAY_BTN.y + 5}; pos = () => p; pressDown({}); return state === "playing" && runLevel === 5 && runLaunch === 55; })()'));
 
 // ---------- dynamic difficulty (skill-adaptive assist) ----------
 const dd = makeGame();   // fresh profile: skill defaults to 0.35
@@ -336,7 +337,7 @@ check('assist widens the perfect window; assist 0 == base window', () => dd.run(
 check('assist slows the slider vs no assist', () => dd.run(
   '(() => { assist = 0; spawnSlider(); const fast = slider.speed; assist = 0.5; spawnSlider(); const slow = slider.speed; return slow < fast; })()'));
 check('assistFloor stays within [0,0.5]', () => dd.run('assistFloor() >= 0 && assistFloor() <= 0.5'));
-check('drawStageWeather runs for all 9 stages without throwing', () => { dd.run('for (let i=0;i<9;i++) drawStageWeather(i, W/2, 100, 50)'); return true; });
+check('drawStageWeather runs for all 11 stages without throwing', () => { dd.run('for (let i=0;i<TIERS.length;i++) drawStageWeather(i, W/2, 100, 50)'); return true; });
 dd.run('mode = "pure"; resetRun();');
 check('PURE mode runs with no assist', () => dd.run('assist === 0'));
 dd.run('mode = "daily"; resetRun();');
@@ -361,13 +362,13 @@ check('biome helpers exist (drawBiomeDecor, biomeSprite)', () => bio.run(
   'typeof drawBiomeDecor === "function" && typeof biomeSprite === "function"'));
 check('layered biome helpers exist (biomeBackdrop, biomeWeather, skyWash, biomeTierAt, bhash)', () => bio.run(
   '["biomeBackdrop","biomeWeather","skyWash","biomeTierAt","bhash","ringFrame"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function")'));
-check('biomeSprite renders for all 9 tiers without throwing', () => { bio.run('for (let i=0;i<9;i++) biomeSprite(i, 50, 100, i, 40)'); return true; });
+check('biomeSprite renders for all 11 tiers without throwing', () => { bio.run('for (let i=0;i<TIERS.length;i++) biomeSprite(i, 50, 100, i, 40)'); return true; });
 check('biomeBackdrop renders every tier at full + faded alpha without throwing', () => {
-  bio.run('for (let i=0;i<9;i++) { biomeBackdrop(i, -1000, 1); biomeBackdrop(i, -6000, 0.4); }'); return true; });
+  bio.run('for (let i=0;i<TIERS.length;i++) { biomeBackdrop(i, -1000, 1); biomeBackdrop(i, -6000, 0.4); }'); return true; });
 check('biomeWeather runs for every tier without throwing', () => {
-  bio.run('for (let i=0;i<9;i++) biomeWeather(i, -2000, 1, 40)'); return true; });
+  bio.run('for (let i=0;i<TIERS.length;i++) biomeWeather(i, -2000, 1, 40)'); return true; });
 check('biomeTierAt maps altitude to the SKY MAP stage', () => bio.run(
-  'biomeTierAt(0) === 0 && biomeTierAt(9) === 0 && biomeTierAt(10) === 1 && biomeTierAt(149) === 5 && biomeTierAt(499) === 8 && biomeTierAt(9999) === 8'));
+  'biomeTierAt(0) === 0 && biomeTierAt(5) === 0 && biomeTierAt(6) === 1 && biomeTierAt(12) === 2 && biomeTierAt(22) === 3 && biomeTierAt(149) === 7 && biomeTierAt(499) === 10 && biomeTierAt(9999) === 10'));
 check('bhash is deterministic and in [0,1)', () => bio.run(
   'bhash(7) === bhash(7) && bhash(7) >= 0 && bhash(7) < 1 && bhash(7) !== bhash(8)'));
 check('drawBiomeDecor runs across the whole climb without throwing', () => {
@@ -378,11 +379,14 @@ check('drawBiomeDecor runs across the whole climb without throwing', () => {
 check('sky helpers exist (drawBiomeSky, drawSun, atmoDark, currentBiome, SKY_STOPS)', () => bio.run(
   '["drawBiomeSky","drawSun","atmoDark","currentBiome","cityBuilding","forestTree","foliageBlob"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function") && Array.isArray(SKY_STOPS)'));
 check('SKY_STOPS has a gradient (>=2 stops) for every tier', () => bio.run(
-  'SKY_STOPS.length === 9 && SKY_STOPS.every(g => Array.isArray(g) && g.length >= 2 && g.every(st => st.length === 2))'));
+  'SKY_STOPS.length === 11 && SKY_STOPS.every(g => Array.isArray(g) && g.length >= 2 && g.every(st => st.length === 2))'));
+check('SKY_STOPS is index-aligned to the 11 stages', () => bio.run('SKY_STOPS.length === 11'));
+check('stageFloat blends smoothly across whole stages', () => bio.run(
+  'typeof stageFloat === "function" && stageFloat(0) === 0 && stageFloat(3) === 0.5 && stageFloat(6) === 1 && stageFloat(60) > stageFloat(40) && stageFloat(9999) === TIERS.length - 1'));
 check('atmoDark rises from a bright day to a dark space', () => bio.run(
   'atmoDark(5) < 0.2 && atmoDark(300) > 0.9 && atmoDark(90) > atmoDark(40)'));
 check('currentBiome returns tier + cross-fade weights in [0,1]', () => bio.run(
-  '(() => { const b = currentBiome(GROUND_Y - 40*BH - (H-100)); return b.ti >= 0 && b.ti < 9 && b.wUp >= 0 && b.wUp <= 1 && b.wDn >= 0 && b.wDn <= 1; })()'));
+  '(() => { const b = currentBiome(GROUND_Y - 40*BH - (H-100)); return b.ti >= 0 && b.ti < TIERS.length && b.wUp >= 0 && b.wUp <= 1 && b.wDn >= 0 && b.wDn <= 1; })()'));
 check('drawBiomeSky + drawSun render across the whole climb without throwing', () => {
   bio.run('for (let a = 0; a < 520; a += 24) { drawBiomeSky(GROUND_Y - a*BH - (H-100), a); drawSun(a); }');
   return true;
@@ -393,15 +397,15 @@ check('drawBlock renders every skin style without throwing', () => {
 });
 check('every skin base() yields a valid HSL colour drawBlock can use', () => bio.run(
   'SKINS.every(sk => { const c = sk.base(3, 120); return typeof c.h === "number" && c.s >= 0 && c.s <= 100 && c.l >= 0 && c.l <= 100; })'));
-check('a campaign level starts in its tier biome (level 6 -> AURORA band)', () => {
+check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () => {
   const bl = makeGame({ 'skystack-height': '900' });   // everything unlocked
-  bl.run('startLevel(5)');   // level 6 = AURORA (index 5)
+  bl.run('startLevel(7)');   // level 8 = AURORA (index 7)
   return bl.run('(() => { const A = blocks.length; const ti = TIERS.findIndex(t => A < t.n); return TIERS[ti].name === "AURORA"; })()');
 });
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v34', () => /const CACHE = 'skystack-v34'/.test(sw));
+check('sw.js cache bumped to v35', () => /const CACHE = 'skystack-v35'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
