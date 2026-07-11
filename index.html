@@ -399,13 +399,15 @@ function drawEventFx(menu) {
 
 // ---------- modes ----------
 const MODES = [
+  { id:'level',   name:'LEVELS',  blurb:'CLIMB THE SKY',       desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true },
   { id:'endless', name:'ENDLESS', blurb:'CLIMB FOREVER',       desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true },
   { id:'time',    name:'TIME 60', blurb:'RUSH 60 SECONDS',     desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600 },
   { id:'pure',    name:'PURE',    blurb:'SKILL ONLY - 1.5X',   desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5 },
   { id:'daily',   name:'DAILY',   blurb:'SAME RUN FOR ALL',    desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true }
 ];
+const EXTRAS = MODES.filter(m => !m.hidden);   // the picker: side modes, not the main climb
 let mode = store.get('skystack-mode', 'endless');
-if (!MODES.find(m => m.id === mode)) { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
+if (!MODES.find(m => m.id === mode) || mode === 'level') { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
 const curMode = () => MODES.find(m => m.id === mode) || MODES[0];
 let modePicker = false;
 let skyMap = false;
@@ -423,10 +425,15 @@ function saveStats() { store.set('skystack-stats', stats); }
 let lvl = store.get('skystack-lv', { level: 1, xp: 0 });
 const xpNeed = () => lvl.level * 100;
 let best = store.get('skystack-best', 0), bestHeight = store.get('skystack-height', 0);
-// level ladder: prog = stages cleared (checkpoint unlocks), launch = selected start stage (-1 = ground)
+// campaign: prog = levels cleared, levelStars = best star rating per level (0-3).
+// A level starts pre-stacked at the previous stage and is won at its own stage height.
 let prog = store.get('skystack-tiers', 0);
-let launch = store.get('skystack-launch', -1);
-let runLaunch = 0;   // blocks pre-stacked for the current run (0 = full run, records count)
+let levelStars = store.get('skystack-levelstars', []);
+let pendingLevel = -1;   // level chosen on the map, consumed by the next resetRun
+let runLevel = -1;       // active level for the current run (-1 = free modes)
+let runLaunch = 0;       // blocks pre-stacked for the current run (0 = full ground-up run)
+let selLevel = 0;        // map selection (session only)
+let winT = 0, failT = 0, winStars = 0, winReward = 0, winFirst = false;
 
 const ACH = [
   { id:'first',   name:'FIRST FLIGHT',   chk:()=>stats.games>=1 },
@@ -484,7 +491,8 @@ const TIERS = [
   { n:500, name:'THE STARS',    c:'#FFF6E8' }
 ];
 prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed unlocks from lifetime best
-if (launch >= prog) launch = -1;                                      // never launch from a locked stage
+const levelStartN = i => i <= 0 ? 0 : TIERS[i-1].n;                   // level i climbs levelStartN(i) -> TIERS[i].n
+function startLevel(i) { pendingLevel = i; mode = 'level'; startRun(); }
 
 // ---------- power-ups ----------
 const POW = {
@@ -560,8 +568,9 @@ function resetRun() {
   const m = curMode();
   if (m.daily) { rnd = mulberry32((todayKey() ^ 0x9E3779B9) >>> 0); hueBase = rnd() * 360; }
   else { rnd = Math.random; hueBase = Math.random() * 360; }
-  // checkpoint launch: pre-stack the tower to the chosen stage height (ENDLESS only)
-  runLaunch = (m.id === 'endless' && launch >= 0 && launch < prog) ? TIERS[launch].n : 0;
+  // campaign level: pre-stack the tower to the level's start height
+  runLevel = m.id === 'level' ? pendingLevel : -1; pendingLevel = -1;
+  runLaunch = runLevel >= 0 ? levelStartN(runLevel) : 0;
   blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
   for (let i = 1; i < runLaunch; i++) blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col: blockCol(i) });
   debris = []; particles = []; floaters = []; trails = []; coinFx = []; pickups = [];
@@ -606,6 +615,7 @@ function spawnSlider() {
   const top = blocks[blocks.length - 1];
   const fromLeft = blocks.length % 2 === 1;
   let speed = Math.min(1.15 + blocks.length * 0.028, 3.2);
+  if (runLevel >= 0) speed = Math.min(speed * (1 + runLevel * 0.04), 3.6);   // each level is a notch meaner
   if (slowBlocks > 0) { speed *= 0.55; slowBlocks--; }
   if (auraBlocks > 0) auraBlocks--;
   const SR = slideRange();
@@ -804,6 +814,7 @@ function afterPlace(f, updateBalance, placedCenter) {
   maybeSpawnBalloon();
   if (balloon && !balloon.away && blocks.length > balloon.row + 1) balloon.away = 0.01;   // missed — it escapes upward
   const h = blocks.length;
+  if (runLevel >= 0 && h >= TIERS[runLevel].n) { levelComplete(); return; }   // campaign goal reached
   if (tier < TIERS.length && h >= TIERS[tier].n) {
     const t = TIERS[tier]; bannerText = t.n*METERS_PER + 'M - ' + t.name; bannerT = 1;
     let reward = 5 + tier * 3;
@@ -818,13 +829,61 @@ function afterPlace(f, updateBalance, placedCenter) {
     sfx.milestone(); tier++;
   }
   const bh2 = bestBlocksFor(mode);
-  if (!runLaunch && h > bh2 && !newHeight && bh2 > 0) {
+  if (!runLaunch && runLevel < 0 && h > bh2 && !newHeight && bh2 > 0) {
     newHeight = true;
     floaters.push({ text:'NEW BEST!', x:W/2, y:towerTopY()+2, vy:-.3, life:1.6, color:'#62E8B5' });
     burst(W/2, towerTopY(), 16, f.col, true); shake = Math.max(shake, 3); hapt([15,25,15]);
   }
 }
 
+// missions, XP and achievements settle at the end of every run (win or loss)
+function settleRun(xpBonus) {
+  completedThisRun = [];
+  let changed = false;
+  for (let i = 0; i < missions.length; i++) {
+    const mm = missions[i], def = MDEF[mm.key];
+    if (def.achieve() >= mm.target) {
+      completedThisRun.push({ text: def.text(mm.target), reward: mm.reward });
+      coins += mm.reward; stats.coins += mm.reward; store.set('skystack-coins', coins);
+      missions[i] = newMission(missions.map(x => x.key)); changed = true;
+    }
+  }
+  if (completedThisRun.length) sfx.mission();
+  if (changed) store.set('skystack-missions', missions);
+  // XP + level (only the blocks YOU placed count, not the pre-stack)
+  xpThisRun = Math.max(1, Math.round(score / 10) + (blocks.length - runLaunch) + (xpBonus || 0));
+  lvl.xp += xpThisRun; levelUpsThisRun = 0;
+  while (lvl.xp >= xpNeed()) { lvl.xp -= xpNeed(); lvl.level++; levelUpsThisRun++; coins += 25; stats.coins += 25; }
+  if (levelUpsThisRun) { sfx.levelup(); store.set('skystack-coins', coins); }
+  store.set('skystack-lv', lvl);
+  achThisRun = [];
+  for (const a of ACH) {
+    if (achDone.indexOf(a.id) === -1 && a.chk()) {
+      achDone.push(a.id); achThisRun.push(a.name);
+      coins += 25; stats.coins += 25;
+    }
+  }
+  if (achThisRun.length) { store.set('skystack-ach', achDone); store.set('skystack-coins', coins); sfx.unlock(); }
+  saveStats();
+}
+// campaign level goal reached mid-run: freeze the run and celebrate
+function levelComplete() {
+  const i = runLevel;
+  state = 'levelwin'; winT = 0;
+  faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; paused = false; dropPending = 0;
+  const placed = Math.max(1, blocks.length - runLaunch);
+  const ratio = runPerfects / placed;                       // stars reward precision, not luck
+  winStars = 1 + (ratio >= .2 ? 1 : 0) + (ratio >= .45 ? 1 : 0);
+  winFirst = i + 1 > prog;
+  if (winFirst) { prog = i + 1; store.set('skystack-tiers', prog); }
+  if (winStars > (levelStars[i] || 0)) { levelStars[i] = winStars; store.set('skystack-levelstars', levelStars); }
+  winReward = 15 + i * 10 + winStars * 5 + (winFirst ? 25 : 0) + (winFirst && prog === TIERS.length ? 200 : 0);
+  coins += winReward; stats.coins += winReward; store.set('skystack-coins', coins);
+  stats.games++;
+  stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
+  settleRun(20);
+  sfx.milestone(); sfx.unlock(); hapt([20, 30, 20, 30, 40]);
+}
 function gameOver(cause) {
   state = 'gameover'; faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; paused = false; dropPending = 0;
   overCause = cause || 'miss';
@@ -834,7 +893,7 @@ function gameOver(cause) {
   else sfx.over();
   stats.games++;
   stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
-  if (!runLaunch) {   // records are for full ground-up runs; checkpoint runs clear levels instead
+  if (!runLaunch && runLevel < 0) {   // records are for full ground-up free runs, never level attempts
     if (score > best) { best = score; newBest = true; store.set('skystack-best', best); }
     if (blocks.length > bestHeight) { bestHeight = blocks.length; store.set('skystack-height', bestHeight); }
     const rec = modeBests[mode] || { blocks: 0, score: 0 };
@@ -851,35 +910,8 @@ function gameOver(cause) {
     stats.streakBest = Math.max(stats.streakBest, daily.streak);
     store.set('skystack-daily', daily);
   }
-  // missions
-  completedThisRun = [];
-  let changed = false;
-  for (let i = 0; i < missions.length; i++) {
-    const mm = missions[i], def = MDEF[mm.key];
-    if (def.achieve() >= mm.target) {
-      completedThisRun.push({ text: def.text(mm.target), reward: mm.reward });
-      coins += mm.reward; stats.coins += mm.reward; store.set('skystack-coins', coins);
-      missions[i] = newMission(missions.map(x => x.key)); changed = true;
-    }
-  }
-  if (completedThisRun.length) sfx.mission();
-  if (changed) store.set('skystack-missions', missions);
-  // XP + level
-  xpThisRun = Math.max(1, Math.round(score / 10) + blocks.length);
-  lvl.xp += xpThisRun; levelUpsThisRun = 0;
-  while (lvl.xp >= xpNeed()) { lvl.xp -= xpNeed(); lvl.level++; levelUpsThisRun++; coins += 25; stats.coins += 25; }
-  if (levelUpsThisRun) { sfx.levelup(); store.set('skystack-coins', coins); }
-  store.set('skystack-lv', lvl);
-  // achievements (one-time, +25 each)
-  achThisRun = [];
-  for (const a of ACH) {
-    if (achDone.indexOf(a.id) === -1 && a.chk()) {
-      achDone.push(a.id); achThisRun.push(a.name);
-      coins += 25; stats.coins += 25;
-    }
-  }
-  if (achThisRun.length) { store.set('skystack-ach', achDone); store.set('skystack-coins', coins); sfx.unlock(); }
-  saveStats();
+  settleRun(0);
+  if (runLevel >= 0) { state = 'levelfail'; failT = 0; }    // campaign attempts get their own screen
 }
 function burst(x, y, n, col, gold) {
   const cnt = reduceMotion ? Math.ceil(n/2) : n;
@@ -922,7 +954,8 @@ function shareScore() {
 const PAD = 6;
 const NAV_H = 20;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, PLAY_BTN, MISS_PANEL, INSTALL_BTN,
-    SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN;
+    SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
+    WIN_ROWS, FAIL_ROWS;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
@@ -936,8 +969,14 @@ function relayout() {
   MODE_BTN = { x:Math.max(2, W/2-76), y:70, w:112, h:20 };
   MAP_BTN = { x:Math.min(W-38, W/2+40), y:70, w:36, h:20 };
   const pickW = Math.min(W - 24, 240);
-  PICK_ROWS = MODES.map((m, i) => ({ x: Math.round((W-pickW)/2), y:74 + i*44, w:pickW, h:40, id:m.id }));
+  PICK_ROWS = EXTRAS.map((m, i) => ({ x: Math.round((W-pickW)/2), y:74 + i*44, w:pickW, h:40, id:m.id }));
   PLAY_BTN = { x:W/2-50, y:130, w:100, h:30 };
+  // level win / fail screens: fat centered button rows
+  const rowW = Math.min(W - 40, 180);
+  WIN_ROWS = ['next','retry','map'].map((id, i) =>
+    ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.58) + i*26, w: rowW, h: 20 }));
+  FAIL_ROWS = ['retry','map','home'].map((id, i) =>
+    ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) + i*26, w: rowW, h: 20 }));
   const missW = Math.min(W - PAD*2, 200);
   MISS_PANEL = { x: Math.round((W-missW)/2), y:H-114, w:missW, h:44 };   // centered, capped on wide screens
   INSTALL_BTN = { x:W/2-42, y:H-58, w:84, h:14 };
@@ -1013,7 +1052,7 @@ function pressDown(e) {
   if (paused) {
     if (p) for (const rw of PAUSE_ROWS) if (inR(p, rw, 2)) {
       if (rw.id === 'resume') { paused = false; sfx.resume(); }
-      else if (rw.id === 'restart') { sfx.tap(); startRun(); }
+      else if (rw.id === 'restart') { sfx.tap(); if (runLevel >= 0) startLevel(runLevel); else startRun(); }
       else if (rw.id === 'sound') { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); }
       else if (rw.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
       else if (rw.id === 'quit') { paused = false; gameOver('quit'); }
@@ -1023,21 +1062,41 @@ function pressDown(e) {
   }
   if (state === 'splash') { state = 'home'; fadeT = 1; musicNext = 0; sfx.tap(); tryFullscreen(); return; }
   if (state === 'home') {
-    if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker) startRun(); return; }
+    if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker) startLevel(Math.min(prog, TIERS.length - 1)); return; }
     if (skyMap) {
       // the map scrolls: a press starts a drag, selection happens on release (pressUp)
       mapDrag = { y: p.y, scroll: mapScroll, moved: false };
       return;
     }
-    if (modePicker) {                                  // picker overlay swallows all input
-      for (const rw of PICK_ROWS) if (inR(p, rw, 2)) { mode = rw.id; store.set('skystack-mode', mode); modePicker = false; sfx.tap(); return; }
+    if (modePicker) {                                  // extras picker: tapping a mode plays it
+      for (const rw of PICK_ROWS) if (inR(p, rw, 2)) { mode = rw.id; store.set('skystack-mode', mode); modePicker = false; sfx.tap(); startRun(); return; }
       modePicker = false; sfx.tap(); return;           // tap anywhere else closes
     }
     if (navHit(p)) return;
     if (deferredPrompt && inR(p, INSTALL_BTN, 3)) { const dp = deferredPrompt; deferredPrompt = null; try { dp.prompt(); } catch (err) {} return; }
     if (inR(p, MODE_BTN, 4)) { modePicker = true; sfx.tap(); return; }
     if (inR(p, MAP_BTN, 4)) { openSkyMap(); sfx.tap(); return; }
-    if (inR(p, PLAY_BTN, 4)) { startRun(); return; }
+    if (inR(p, PLAY_BTN, 4)) { startLevel(Math.min(prog, TIERS.length - 1)); return; }
+  } else if (state === 'levelwin') {
+    if (winT < 24) return;                             // let the celebration land before taps count
+    if (!p) { if (runLevel + 1 < TIERS.length) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; } return; }
+    for (const rw of WIN_ROWS) if (inR(p, rw, 3)) {
+      if (rw.id === 'next') { if (runLevel + 1 < TIERS.length) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; openSkyMap(); } }
+      else if (rw.id === 'retry') startLevel(runLevel);
+      else { state = 'home'; fadeT = 1; openSkyMap(); }
+      sfx.tap(); return;
+    }
+    return;
+  } else if (state === 'levelfail') {
+    if (failT < 24) return;
+    if (!p) { startLevel(runLevel); return; }
+    for (const rw of FAIL_ROWS) if (inR(p, rw, 3)) {
+      if (rw.id === 'retry') startLevel(runLevel);
+      else if (rw.id === 'map') { state = 'home'; fadeT = 1; openSkyMap(); }
+      else { state = 'home'; fadeT = 1; }
+      sfx.tap(); return;
+    }
+    return;
   } else if (state === 'shop') {
     if (!p) return;
     if (navHit(p)) return;
@@ -1123,6 +1182,8 @@ function update(dt) {
   if (coinPop > 0) coinPop = Math.max(0, coinPop - .05*dt);
   if (fadeT > 0) fadeT = Math.max(0, fadeT - .06*dt);
   if (overLock > 0) overLock -= dt;
+  if (state === 'levelwin') winT += dt;
+  if (state === 'levelfail') failT += dt;
   if (toastT > 0) toastT = Math.max(0, toastT - .014*dt);
   if (mascot.hop > 0) mascot.hop = Math.max(0, mascot.hop - .06*dt);
   if (mascot.exprT > 0) { mascot.exprT -= dt; if (mascot.exprT <= 0 && state !== 'gameover') mascot.expr = 'normal'; }
@@ -1386,6 +1447,8 @@ function render() {
   else if (state === 'shop') { renderShop(); drawNav(); }
   else if (state === 'me') { renderMe(); drawNav(); }
   else if (state === 'gameover') renderGameOver();
+  else if (state === 'levelwin') renderLevelWin();
+  else if (state === 'levelfail') renderLevelFail();
   else renderHUD(h);
 
   if (paused && (state === 'playing' || state === 'dropping')) renderPause();
@@ -1534,23 +1597,27 @@ function renderHome() {
   }
   txt(tag, W/2, 52+bob, 1, EV ? EV.acc : '#FFD75E', 'center');
 
-  // one fat finger-friendly mode button -> full picker
-  ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(MODE_BTN.x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h);
-  ctx.fillStyle = uiA(0.6); ctx.fillRect(MODE_BTN.x, MODE_BTN.y, MODE_BTN.w, 1);
-  txt('MODE: ' + curMode().name, MODE_BTN.x + MODE_BTN.w/2 - 5, MODE_BTN.y + 7, 1, UI_HEX(), 'center');
+  // EXTRAS (side modes) + SKY MAP buttons share the row
+  plate3D(MODE_BTN.x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h, 'rgba(0,0,0,0.32)', uiA(0.6));
+  txt('EXTRA MODES', MODE_BTN.x + MODE_BTN.w/2 - 5, MODE_BTN.y + 7, 1, UI_HEX(), 'center');
   txt('>', MODE_BTN.x + MODE_BTN.w - 10, MODE_BTN.y + 7, 1, 'rgba(255,246,232,0.7)', 'left');
-  ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(MAP_BTN.x, MAP_BTN.y, MAP_BTN.w, MAP_BTN.h);
-  ctx.fillStyle = uiA(0.6); ctx.fillRect(MAP_BTN.x, MAP_BTN.y, MAP_BTN.w, 1);
+  plate3D(MAP_BTN.x, MAP_BTN.y, MAP_BTN.w, MAP_BTN.h, 'rgba(0,0,0,0.32)', uiA(0.6));
   txt('MAP', MAP_BTN.x + MAP_BTN.w/2, MAP_BTN.y + 7, 1, UI_HEX(), 'center');
-  txt(curMode().blurb, W/2, 96, 1, 'rgba(255,246,232,0.75)', 'center');
-  if (mode === 'endless' && launch >= 0 && launch < prog)
-    txt('LAUNCH: ' + TIERS[launch].name + ' ' + TIERS[launch].n*METERS_PER + 'M', W/2, 118, 1, '#FFD75E', 'center');
-  if (mode === 'daily' && daily.streak > 0) txt('STREAK ' + daily.streak + ' - TODAY ' + daily.best*METERS_PER + 'M', W/2, 106, 1, '#FF9E5E', 'center');
-  else if (bestBlocksFor(mode) > 0) txt('BEST ' + bestBlocksFor(mode)*METERS_PER + 'M' + (bestScoreFor(mode) > 0 ? ' - ' + fmtPts(bestScoreFor(mode)) + ' PTS' : ''), W/2, 106, 1, 'rgba(255,246,232,0.55)', 'center');
+  // the main climb: next level card
+  const nl = Math.min(prog, TIERS.length - 1), nt = TIERS[nl];
+  const conquered = prog >= TIERS.length;
+  if (conquered) {
+    txt('SKY CONQUERED!', W/2, 96, 1, '#FFD75E', 'center');
+    txt('REPLAY ANY LEVEL ON THE MAP', W/2, 106, 1, 'rgba(255,246,232,0.6)', 'center');
+  } else {
+    txt('LEVEL ' + (nl+1) + ' - ' + nt.name, W/2, 96, 1, nt.c, 'center');
+    const starSum = levelStars.reduce((a,b)=>a+(b||0),0);
+    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? ' - STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, 106, 1, 'rgba(255,246,232,0.6)', 'center');
+  }
+  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, 119, 1, k < (levelStars[nl] || 0));
 
   const pulse = beatPulse();   // PLAY breathes on the music's bar
-  ctx.fillStyle = playA(.55+pulse*.35); ctx.fillRect(PLAY_BTN.x, PLAY_BTN.y, PLAY_BTN.w, PLAY_BTN.h);
-  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(PLAY_BTN.x, PLAY_BTN.y, PLAY_BTN.w, 1);
+  plate3D(PLAY_BTN.x, PLAY_BTN.y, PLAY_BTN.w, PLAY_BTN.h, playA(.55+pulse*.35));
   txt('PLAY', W/2, PLAY_BTN.y+9, 2, EV ? '#141414' : '#08301F', 'center');
   // armed boosts indicator (centered icons under PLAY)
   const armed = LOADOUT.filter(l => loadout[l.id]);
@@ -1645,15 +1712,15 @@ function renderPause() {
   txt('YOUR RUN IS WAITING', W/2, PAUSE_ROWS[PAUSE_ROWS.length-1].y + 28, 1, 'rgba(255,246,232,0.45)', 'center');
 }
 
-// ---------- sky map (level ladder: cleared stages are launch pads, next pulses) ----------
-// list layout: one generous row per stage on a straight climbing trail down a
+// ---------- sky map (level select: one row per level, drag-scrolls, footer launches) ----------
+// list layout: one generous row per level on a straight climbing trail down a
 // centered column; the list drag-scrolls whenever it is taller than the screen
 const MAP_ROW = 30, MAP_HEAD = 40, MAP_FOOT = 34;
 function skyMapNodes() {
   const viewTop = MAP_HEAD + 4, viewBot = H - MAP_FOOT - 4;
   const colW = Math.min(W - 12, 288), colX = Math.round((W - colW) / 2);
   const n = TIERS.length;
-  const contentH = (n + 2) * MAP_ROW;                       // start + stages + gate
+  const contentH = (n + 2) * MAP_ROW;                       // ground + levels + gate
   mapScrollMax = Math.max(0, contentH - (viewBot - viewTop));
   mapScroll = clamp(mapScroll, 0, mapScrollMax);
   const base = mapScrollMax > 0
@@ -1667,6 +1734,7 @@ function skyMapNodes() {
 }
 function openSkyMap() {   // focus the view on the next goal
   skyMap = true; mapDrag = null; mapScroll = 0;
+  selLevel = Math.min(prog, TIERS.length - 1);
   const L = skyMapNodes();                                  // computes mapScrollMax
   const k = Math.min(prog, TIERS.length) + 1;               // row index of the next goal / gate
   mapScroll = clamp(k * MAP_ROW - (L.viewBot - L.viewTop) / 2 + MAP_ROW, 0, mapScrollMax);
@@ -1674,14 +1742,18 @@ function openSkyMap() {   // focus the view on the next goal
 // a tap (pointerup without drag) on the open map
 function mapTapAt(p) {
   const L = skyMapNodes();
-  if (mode === 'endless' && p.x >= L.colX && p.x <= L.colX + L.colW) {
+  if (p.y <= MAP_HEAD) { skyMap = false; sfx.tap(); return; }               // header closes
+  if (p.y >= H - MAP_FOOT) {                                                // footer launches the selection
+    if (selLevel >= 0 && selLevel <= Math.min(prog, TIERS.length - 1)) { skyMap = false; startLevel(selLevel); }
+    return;
+  }
+  if (p.x >= L.colX && p.x <= L.colX + L.colW) {
     const inView = y2 => y2 > L.viewTop - 2 && y2 < L.viewBot + 2;
-    if (inView(L.start.y) && Math.abs(p.y - L.start.y) <= 14) {
-      launch = -1; store.set('skystack-launch', launch); sfx.tap(); return;
-    }
     for (let i = 0; i < TIERS.length; i++) if (inView(L.pts[i].y) && Math.abs(p.y - L.pts[i].y) <= 14) {
-      if (i < prog) { launch = i; store.set('skystack-launch', launch); sfx.power(); }
-      else sfx.deny();                                      // locked stage
+      if (i <= prog) {
+        if (selLevel === i) { skyMap = false; startLevel(i); }              // second tap plays it
+        else { selLevel = i; sfx.tap(); }
+      } else sfx.deny();                                                    // locked level
       return;
     }
     if (inView(L.gate.y) && Math.abs(p.y - L.gate.y) <= 14) { sfx.deny(); return; }   // sealed gate
@@ -1839,40 +1911,43 @@ function renderSkyMap() {
     ctx.fillRect(L.trailX - 1, yy, 2, 2);
   }
   if (mp && mp.y > L.viewTop - 6 && mp.y < L.viewBot + 6) drawMascot(L.trailX, mp.y + 4);
-  // one row per stage: plate + node on the trail + name/meters + vignette
+  // ground marker where the trail meets the earth (not a tappable row)
+  if (L.start.y > L.viewTop && L.start.y < L.viewBot + 15) {
+    pixDisc(L.trailX, L.start.y, 4, 'rgba(255,246,232,0.3)');
+    pixDisc(L.trailX, L.start.y, 2, '#141022');
+    txt('GROUND 0M', L.plateX + 4, L.start.y - 3, 1, 'rgba(255,246,232,0.4)', 'left');
+  }
+  // one row per level: plate + numbered badge on the trail + name/goal/stars + vignette
   const pw = L.colX + L.colW - L.plateX;
-  for (let k = -1; k <= TIERS.length; k++) {
-    const isStart = k === -1, isGate = k === TIERS.length;
-    const y = isStart ? L.start.y : isGate ? L.gate.y : L.pts[k].y;
+  for (let k = 0; k <= TIERS.length; k++) {
+    const isGate = k === TIERS.length;
+    const y = isGate ? L.gate.y : L.pts[k].y;
     if (y < L.viewTop - 15 || y > L.viewBot + 15) continue;
-    const t = isStart || isGate ? null : TIERS[k];
-    const cleared = !isStart && !isGate && k < prog, isNext = k === prog;
+    const t = isGate ? null : TIERS[k];
+    const cleared = !isGate && k < prog, isNext = k === prog && !isGate;
+    const unlocked = !isGate && k <= prog;
     const champ = prog >= TIERS.length;
-    const sel = isStart ? launch < 0 : launch === k;
+    const sel = !isGate && selLevel === k && unlocked;
     // plate
-    ctx.fillStyle = 'rgba(11,14,26,' + (sel ? '0.78' : '0.55') + ')'; ctx.fillRect(L.plateX, y-12, pw, 24);
+    ctx.fillStyle = 'rgba(11,14,26,' + (sel ? '0.8' : '0.55') + ')'; ctx.fillRect(L.plateX, y-12, pw, 24);
     ctx.fillStyle = 'rgba(255,246,232,0.09)'; ctx.fillRect(L.plateX, y-12, pw, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(L.plateX+1, y+12, pw, 1);
-    const accent = isStart ? (sel ? '#62E8B5' : 'rgba(255,246,232,0.25)')
-      : isGate ? (champ ? '#FFD75E' : 'rgba(255,246,232,0.18)')
+    const accent = isGate ? (champ ? '#FFD75E' : 'rgba(255,246,232,0.18)')
       : cleared ? '#FFD75E' : isNext ? t.c : 'rgba(255,246,232,0.18)';
     ctx.fillStyle = accent; ctx.fillRect(L.plateX, y-12, 3, 24);
-    if (sel) {   // selected launch pad: white frame
+    if (sel) {   // selected level: white frame
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
       ctx.fillRect(L.plateX-1, y-13, pw+2, 1); ctx.fillRect(L.plateX-1, y+12, pw+2, 1);
       ctx.fillRect(L.plateX-1, y-13, 1, 26); ctx.fillRect(L.plateX+pw, y-13, 1, 26);
     } else if (isNext && !reduceMotion) {   // next goal: soft pulsing frame in its color
       ctx.globalAlpha = .25 + .3*(.5 + .5*Math.sin(tick*.1));
-      ctx.fillStyle = t ? t.c : '#FFF6E8';
+      ctx.fillStyle = t.c;
       ctx.fillRect(L.plateX-1, y-13, pw+2, 1); ctx.fillRect(L.plateX-1, y+12, pw+2, 1);
       ctx.fillRect(L.plateX-1, y-13, 1, 26); ctx.fillRect(L.plateX+pw, y-13, 1, 26);
       ctx.globalAlpha = 1;
     }
-    // node on the trail
-    if (isStart) {
-      mapNode3D(L.trailX, y, 5, sel ? '#62E8B5' : 'rgba(255,246,232,0.35)', sel ? dkHex('#62E8B5', .45) : 'rgba(20,16,34,0.8)');
-      ctx.fillStyle = '#141022'; ctx.fillRect(L.trailX, y-2, 1, 5); ctx.fillRect(L.trailX-1, y-1, 3, 1);
-    } else if (isGate) {
+    // numbered 3D badge on the trail (padlock when locked, crown gate at the top)
+    if (isGate) {
       if (champ) {
         mapNode3D(L.trailX, y, 6, '#FFD75E', '#7A5A14'); pixDisc(L.trailX, y, 4, '#4A3A0C');
         ctx.fillStyle = '#FFD75E'; ctx.fillRect(L.trailX-2, y-1, 5, 2);
@@ -1881,40 +1956,49 @@ function renderSkyMap() {
         pixDisc(L.trailX, y, 6, 'rgba(0,0,0,0.3)'); pixDisc(L.trailX, y, 5, 'rgba(255,246,232,0.14)'); pixDisc(L.trailX, y, 4, '#141022');
         txt('?', L.trailX, y - 3, 1, 'rgba(255,246,232,0.55)', 'center');
       }
-    } else if (cleared) {
-      mapNode3D(L.trailX, y, 6, '#FFD75E', '#7A5A14');
-      pixDisc(L.trailX, y, 4, '#4A3A0C');
-      ctx.fillStyle = '#FFD75E'; ctx.fillRect(L.trailX-2, y, 1, 2); ctx.fillRect(L.trailX-1, y+1, 1, 1); ctx.fillRect(L.trailX, y-1, 1, 1); ctx.fillRect(L.trailX+1, y-2, 1, 1);
-    } else if (isNext) {
-      if (!reduceMotion) pixDisc(L.trailX, y, 9, uiA(.1 + (.5 + .5*Math.sin(tick*.1))*.18));
-      mapNode3D(L.trailX, y, 6, t.c, dkHex(t.c, .4));
-      pixDisc(L.trailX, y, 4, '#141022');
-    } else {   // locked: recessed socket with a padlock
-      pixDisc(L.trailX, y, 6, 'rgba(0,0,0,0.3)'); pixDisc(L.trailX, y, 5, 'rgba(255,246,232,0.14)'); pixDisc(L.trailX, y, 4, '#141022');
-      ctx.fillStyle = 'rgba(255,246,232,0.45)'; ctx.fillRect(L.trailX-1, y-1, 3, 2); ctx.fillRect(L.trailX-1, y-2, 1, 1); ctx.fillRect(L.trailX+1, y-2, 1, 1);
+    } else {
+      const bx = L.trailX - 8, by = y - 8;
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(bx+1, by+16, 16, 2);            // drop shadow
+      ctx.fillStyle = cleared ? '#7A5A14' : isNext ? dkHex(t.c, .4) : 'rgba(0,0,0,0.5)';
+      ctx.fillRect(bx, by+2, 16, 16);                                                  // extruded side
+      ctx.fillStyle = cleared ? '#FFD75E' : isNext ? t.c : 'rgba(46,40,66,0.95)';
+      ctx.fillRect(bx, by, 16, 16);                                                    // face
+      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(bx, by, 16, 1); ctx.fillRect(bx, by, 1, 16);
+      if (isNext && !reduceMotion) { ctx.globalAlpha = .2 + .25*(.5+.5*Math.sin(tick*.1)); ctx.fillStyle = '#FFF6E8'; ctx.fillRect(bx-2, by-2, 20, 20); ctx.globalAlpha = 1; }
+      if (unlocked) txt(k+1, L.trailX, y - 3, 1, cleared ? '#4A3A0C' : '#141022', 'center');
+      else { ctx.fillStyle = 'rgba(255,246,232,0.5)'; ctx.fillRect(L.trailX-2, y-1, 5, 4); ctx.fillRect(L.trailX-1, y-3, 1, 2); ctx.fillRect(L.trailX+1, y-3, 1, 2); }
     }
-    // labels: name on top, meters below, consistent left alignment
-    const name = isStart ? 'START' : isGate ? (champ ? 'SKY CHAMPION' : '? ? ?') : t.name;
-    const meters = isStart ? 'GROUND - 0M' : isGate ? (champ ? 'THE GATE IS OPEN' : 'SEALED') : t.n*METERS_PER + 'M' + (cleared ? ' - CLEARED' : isNext ? ' - NEXT GOAL' : '');
-    const nameCol = isStart ? (sel ? '#62E8B5' : 'rgba(255,246,232,0.75)')
-      : isGate ? (champ ? '#FFD75E' : 'rgba(255,246,232,0.4)')
+    // labels: name + stars on top, goal/status below
+    const name = isGate ? (champ ? 'SKY CHAMPION' : '? ? ?') : t.name;
+    const meters = isGate ? (champ ? 'THE GATE IS OPEN' : 'SEALED')
+      : 'GOAL ' + t.n*METERS_PER + 'M' + (cleared ? '' : isNext ? ' - NEXT' : ' - LOCKED');
+    const nameCol = isGate ? (champ ? '#FFD75E' : 'rgba(255,246,232,0.4)')
       : cleared ? '#FFF6E8' : isNext ? t.c : 'rgba(255,246,232,0.4)';
     txt(name, L.plateX + 10, y - 9, 1, nameCol, 'left');
     txt(meters, L.plateX + 10, y + 2, 1, 'rgba(255,246,232,0.5)', 'left');
-    if (!isStart && !isGate) drawStageDeco(k, L.colX + L.colW - 16, y);
+    if (!isGate) {
+      if (unlocked) for (let s2 = 0; s2 < 3; s2++) drawStarPix(L.plateX + pw - 46 + s2*10, y, 1, s2 < (levelStars[k] || 0));
+      drawStageDeco(k, L.colX + L.colW - 16, y);
+    }
   }
   // header plate
   ctx.fillStyle = 'rgba(11,14,26,0.72)'; ctx.fillRect(0, 0, W, MAP_HEAD);
   ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, MAP_HEAD, W, 1);
-  txt('SKY MAP', W/2+1, 10, 2, 'rgba(0,0,0,0.5)', 'center');
-  txt('SKY MAP', W/2, 9, 2, '#FFF6E8', 'center');
-  txt('BEST ' + bestHeight*METERS_PER + 'M', W/2, 27, 1, '#FFD75E', 'center');
-  // footer plate + hints
+  txt('SKY MAP', W/2+1, 8, 2, 'rgba(0,0,0,0.5)', 'center');
+  txt('SKY MAP', W/2, 7, 2, '#FFF6E8', 'center');
+  txt('CHOOSE YOUR PATH', W/2, 26, 1, '#FFD75E', 'center');
+  txt('X', W - 12, 8, 1, 'rgba(255,246,232,0.6)', 'center');   // header tap closes
+  // footer: PLAY button for the selected level
   ctx.fillStyle = 'rgba(11,14,26,0.72)'; ctx.fillRect(0, H - MAP_FOOT, W, MAP_FOOT);
   ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, H - MAP_FOOT, W, 1);
-  const hint = mode === 'endless' ? 'TAP GOLD STAGE TO LAUNCH' : 'CHECKPOINTS: ENDLESS ONLY';
-  txt(hint, W/2, H - 27, 1, 'rgba(255,246,232,0.7)', 'center');
-  txt(mapScrollMax > 0 && Math.floor(tick/150) % 2 ? 'DRAG TO CLIMB' : 'TAP OUT TO CLOSE', W/2, H - 15, 1, 'rgba(255,246,232,0.38)', 'center');
+  if (selLevel >= 0 && selLevel <= Math.min(prog, TIERS.length - 1)) {
+    const st = TIERS[selLevel];
+    const bw = Math.min(W - 24, 220), bx = Math.round(W/2 - bw/2);
+    plate3D(bx, H - MAP_FOOT + 6, bw, 20, playA(.8 + .15*Math.sin(tick*.08)));
+    txt('PLAY LEVEL ' + (selLevel+1) + ' - ' + st.n*METERS_PER + 'M', W/2, H - MAP_FOOT + 13, 1, '#08301F', 'center');
+  } else {
+    txt('REACH HIGHER TO UNLOCK', W/2, H - 21, 1, 'rgba(255,246,232,0.5)', 'center');
+  }
   // slim scrollbar on the right edge
   if (mapScrollMax > 0) {
     const trackH = L.viewBot - L.viewTop;
@@ -1927,14 +2011,12 @@ function renderSkyMap() {
 
 // ---------- mode picker overlay ----------
 function renderModePicker() {
-  ctx.fillStyle = 'rgba(11,14,26,0.78)'; ctx.fillRect(0, 0, W, H);
-  txt('SELECT MODE', W/2, 56, 1, UI_HEX(), 'center');
+  ctx.fillStyle = 'rgba(11,14,26,0.88)'; ctx.fillRect(0, 0, W, H);
+  txt('EXTRA MODES', W/2, 48, 1, UI_HEX(), 'center');
+  txt('TAP ONE TO PLAY IT', W/2, 60, 1, 'rgba(255,246,232,0.5)', 'center');
   for (const rw of PICK_ROWS) {
     const M = MODES.find(m => m.id === rw.id), active = rw.id === mode;
-    ctx.fillStyle = active ? uiA(0.22) : 'rgba(255,246,232,0.08)';
-    ctx.fillRect(rw.x, rw.y, rw.w, rw.h);
-    ctx.fillStyle = active ? UI_HEX() : 'rgba(255,246,232,0.25)';
-    ctx.fillRect(rw.x, rw.y, 2, rw.h);
+    plate3D(rw.x, rw.y, rw.w, rw.h, active ? uiA(0.22) : 'rgba(255,246,232,0.08)', active ? UI_HEX() : 'rgba(255,246,232,0.25)');
     txt(M.name, rw.x + 8, rw.y + 7, 1, active ? UI_HEX() : '#FFF6E8', 'left');
     txt(M.desc, rw.x + 8, rw.y + 22, 1, 'rgba(255,246,232,0.55)', 'left');
     const bp = bestScoreFor(rw.id) > 0 ? ' - ' + fmtPts(bestScoreFor(rw.id)) + ' PTS' : '';
@@ -2063,6 +2145,97 @@ function renderMe() {
   txt('SKYSTACK 1.0', W/2, H-50, 1, 'rgba(255,246,232,0.55)', 'center');
 }
 
+// ---------- shared 3D UI helpers ----------
+// raised plate: drop shadow + lit top edge + shaded bottom edge (+ accent spine)
+function plate3D(x, y, w, h, fill, accent) {
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x+1, y+h, w, 2);
+  ctx.fillStyle = fill; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(x, y, w, 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(x, y+h-1, w, 1);
+  if (accent) { ctx.fillStyle = accent; ctx.fillRect(x, y, 3, h); }
+}
+// 7x7 five-point pixel star at integer scale s, centered on (x, y)
+function drawStarPix(x, y, s, filled) {
+  ctx.fillStyle = filled ? '#FFD75E' : 'rgba(255,246,232,0.18)';
+  const px = (dx, dy, w2, h2) => ctx.fillRect(x + dx*s, y + dy*s, w2*s, h2*s);
+  px(0,-3,1,1); px(-1,-2,3,1); px(-3,-1,7,1); px(-2,0,5,1); px(-1,1,3,1); px(-2,2,1,1); px(2,2,1,1);
+  if (filled) { ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x, y - s, s, s); }   // glint
+}
+
+// ---------- level complete / level failed ----------
+function renderLevelWin() {
+  const t = TIERS[runLevel], num = runLevel + 1;
+  ctx.fillStyle = 'rgba(11,14,26,0.74)'; ctx.fillRect(0, 0, W, H);
+  // confetti rains behind the text
+  if (!reduceMotion) for (let i = 0; i < 36; i++) {
+    const cx2 = (i*61 + 17) % W;
+    const cy2 = ((winT * (1.1 + (i%4)*.35) + i*47) % (H + 20)) - 10;
+    ctx.globalAlpha = .5 + .4*Math.sin(winT*.2 + i);
+    ctx.fillStyle = ['#FFD75E','#62E8B5','#5EC8F2','#FF9ED2','#C77EFF'][i % 5];
+    ctx.fillRect(Math.round(cx2 + Math.sin(winT*.08 + i)*4), Math.round(cy2), 2, 3);
+  }
+  ctx.globalAlpha = 1;
+  const topY = Math.round(H*.13);
+  txt('LEVEL ' + num, W/2, topY, 1, 'rgba(255,246,232,0.7)', 'center');
+  txt(t.name, W/2+1, topY + 12, 2, 'rgba(0,0,0,0.5)', 'center');
+  txt(t.name, W/2, topY + 11, 2, t.c, 'center');
+  if (winT > 8) {   // COMPLETE! stamps in with a two-frame pop
+    const sc = winT < 14 ? 3 : 2;
+    txt('COMPLETE!', W/2+1, topY + 33, sc, 'rgba(0,0,0,0.5)', 'center');
+    txt('COMPLETE!', W/2, topY + 32, sc, '#FFF6E8', 'center');
+  }
+  // stars pop one by one
+  const starY = Math.round(H*.36);
+  for (let k = 0; k < 3; k++) {
+    const at = 24 + k*12, on = k < winStars && winT > at;
+    const pop = on && winT < at + 6;
+    drawStarPix(W/2 + (k-1)*30, starY, pop ? 4 : 3, on);
+  }
+  const placed = Math.max(1, blocks.length - runLaunch);
+  txt('PERFECTS ' + runPerfects + '/' + placed, W/2, starY + 18, 1, 'rgba(255,246,232,0.55)', 'center');
+  if (winT > 48) {   // reward counts up
+    const shown = Math.min(winReward, Math.floor((winT - 48) * 1.5));
+    drawCoin(W/2 - 20, starY + 31);
+    txt('+' + shown, W/2 - 9, starY + 31, 1, '#FFD75E', 'left');
+    if (winFirst) txt(prog === TIERS.length ? 'SKY CONQUERED!' : 'NEW STAGE UNLOCKED!', W/2, starY + 44, 1, '#62E8B5', 'center');
+  }
+  if (winT > 24) {
+    const last = runLevel + 1 >= TIERS.length;
+    const labels = { next: last ? 'BACK TO MAP' : 'NEXT LEVEL', retry: 'RETRY', map: 'SKY MAP' };
+    for (const rw of WIN_ROWS) {
+      const main = rw.id === 'next';
+      plate3D(rw.x, rw.y, rw.w, rw.h, main ? playA(.85) : 'rgba(255,246,232,0.12)', main ? null : t.c);
+      txt(labels[rw.id], W/2, rw.y + 7, 1, main ? '#08301F' : '#FFF6E8', 'center');
+    }
+  }
+}
+function renderLevelFail() {
+  const t = TIERS[runLevel], num = runLevel + 1;
+  ctx.fillStyle = 'rgba(11,14,26,0.74)'; ctx.fillRect(0, 0, W, H);
+  const goal = TIERS[runLevel].n, from = runLaunch;
+  const pct = clamp((blocks.length - from) / (goal - from), 0, 1);
+  const topY = Math.round(H*.14);
+  txt('LEVEL ' + num + ' - ' + t.name, W/2, topY, 1, 'rgba(255,246,232,0.7)', 'center');
+  const head = overCause === 'quit' ? 'RUN ENDED' : pct >= .6 ? 'SO CLOSE!' : 'TOPPLED!';
+  txt(head, W/2+1, topY + 13, 2, 'rgba(0,0,0,0.5)', 'center');
+  txt(head, W/2, topY + 12, 2, pct >= .6 ? '#FFD75E' : '#FF7E6B', 'center');
+  // progress bar toward the goal
+  const bw = Math.min(W - 60, 180), bx = Math.round(W/2 - bw/2), by = Math.round(H*.33);
+  const fillW = Math.round(bw * pct * Math.min(1, failT/30));
+  plate3D(bx, by, bw, 8, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = t.c; ctx.fillRect(bx, by + 1, fillW, 6);
+  txt('REACHED ' + blocks.length*METERS_PER + 'M / ' + goal*METERS_PER + 'M', W/2, by + 14, 1, 'rgba(255,246,232,0.75)', 'center');
+  if (runCoins > 0) { drawCoin(W/2 - 16, by + 27); txt('+' + runCoins, W/2 - 5, by + 27, 1, '#FFD75E', 'left'); }
+  if (failT > 24) {
+    const labels = { retry: 'RETRY', map: 'SKY MAP', home: 'HOME' };
+    for (const rw of FAIL_ROWS) {
+      const main = rw.id === 'retry';
+      plate3D(rw.x, rw.y, rw.w, rw.h, main ? playA(.85) : 'rgba(255,246,232,0.12)', main ? null : 'rgba(255,246,232,0.3)');
+      txt(labels[rw.id], W/2, rw.y + 7, 1, main ? '#08301F' : '#FFF6E8', 'center');
+    }
+  }
+}
+
 // ---------- in-run HUD ----------
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
@@ -2073,12 +2246,20 @@ function renderHUD(h) {
   txt(score, W/2+1, 6, 2, shadow, 'center'); txt(score, W/2, 5, 2, '#FFF6E8', 'center');
   if (m.time) { const s = Math.ceil(timeLeft/60); txt(s+'S', W-24, 7, 1, s<=10?(Math.floor(tick/8)%2?'#FF5E7E':'#FFD75E'):'rgba(255,246,232,0.9)', 'right'); }
   txt(h*METERS_PER+'M', W/2, 22, 1, 'rgba(255,246,232,0.8)', 'center');
+  if (runLevel >= 0) {   // campaign HUD: the goal + a slim progress bar
+    const goal = TIERS[runLevel].n, from = runLaunch;
+    txt('LEVEL ' + (runLevel+1) + ' - GOAL ' + goal*METERS_PER + 'M', W/2, 33, 1, TIERS[runLevel].c, 'center');
+    const bw = Math.min(W - 80, 120), bx = Math.round(W/2 - bw/2);
+    const pct = clamp((h - from) / (goal - from), 0, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx, 43, bw, 3);
+    ctx.fillStyle = TIERS[runLevel].c; ctx.fillRect(bx, 43, Math.round(bw*pct), 3);
+  }
   if (combo > 1) {
     const lbl = nova ? 'NOVA X' : fever ? 'FEVER X' : combo >= 7 ? 'BLAZING X' : 'COMBO X';
     const col2 = nova ? (Math.floor(tick/4)%2 ? '#FFFFFF' : 'hsl('+((tick*14)%360)+',100%,80%)')
                : fever ? ('hsl('+((tick*8)%360)+',100%,75%)')
                : combo >= 7 ? '#FF9E3D' : (combo>=5?'#FF7E6B':'#FFD75E');
-    txt(lbl+combo, W/2, 33, 1, col2, 'center');
+    txt(lbl+combo, W/2, runLevel >= 0 ? 50 : 33, 1, col2, 'center');
   }
   let ix = 4;
   for (let i=0;i<shield;i++) { drawIcon('shield', ix, 20); ix += 10; }
