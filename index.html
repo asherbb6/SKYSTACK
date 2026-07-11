@@ -1796,37 +1796,72 @@ function drawSkylineHaze(ph, yCeil) {
 // the underground: rock walls framing a dark central shaft, glinting crystals, a dripstone
 // ceiling with the escape hole in the middle. `top` = screen-y rock starts; `ceilY` = the
 // ceiling line (or <0 when the ceiling is off-screen and we're deep below).
-function drawCaveWalls(ph, top, ceilY) {
-  const shaftW = Math.round(W * SHAFT_W_F), cxL = Math.round((W - shaftW) / 2), cxR = cxL + shaftW;
-  ctx.globalAlpha = 1; ctx.fillStyle = '#241A22'; ctx.fillRect(0, top, W, H - top);          // solid rock
-  for (let y = top; y < H; y += 4) {                                                          // carve a dark jagged shaft
-    const jL = Math.round((bhash((y|0)*7) - 0.5) * 14), jR = Math.round((bhash((y|0)*7 + 99) - 0.5) * 14);
-    const xl = cxL + jL, xr = cxR + jR;
-    ctx.fillStyle = '#0E0A12'; ctx.fillRect(xl, y, xr - xl, 4);
-    ctx.fillStyle = 'rgba(74,56,68,0.5)'; ctx.fillRect(xl - 2, y, 2, 4);
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';   ctx.fillRect(xr, y, 2, 4);
-  }
-  ctx.fillStyle = 'rgba(255,255,255,0.05)';                                                   // rock speckle on the walls
-  for (let y = top; y < H; y += 9) { const rx = bhash((y|0)*3) * W; if (Math.abs(rx - W/2) > shaftW*0.5) ctx.fillRect(Math.round(rx), y + (y&3), 1, 1); }
-  for (let k = 0; k < 5; k++) {                                                               // glinting crystals
-    const gy = top + 24 + k*44; if (gy > H) break;
-    const cx = (k&1) ? W - 16 - (k*3) : 12 + (k*3), gl = reduceMotion ? 0.6 : (0.4 + 0.4*Math.sin(ph*0.08 + k*2));
-    ctx.globalAlpha = gl; ctx.fillStyle = k%2 ? '#7EE8C5' : '#8FB8FF'; ctx.fillRect(Math.round(cx), Math.round(gy), 2, 3);
-    ctx.globalAlpha = gl*0.4; ctx.fillRect(Math.round(cx)-1, Math.round(gy)+1, 4, 1);
+// Terraria-style underground: a TEXTURED BACKGROUND WALL (behind the tower, so the blocks keep
+// full room to breathe) — dirt->stone->deep-stone strata, ore/gem specks, cave pockets receding
+// into darkness for depth, crystals, and the dripstone ceiling + escape hole up top.
+function drawCaveWalls(ph, top, ceilY, cy) {
+  const under = H - top; if (under <= 0) return;
+  const T = 18, aOf = y => (GROUND_Y - cy - y) / BH;                                          // screen-y -> world altitude
+  // 1) background wall: dim, receding into black the deeper you are
+  const g = ctx.createLinearGradient(0, top, 0, H);
+  g.addColorStop(0, '#3A2A20'); g.addColorStop(0.4, '#241C20'); g.addColorStop(1, '#09070E');
+  ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.fillRect(0, top, W, under);
+  // 2) world-anchored rock tiles + strata + sparse ore/gem
+  const phase = ((GROUND_Y - cy) % T + T) % T;
+  for (let y = top - ((top - (top - phase)) % T) - T; y < H; y += T) {
+    const A = aOf(y + T/2), row = Math.round((GROUND_Y - cy - y) / T);
+    const dirt = A > SURF_A - 8, deep = A < 8;
+    for (let x = 0; x < W; x += T) {
+      const s = bhash(row*131 + x*7), base = dirt ? 54 : deep ? 24 : 38, v = base + Math.round((s - 0.5) * 14);
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = dirt ? 'rgb(' + (v+24) + ',' + (v+2) + ',' + (v-18) + ')' : 'rgb(' + (v-2) + ',' + v + ',' + (v+7) + ')';
+      ctx.fillRect(x + 1, y + 1, T - 2, T - 2);                                               // rock block (mortar gaps read as the dark base)
+      if (s > 0.87) { ctx.globalAlpha = 0.32; ctx.fillStyle = '#000'; ctx.fillRect(x + 4, y + 2, 1, T - 5); }   // crack
+      if (s < 0.05) { ctx.globalAlpha = 0.85; const gem = bhash(row*3 + x);                    // ore / gem speck
+        ctx.fillStyle = gem > 0.66 ? '#D8A83C' : gem > 0.33 ? '#7EE8C5' : '#8FB8FF'; ctx.fillRect(x + (T>>1), y + (T>>1), 2, 2); }
+    }
   }
   ctx.globalAlpha = 1;
-  if (ceilY > -6 && ceilY < H) {                                                              // dripstone ceiling + escape hole
-    ctx.fillStyle = '#2E2230';
-    for (let x = 0; x < W; x += 8) {
-      if (x > cxL - 10 && x < cxR + 10) continue;                                             // leave the shaft hole open
-      const sl = Math.round(6 + bhash(x*5)*15);
-      ctx.fillRect(x, ceilY - 3, 8, 4);
-      for (let t = 0; t < sl; t++) { const ww = Math.max(1, Math.round((1 - t/sl)*5)); ctx.fillRect(Math.round(x+4 - ww/2), ceilY + t, ww, 1); }
+  // 3) open cave pockets / distant tunnels — dark blobs receding into black (depth cue)
+  for (let k = 0; k < 8; k++) {
+    const band = 92, py = top - (top % band) + k * band; if (py > H + 40) break; if (py < top - 40) continue;
+    const seed = bhash(Math.round((GROUND_Y - cy - py) / band) * 17 + k * 5);
+    const px = Math.round(seed * W), r = Math.round(20 + bhash(k*7 + 3) * 22);
+    ctx.globalAlpha = 0.5; pixDisc(px, Math.round(py), r + 5, '#0C0912');
+    ctx.globalAlpha = 0.6; pixDisc(px, Math.round(py), r, '#060409');
+    ctx.globalAlpha = 0.6; ctx.fillStyle = '#181220';                                          // stalactites/stalagmites framing it
+    for (let sx = px - r; sx < px + r; sx += 6) { const st = Math.round(bhash(sx*5 + (py|0)) * 8);
+      ctx.fillRect(sx, Math.round(py) - r, 2, st); const sg = Math.round(bhash(sx*3) * 7); ctx.fillRect(sx + 3, Math.round(py) + r - sg, 2, sg); }
+  }
+  ctx.globalAlpha = 1;
+  // 4) glinting crystals (ambient life, on the walls not the play column)
+  for (let k = 0; k < 7; k++) {
+    const gy = top + 26 + k * 68; if (gy > H) break;
+    const gx = (k & 1) ? W - 18 - (k * 5) : 12 + (k * 5), gl = reduceMotion ? 0.6 : (0.4 + 0.4 * Math.sin(ph * 0.08 + k * 2));
+    ctx.globalAlpha = gl; ctx.fillStyle = k % 2 ? '#7EE8C5' : '#B58CF0'; ctx.fillRect(Math.round(gx), Math.round(gy), 2, 4);
+    ctx.globalAlpha = gl * 0.35; ctx.fillRect(Math.round(gx) - 1, Math.round(gy) + 1, 4, 2);
+  }
+  ctx.globalAlpha = 1;
+  // 5) dripstone ceiling + escape hole + daylight shaft
+  if (ceilY > -6 && ceilY < H) {
+    const shaftW = Math.round(W * SHAFT_W_F), cxL = Math.round((W - shaftW) / 2), cxR = cxL + shaftW;
+    for (let yy = ceilY; yy < Math.min(H, ceilY + 220); yy += 5) {                             // sunbeam spilling through the hole
+      const t = (yy - ceilY) / 220, w2 = shaftW * (0.66 + t * 0.5);
+      ctx.globalAlpha = 0.09 * (1 - t); ctx.fillStyle = 'rgba(255,240,200,0.9)'; ctx.fillRect(Math.round(W/2 - w2/2), yy, Math.round(w2), 5);
     }
-    ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(255,236,180,0.7)';                           // daylight rim on the hole edges
+    ctx.globalAlpha = 1; ctx.fillStyle = '#2E2230';
+    for (let x = 0; x < W; x += 8) {
+      if (x > cxL - 10 && x < cxR + 10) continue;                                              // leave the escape hole open
+      const sl = Math.round(6 + bhash(x*5) * 15);
+      ctx.fillRect(x, ceilY - 3, 8, 4);
+      for (let t = 0; t < sl; t++) { const ww = Math.max(1, Math.round((1 - t/sl) * 5)); ctx.fillRect(Math.round(x+4 - ww/2), ceilY + t, ww, 1); }
+    }
+    for (let k = 0; k < 7; k++) { const rx = Math.round(bhash(k*23) * W); if (rx > cxL - 6 && rx < cxR + 6) continue;   // hanging roots on the dirt rim
+      ctx.globalAlpha = 0.6; ctx.fillStyle = '#3A2A18'; ctx.fillRect(rx, ceilY + 2, 1, 6 + Math.round(bhash(k*5) * 10)); }
+    ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(255,236,180,0.7)';
     ctx.fillRect(cxL - 10, ceilY - 1, 10, 2); ctx.fillRect(cxR, ceilY - 1, 10, 2);
     ctx.globalAlpha = 1;
-    if (!reduceMotion) { const dp = (ph*2) % 130, dx = Math.round(W/2 + Math.sin(ph*0.7)*shaftW*0.3);   // a water drip in the shaft
+    if (!reduceMotion) { const dp = (ph*2) % 130, dx = Math.round(W/2 + Math.sin(ph*0.7) * shaftW * 0.3);
       ctx.globalAlpha = 0.5; ctx.fillStyle = '#9FD8E8'; ctx.fillRect(dx, ceilY + dp, 1, 3); ctx.globalAlpha = 1; }
   }
 }
@@ -1916,8 +1951,8 @@ function drawGroundWorld(cy, ph) {
   if (yCeil < H) drawSkylineHaze(ph, yCeil);                                                   // daylight horizon behind everything
   for (let i = 0; i < BUILDINGS.length; i++) rootedBuilding(BUILDINGS[i], i + 3);              // rooted city towers (behind)
   for (let i = 0; i < TREES.length; i++) rootedTree(TREES[i], i + 17);                         // rooted trees (in front of the towers)
-  if (yCeil > 0) drawCaveWalls(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil);             // underground below the ceiling
-  else if (worldY(0, cy) > 0) drawCaveWalls(ph, 0, -999);                                      // (transition safety) rock still below
+  if (yCeil > 0) drawCaveWalls(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil, cy);         // underground below the ceiling
+  else if (worldY(0, cy) > 0) drawCaveWalls(ph, 0, -999, cy);                                  // (transition safety) rock still below
   if (yCeil > -8 && yCeil < H + 8) drawSurfaceGround(ph, yCeil);
 }
 
