@@ -32,14 +32,18 @@
 // ============================================================
 // logical resolution matches the device aspect ratio EXACTLY in both dimensions, so filling
 // the screen never distorts pixels — tall screens get more H, wide screens get more W, and
-// every element repositions off W/H instead of stretching.
-const AR = Math.max(innerWidth, 1) / Math.max(innerHeight, 1);
-const H = AR <= 1 ? Math.min(520, Math.max(300, Math.round(180 / AR))) : 320;
-const W = AR <= 1 ? Math.max(150, Math.round(H * AR)) : Math.min(640, Math.round(H * AR));
+// every element repositions off W/H instead of stretching. Recomputed live on resize/rotate.
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-canvas.width = W; canvas.height = H;
-ctx.imageSmoothingEnabled = false;
+let W = 0, H = 0;
+function computeSize() {
+  const AR = Math.max(innerWidth, 1) / Math.max(innerHeight, 1);
+  H = AR <= 1 ? Math.min(520, Math.max(300, Math.round(180 / AR))) : 320;
+  W = AR <= 1 ? Math.max(150, Math.round(H * AR)) : Math.min(960, Math.round(H * AR));
+  canvas.width = W; canvas.height = H;      // resets ctx state
+  ctx.imageSmoothingEnabled = false;
+}
+computeSize();
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function fitCanvas() {
@@ -59,7 +63,11 @@ function fitCanvas() {
 }
 var booted = false;
 var canvasRect = null;
-addEventListener('resize', () => { canvasRect = null; fitCanvas(); });
+var adaptTimer = 0;
+addEventListener('resize', () => {
+  canvasRect = null; fitCanvas();
+  clearTimeout(adaptTimer); adaptTimer = setTimeout(adaptToScreen, 180);   // settle, then re-adapt
+});
 // exactly ONE animation loop, ever
 var rafId = 0;
 function kickLoop() { if (rafId) return; last = performance.now(); rafId = requestAnimationFrame(frame); }
@@ -477,7 +485,8 @@ const POW_DESC = {
 };
 
 // ---------- game state ----------
-const BH = 14, BASE_W = 96, GROUND_Y = H - 20, METERS_PER = 3;
+const BH = 14, BASE_W = 96, METERS_PER = 3;
+let GROUND_Y = H - 20;
 const TOPPLE = 34;
 let PERFECT_PX = 2.6;
 let state = 'splash';             // splash | home | shop | me | playing | dropping | gameover
@@ -555,13 +564,28 @@ function resetRun() {
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY;
   schedulePickups(); spawnSlider();
 }
+// wide screens: blocks travel a centered corridor (phone-width feel) instead of the
+// whole screen, wrapping through a pixel-fade so there's no long empty commute
+function slideRange() {
+  const cw = Math.min(W, 220);
+  return { l: Math.round((W - cw)/2), r: Math.round((W + cw)/2), wrap: cw < W };
+}
+function sliderWrapFx(x) {
+  if (!slider || reduceMotion) return;
+  const cy2 = slider.y + BH/2;
+  for (let i = 0; i < 7; i++) particles.push({
+    x: x + Math.random()*slider.w, y: cy2 + (Math.random()-.5)*8,
+    vx: (Math.random()-.5)*1.2, vy: (Math.random()-.5)*1.2, life: .55, color: 'rgba(255,246,232,0.8)'
+  });
+}
 function spawnSlider() {
   const top = blocks[blocks.length - 1];
   const fromLeft = blocks.length % 2 === 1;
   let speed = Math.min(1.15 + blocks.length * 0.028, 3.2);
   if (slowBlocks > 0) { speed *= 0.55; slowBlocks--; }
   if (auraBlocks > 0) auraBlocks--;
-  slider = { w: top.w, x: fromLeft ? -top.w : W, dir: fromLeft ? 1 : -1, speed, y: towerTopY() - BH - 24, golden: goldenNext };
+  const SR = slideRange();
+  slider = { w: top.w, x: fromLeft ? SR.l - top.w : SR.r, dir: fromLeft ? 1 : -1, speed, y: towerTopY() - BH - 24, golden: goldenNext };
   goldenNext = false;
 }
 function drop() {
@@ -852,37 +876,67 @@ function shareScore() {
 // ---------- layout constants ----------
 const PAD = 6;
 const NAV_H = 20;
-const NAV_TABS = [
-  { id:'home', label:'HOME' },
-  { id:'shop', label:'SHOP' },
-  { id:'me',   label:'ME' }
-].map((t, i) => ({ ...t, x: Math.round(i * W/3), w: Math.ceil(W/3) }));   // tabs share the full width on any screen
-const NAV_Y = H - NAV_H;
-// home
-const MODE_BTN = { x:W/2-56, y:70, w:112, h:20 };
-const PICK_ROWS = MODES.map((m, i) => ({ x:12, y:74 + i*44, w:W-24, h:40, id:m.id }));
-const PLAY_BTN = { x:W/2-50, y:130, w:100, h:30 };
-const MISS_W = Math.min(W - PAD*2, 200);
-const MISS_PANEL = { x: Math.round((W-MISS_W)/2), y:H-114, w:MISS_W, h:44 };   // centered, capped on wide screens
-const INSTALL_BTN = { x:W/2-42, y:H-58, w:84, h:14 };
-// shop
-const SKIN_L = { x: Math.max(PAD, Math.round(W/2)-80), y:66, w:20, h:26 };   // arrows hug the preview, not the screen edge
-const SKIN_R = { x: Math.min(W-PAD-20, Math.round(W/2)+60), y:66, w:20, h:26 };
-const EQUIP_BTN = { x:W/2-46, y:138, w:92, h:18 };
-const LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: 196, w: 52, h: 26, id: l.id, cost: l.cost }));
-// me
-const TOGGLES = [
-  { id:'sound',   label:'SOUND' },
-  { id:'music',   label:'MUSIC' },
-  { id:'haptics', label:'HAPTICS' }
-].map((t, i) => ({ ...t, x: W-PAD-30, y: 216 + i * 15, w: 30, h: 11 }));
-// in-run
-const SND_BTN = { x:W-17, y:4, w:13, h:13 };
-const PAUSE_BTN = { x:4, y:4, w:13, h:13 };
-const PAUSE_ROWS = ['resume','restart','sound','music','quit'].map((id, i) =>
-  ({ id, x: Math.round(W/2-44), y: Math.round(H/2-56) + i*20, w: 88, h: 16 }));
-// game over
-const SHARE_BTN = { x:W/2-32, y:H-96, w:64, h:16 };
+let NAV_TABS, NAV_Y, MODE_BTN, PICK_ROWS, PLAY_BTN, MISS_PANEL, INSTALL_BTN,
+    SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN;
+// every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
+function relayout() {
+  GROUND_Y = H - 20;
+  NAV_TABS = [
+    { id:'home', label:'HOME' },
+    { id:'shop', label:'SHOP' },
+    { id:'me',   label:'ME' }
+  ].map((t, i) => ({ ...t, x: Math.round(i * W/3), w: Math.ceil(W/3) }));   // tabs share the full width on any screen
+  NAV_Y = H - NAV_H;
+  // home
+  MODE_BTN = { x:W/2-56, y:70, w:112, h:20 };
+  const pickW = Math.min(W - 24, 240);
+  PICK_ROWS = MODES.map((m, i) => ({ x: Math.round((W-pickW)/2), y:74 + i*44, w:pickW, h:40, id:m.id }));
+  PLAY_BTN = { x:W/2-50, y:130, w:100, h:30 };
+  const missW = Math.min(W - PAD*2, 200);
+  MISS_PANEL = { x: Math.round((W-missW)/2), y:H-114, w:missW, h:44 };   // centered, capped on wide screens
+  INSTALL_BTN = { x:W/2-42, y:H-58, w:84, h:14 };
+  // shop
+  SKIN_L = { x: Math.max(PAD, Math.round(W/2)-80), y:66, w:20, h:26 };   // arrows hug the preview, not the screen edge
+  SKIN_R = { x: Math.min(W-PAD-20, Math.round(W/2)+60), y:66, w:20, h:26 };
+  EQUIP_BTN = { x:W/2-46, y:138, w:92, h:18 };
+  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: 196, w: 52, h: 26, id: l.id, cost: l.cost }));
+  // me
+  TOGGLES = ['sound','music','haptics'].map((id, i) => ({ id, x: W-PAD-30, y: 216 + i * 15, w: 30, h: 11 }));
+  // in-run
+  SND_BTN = { x:W-17, y:4, w:13, h:13 };
+  PAUSE_BTN = { x:4, y:4, w:13, h:13 };
+  PAUSE_ROWS = ['resume','restart','sound','music','quit'].map((id, i) =>
+    ({ id, x: Math.round(W/2-44), y: Math.round(H/2-56) + i*20, w: 88, h: 16 }));
+  // game over
+  SHARE_BTN = { x:W/2-32, y:H-96, w:64, h:16 };
+}
+relayout();
+// live window/orientation change: recompute size + layout, then re-center the whole
+// world (tower, effects, background) so nothing stretches, drifts or letterboxes
+function adaptToScreen() {
+  const oldW = W, oldH = H, oldGY = GROUND_Y;
+  computeSize();
+  if (W === oldW && H === oldH) { fitCanvas(); return; }
+  relayout();
+  const dx = (W - oldW) / 2, dgy = GROUND_Y - oldGY, kx = W / oldW, ky = H / oldH;
+  for (const b of blocks) b.x += dx;
+  if (slider) { slider.x += dx; slider.y += dgy; }
+  if (faller) { faller.x += dx; faller.y += dgy; }
+  if (balloon) balloon.x = clamp(balloon.x + dx, 10, W - 10);
+  for (const p of pickups) p.x = clamp(p.x + dx, 14, W - 14);
+  for (const d of debris) { d.x += dx; d.y += dgy; }
+  for (const pt of particles) { pt.x += dx; pt.y += dgy; }
+  for (const f of floaters) { f.x += dx; f.y += dgy; }
+  for (const t of trails) { t.x += dx; t.y += dgy; }
+  for (const cf of coinFx) { cf.x += dx; cf.y += dgy; }
+  for (const st of stars) st.x *= kx;
+  for (const cl of clouds) cl.x *= kx;
+  for (const bd of birds) bd.x *= kx;
+  for (const fl of evFlakes) { fl.x *= kx; fl.y *= ky; }
+  cameraY = towerTopY() - (H - 100); cameraTarget = cameraY;
+  canvasRect = null; fitCanvas();
+  if (booted) render();
+}
 
 // ---------- input ----------
 function pos(e) { if (!canvasRect) canvasRect = canvas.getBoundingClientRect(); const r = canvasRect; return { x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H }; }
@@ -1030,9 +1084,17 @@ function update(dt) {
     const feverSlow = fever ? 0.78 : 1;
     slider.x += slider.dir * slider.speed * feverSlow * dt;
     if (wind) { const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI); slider.x += wind.dir * wind.str * env * dt; }
-    const min = -slider.w*.55, max = W - slider.w*.45;
-    if (slider.x < min) { slider.x = min; slider.dir = 1; }
-    if (slider.x > max) { slider.x = max; slider.dir = -1; }
+    const SR = slideRange();
+    const min = SR.l - slider.w*.55, max = SR.r - slider.w*.45;
+    if (SR.wrap) {
+      // dissolve out one side of the corridor, dissolve back in on the other
+      if (slider.dir > 0 && slider.x > max) { sliderWrapFx(slider.x); slider.x = min; sliderWrapFx(slider.x); }
+      else if (slider.dir < 0 && slider.x < min) { sliderWrapFx(slider.x); slider.x = max; sliderWrapFx(slider.x); }
+      slider.x = clamp(slider.x, min, max);            // wind can't shove it out of the corridor
+    } else {
+      if (slider.x < min) { slider.x = min; slider.dir = 1; }
+      if (slider.x > max) { slider.x = max; slider.dir = -1; }
+    }
   }
   if (faller && state === 'dropping') {
     faller.vy += .9*dt; faller.y += faller.vy*dt;
@@ -1276,8 +1338,22 @@ function renderWorld(cy, shX) {
   if (slider) {
     const y = Math.round(slider.y-cy);
     const scol = slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length);
+    const SR = slideRange();
+    let sa = 1;
+    if (SR.wrap) {   // pixel-fade near the corridor ends
+      const scx = slider.x + slider.w/2;
+      sa = clamp(Math.min(scx - SR.l, SR.r - scx) / 18, 0.08, 1);
+    }
+    ctx.globalAlpha = sa;
     drawBlock(Math.round(slider.x),y,Math.round(slider.w),BH,scol,false, slider.golden?0.6:0, slider.golden?'shimmer':sstyle);
-    ctx.globalAlpha=.18; ctx.fillStyle='#FFF'; const ts=Math.round(towerTopY()-cy);
+    if (sa < 0.92 && !reduceMotion) {   // dissolve: pixels drop out as it fades
+      ctx.fillStyle = 'rgba(11,14,26,0.55)';
+      const holes = Math.floor((1 - sa) * 12), bw2 = Math.max(3, Math.round(slider.w) - 2);
+      for (let k = 0; k < holes; k++) {
+        ctx.fillRect(Math.round(slider.x) + (k*29 + ((tick*2)|0)*7) % bw2, y + (k*13 + (tick|0)*3) % (BH - 2), 2, 2);
+      }
+    }
+    ctx.globalAlpha = Math.min(sa, .18); ctx.fillStyle='#FFF'; const ts=Math.round(towerTopY()-cy);
     ctx.fillRect(Math.round(slider.x),y+BH,1,ts-y-BH-BH); ctx.fillRect(Math.round(slider.x+slider.w)-1,y+BH,1,ts-y-BH-BH); ctx.globalAlpha=1;
   }
   if (faller) drawBlock(Math.round(faller.x),Math.round(faller.y-cy),Math.round(faller.w),BH,faller.col,false, faller.golden?0.6:0, faller.golden?'shimmer':sstyle);
@@ -1330,8 +1406,9 @@ function renderHome() {
   const bob = Math.sin(tick*.04)*2;
   txt('SKYSTACK', W/2+1, 27+bob, 3, shadow, 'center');
   txt('SKYSTACK', W/2, 26+bob, 3, '#FFF6E8', 'center');
-  ctx.save(); ctx.beginPath(); ctx.rect(20, 24+bob, W-40, 22); ctx.clip();
-  const sx = ((tick*2) % (W+60)) - 30;
+  const ttw = 146, ttx = Math.round(W/2 - ttw/2);   // shine sweeps the TITLE, not the screen
+  ctx.save(); ctx.beginPath(); ctx.rect(ttx, 24+bob, ttw, 22); ctx.clip();
+  const sx = ttx + ((tick*2) % (ttw+60)) - 30;
   const grd = ctx.createLinearGradient(sx-10,0,sx+10,0);
   grd.addColorStop(0,'rgba(255,255,255,0)'); grd.addColorStop(.5,'rgba(255,255,255,0.45)'); grd.addColorStop(1,'rgba(255,255,255,0)');
   ctx.fillStyle = grd; ctx.fillRect(sx-12, 24+bob, 24, 22); ctx.restore();
