@@ -217,6 +217,69 @@ check('map helpers exist (mapNode3D, dkHex, openSkyMap, mapTapAt, plate3D, drawS
   '["mapNode3D","dkHex","openSkyMap","mapTapAt","plate3D","drawStarPix"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function")'));
 check('dkHex darkens a hex color', () => tap.run('dkHex("#FFD75E", .5) === "rgb(128,108,47)"'));
 
+// ---------- revive: one paid second chance per run ----------
+const rv = makeGame({ 'skystack-coins': '200' });
+rv.run('mode = "endless"; resetRun(); state = "playing";');
+rv.run('score = 200; while (blocks.length < 12) blocks.push({x:0,w:96,col:"#fff"}); tier = 1;');
+rv.run('gameOver("topple")');
+check('endless death offers a revive, settlement deferred', () => rv.run(
+  'state === "gameover" && reviveOffered === true && runSettled === false && stats.games === 0'));
+check('revive cost scales with stage (25 + tier*5)', () => rv.run('reviveCost() === 30'));
+check('records still write at the first death', () => rv.run('best === 200 && bestHeight === 12'));
+check('renderGameOver with the offer runs without throwing', () => { rv.run('renderGameOver()'); return true; });
+rv.run('var __c0 = coins; doRevive()');
+check('revive: coins spent, run resumes, shield granted', () => rv.run(
+  'state === "playing" && coins === __c0 - 30 && shield >= 1 && reviveUsed === true'));
+check('revive: coin spend persisted', () => rv.mem.get('skystack-coins') === '170' ? true : 'stored: ' + rv.mem.get('skystack-coins'));
+check('revive: death state scrubbed, new block sliding', () => rv.run(
+  'balance === 0 && debris.length === 0 && faller === null && slider !== null && overCause === ""'));
+rv.run('score = 500; while (blocks.length < 20) blocks.push({x:0,w:96,col:"#fff"});');
+rv.run('gameOver("miss")');
+check('second death: no second revive, run settles', () => rv.run('reviveOffered === false && runSettled === true'));
+check('second death: final records include post-revive climb', () => rv.run('best === 500 && bestHeight === 20'));
+check('revived run counts as exactly one game', () => rv.run('stats.games === 1'));
+check('doRevive after settling is refused', () => rv.run('(() => { const c = coins; doRevive(); return coins === c && state === "gameover"; })()'));
+
+// game-over REVIVE button + decline flow
+const dc = makeGame({ 'skystack-coins': '10' });
+dc.run('mode = "endless"; resetRun(); state = "playing"; score = 50; gameOver("miss"); overLock = 0;');
+check('too poor: offer still shows (NEED label), button refuses', () => dc.run(
+  '(() => { if (!(reviveOffered && coins < reviveCost())) return false; doRevive(); return state === "gameover" && reviveUsed === false && coins === 10; })()'));
+dc.run('pos = () => ({x: -999, y: -999}); pressDown({})');
+check('declining the offer settles in place, screen stays', () => dc.run(
+  'state === "gameover" && runSettled === true && reviveOffered === false && stats.games === 1'));
+check('tap after declining goes home', () => dc.run('(() => { pressDown({}); return state === "home"; })()'));
+const bt = makeGame({ 'skystack-coins': '100' });
+bt.run('mode = "endless"; resetRun(); state = "playing"; gameOver("miss"); overLock = 0;');
+bt.run('pos = () => ({x: REVIVE_BTN.x + 5, y: REVIVE_BTN.y + 5}); pressDown({})');
+check('game-over REVIVE button tap revives', () => bt.run('state === "playing" && reviveUsed === true'));
+
+// campaign level revive: resumes the climb, leaderboard stays protected
+const lr = makeGame({ 'skystack-height': '60', 'skystack-best': '900', 'skystack-coins': '300' });
+lr.run('startLevel(2)');
+lr.run('score = 100; gameOver("topple"); failT = 60;');
+check('level fail offers a revive row', () => lr.run('state === "levelfail" && reviveOffered === true'));
+check('renderLevelFail with the offer runs without throwing', () => { lr.run('renderLevelFail()'); return true; });
+lr.run('pos = () => ({x: FAIL_REV.x + 5, y: FAIL_REV.y + 5}); pressDown({})');
+check('level-fail REVIVE row tap resumes the level', () => lr.run(
+  'state === "playing" && runLevel === 2 && reviveUsed === true'));
+lr.run('score = 88888; gameOver("miss"); failT = 60;');
+check('revived level run: records still untouched', () => lr.run(
+  'best === 900 && bestHeight === 60 && state === "levelfail" && reviveOffered === false'));
+check('fail RETRY starts a fresh run with the revive back', () => lr.run(
+  '(() => { pos = () => ({x:0,y:0}); pressDown(null); return state === "playing" && reviveUsed === false && runSettled === false; })()'));
+
+// modes/causes that never offer one
+const nx = makeGame({ 'skystack-coins': '500' });
+nx.run('mode = "pure"; resetRun(); state = "playing"; gameOver("miss")');
+check('PURE mode never offers revive, settles at once', () => nx.run('reviveOffered === false && runSettled === true'));
+nx.run('state = "home"; mode = "daily"; resetRun(); state = "playing"; gameOver("miss")');
+check('DAILY mode never offers revive', () => nx.run('reviveOffered === false'));
+nx.run('state = "home"; mode = "time"; resetRun(); state = "playing"; gameOver("time")');
+check('running out of time never offers revive', () => nx.run('reviveOffered === false'));
+nx.run('state = "home"; mode = "endless"; resetRun(); state = "playing"; gameOver("quit")');
+check('quitting never offers revive', () => nx.run('reviveOffered === false'));
+
 // ---------- home screen ----------
 const home = makeGame({ 'skystack-height': '60' });
 check('home: next-level card shows LEVEL 4', () => {
@@ -230,7 +293,7 @@ check('home PLAY starts the next level', () => home.run(
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v26', () => /const CACHE = 'skystack-v26'/.test(sw));
+check('sw.js cache bumped to v27', () => /const CACHE = 'skystack-v27'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));

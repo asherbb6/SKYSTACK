@@ -434,6 +434,9 @@ let runLevel = -1;       // active level for the current run (-1 = free modes)
 let runLaunch = 0;       // blocks pre-stacked for the current run (0 = full ground-up run)
 let selLevel = 0;        // map selection (session only)
 let winT = 0, failT = 0, winStars = 0, winReward = 0, winFirst = false;
+// revive: one paid second chance per run. XP/missions/games settle only when the run
+// truly ends (finalizeRun), so a revived run settles once — post-revive progress included.
+let reviveUsed = false, reviveOffered = false, runSettled = false;
 
 const ACH = [
   { id:'first',   name:'FIRST FLIGHT',   chk:()=>stats.games>=1 },
@@ -582,6 +585,7 @@ function resetRun() {
   wind = null; windTimer = 260;
   nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
+  reviveUsed = false; reviveOffered = false; runSettled = false;
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
   balance = 0; swayX = 0; paused = false; dropPending = 0;
   timeLeft = m.time || 0;
@@ -879,6 +883,7 @@ function levelComplete() {
   if (winStars > (levelStars[i] || 0)) { levelStars[i] = winStars; store.set('skystack-levelstars', levelStars); }
   winReward = 15 + i * 10 + winStars * 5 + (winFirst ? 25 : 0) + (winFirst && prog === TIERS.length ? 200 : 0);
   coins += winReward; stats.coins += winReward; store.set('skystack-coins', coins);
+  runSettled = true; reviveOffered = false;   // wins settle on the spot
   stats.games++;
   stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
   settleRun(20);
@@ -891,7 +896,6 @@ function gameOver(cause) {
   if (cause === 'topple') { sfx.topple();
     for (let i = Math.max(0, blocks.length-6); i < blocks.length; i++) { const b = blocks[i]; debris.push({ x:b.x, y:GROUND_Y-(i+1)*BH, w:b.w, h:BH, vx:(balance>0?1:-1)*(0.6+Math.random()), vy:-Math.random()*1.5, rot:0, vr:(balance>0?1:-1)*.12, col:b.col }); } }
   else sfx.over();
-  stats.games++;
   stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
   if (!runLaunch && runLevel < 0) {   // records are for full ground-up free runs, never level attempts
     if (score > best) { best = score; newBest = true; store.set('skystack-best', best); }
@@ -910,8 +914,36 @@ function gameOver(cause) {
     stats.streakBest = Math.max(stats.streakBest, daily.streak);
     store.set('skystack-daily', daily);
   }
-  settleRun(0);
+  reviveOffered = canOfferRevive();
+  if (!reviveOffered) finalizeRun();          // no second chance: settle now, show full results
   if (runLevel >= 0) { state = 'levelfail'; failT = 0; }    // campaign attempts get their own screen
+}
+// ---------- revive: one per run, paid in coins (button becomes WATCH AD TO REVIVE later) ----------
+function reviveCost() { return 25 + Math.min(tier, TIERS.length) * 5; }   // deeper runs pay more
+function canOfferRevive() {
+  const m = curMode();   // PURE is skill-only and DAILY is one fair run — no second chances there
+  return !reviveUsed && !m.pure && !m.daily && overCause !== 'quit' && overCause !== 'time';
+}
+function finalizeRun() {   // the run is truly over: count the game and settle XP/missions once
+  if (runSettled) return;
+  runSettled = true; reviveOffered = false;
+  stats.games++;
+  settleRun(0);
+}
+function doRevive() {
+  if (!reviveOffered || coins < reviveCost()) { sfx.deny(); return; }
+  coins -= reviveCost(); store.set('skystack-coins', coins);
+  reviveUsed = true; reviveOffered = false;
+  debris = []; balance = 0; swayX = 0; wind = null; windTimer = 260;   // scrub the death state
+  faller = null; dropPending = 0; overCause = ''; overLock = 0; shake = 0;
+  shield = Math.min(shield + 1, 2);            // a shield so the comeback can breathe
+  mascot.expr = 'normal'; mascot.exprT = 0;
+  state = 'playing'; fadeT = 1;
+  cameraTarget = towerTopY() - (H - 100);
+  floaters.push({ text: 'REVIVED!', x: W/2, y: towerTopY() - BH - 10, vy: -.4, life: 1.5, color: '#62E8B5' });
+  burst(W/2, towerTopY() - BH, 20, { h: 150 }, true);
+  sfx.shield(); hapt([20, 30, 40]);
+  spawnSlider();
 }
 function burst(x, y, n, col, gold) {
   const cnt = reduceMotion ? Math.ceil(n/2) : n;
@@ -955,7 +987,7 @@ const PAD = 6;
 const NAV_H = 20;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, PLAY_BTN, MISS_PANEL, INSTALL_BTN,
     SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
-    WIN_ROWS, FAIL_ROWS;
+    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
@@ -977,6 +1009,7 @@ function relayout() {
     ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.58) + i*26, w: rowW, h: 20 }));
   FAIL_ROWS = ['retry','map','home'].map((id, i) =>
     ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) + i*26, w: rowW, h: 20 }));
+  FAIL_REV = { x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) - 26, w: rowW, h: 20 };
   const missW = Math.min(W - PAD*2, 200);
   MISS_PANEL = { x: Math.round((W-missW)/2), y:H-114, w:missW, h:44 };   // centered, capped on wide screens
   INSTALL_BTN = { x:W/2-42, y:H-58, w:84, h:14 };
@@ -994,6 +1027,7 @@ function relayout() {
     ({ id, x: Math.round(W/2-44), y: Math.round(H/2-56) + i*20, w: 88, h: 16 }));
   // game over
   SHARE_BTN = { x:W/2-32, y:H-96, w:64, h:16 };
+  REVIVE_BTN = { x: Math.round(W/2 - 56), y: 156, w: 112, h: 22 };
 }
 relayout();
 // live window/orientation change: recompute size + layout, then re-center the whole
@@ -1089,8 +1123,10 @@ function pressDown(e) {
     return;
   } else if (state === 'levelfail') {
     if (failT < 24) return;
-    if (!p) { startLevel(runLevel); return; }
+    if (reviveOffered && p && inR(p, FAIL_REV, 3)) { doRevive(); return; }
+    if (!p) { finalizeRun(); startLevel(runLevel); return; }
     for (const rw of FAIL_ROWS) if (inR(p, rw, 3)) {
+      finalizeRun();                          // walking away from the offer settles the run
       if (rw.id === 'retry') startLevel(runLevel);
       else if (rw.id === 'map') { state = 'home'; fadeT = 1; openSkyMap(); }
       else { state = 'home'; fadeT = 1; }
@@ -1132,6 +1168,10 @@ function pressDown(e) {
     if (state === 'playing' && slider) drop();          // no steering — tap drops instantly
   } else if (state === 'gameover' && overLock <= 0) {
     if (p && inR(p, SHARE_BTN, 3)) { shareScore(); return; }
+    if (reviveOffered) {
+      if (p && inR(p, REVIVE_BTN, 4)) { doRevive(); return; }
+      finalizeRun(); sfx.tap(); return;       // declined: settle and reveal the full results
+    }
     state = 'home'; fadeT = 1;
   }
 }
@@ -2227,6 +2267,16 @@ function renderLevelFail() {
   txt('REACHED ' + blocks.length*METERS_PER + 'M / ' + goal*METERS_PER + 'M', W/2, by + 14, 1, 'rgba(255,246,232,0.75)', 'center');
   if (runCoins > 0) { drawCoin(W/2 - 16, by + 27); txt('+' + runCoins, W/2 - 5, by + 27, 1, '#FFD75E', 'left'); }
   if (failT > 24) {
+    if (reviveOffered) {
+      const cost = reviveCost(), ok = coins >= cost;
+      const pulse = ok && Math.floor(tick/16)%2 === 0;
+      plate3D(FAIL_REV.x, FAIL_REV.y, FAIL_REV.w, FAIL_REV.h,
+        ok ? (pulse ? 'rgba(98,232,181,0.95)' : 'rgba(98,232,181,0.8)') : 'rgba(255,246,232,0.10)',
+        ok ? null : 'rgba(255,246,232,0.25)');
+      drawCoin(W/2 - 30, FAIL_REV.y + 7);
+      txt(ok ? 'REVIVE ' + cost : 'NEED ' + cost, W/2 - 20, FAIL_REV.y + 7, 1, ok ? '#08301F' : 'rgba(255,246,232,0.5)', 'left');
+      txt('1 REVIVE PER RUN', W/2, FAIL_REV.y - 10, 1, 'rgba(255,246,232,0.45)', 'center');
+    }
     const labels = { retry: 'RETRY', map: 'SKY MAP', home: 'HOME' };
     for (const rw of FAIL_ROWS) {
       const main = rw.id === 'retry';
@@ -2317,17 +2367,28 @@ function renderGameOver() {
   txt('SCORE '+score+(newBest?' - NEW BEST!':''), W/2, 103, 1, newBest?'#62E8B5':'rgba(255,246,232,0.85)', 'center');
   txt('BEST '+bestBlocksFor(mode)*METERS_PER+'M - '+fmtPts(bestScoreFor(mode))+' PTS', W/2, 114, 1, '#FFD75E', 'center');
   drawCoin(W/2-24, 127); txt('+'+runCoins, W/2-14, 127, 1, '#FFD75E', 'left');
-  txt('+'+xpThisRun+' XP', W/2+12, 127, 1, '#62E8B5', 'left');
+  if (runSettled) txt('+'+xpThisRun+' XP', W/2+12, 127, 1, '#62E8B5', 'left');
   if (maxCombo > 1) txt('MAX COMBO X'+maxCombo, W/2, 141, 1, 'rgba(255,246,232,0.8)', 'center');
-  let y = 156;
-  if (levelUpsThisRun > 0) { txt('LEVEL UP! NOW LV '+lvl.level+' +25', W/2, y, 1, '#FFD75E', 'center'); y += 11; }
-  for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i]+' +25', W/2, y, 1, '#C77EFF', 'center'); y += 11; }
-  for (let i = 0; i < completedThisRun.length && i < 2; i++) { txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y, 1, '#62E8B5', 'center'); y += 11; }
-  if (mode === 'daily') { txt('DAILY STREAK ' + daily.streak, W/2, y, 1, '#FF9E5E', 'center'); y += 11; }
+  if (reviveOffered) {   // XP/missions settle after the offer — this space is the revive's
+    const cost = reviveCost(), ok = coins >= cost;
+    const pulse = ok && Math.floor(tick/16)%2 === 0;
+    plate3D(REVIVE_BTN.x, REVIVE_BTN.y, REVIVE_BTN.w, REVIVE_BTN.h,
+      ok ? (pulse ? 'rgba(98,232,181,0.95)' : 'rgba(98,232,181,0.8)') : 'rgba(255,246,232,0.10)',
+      ok ? null : 'rgba(255,246,232,0.25)');
+    drawCoin(W/2 - 32, REVIVE_BTN.y + 8);
+    txt(ok ? 'REVIVE ' + cost : 'NEED ' + cost, W/2 - 22, REVIVE_BTN.y + 8, 1, ok ? '#08301F' : 'rgba(255,246,232,0.5)', 'left');
+    txt('1 REVIVE PER RUN', W/2, REVIVE_BTN.y + 27, 1, 'rgba(255,246,232,0.45)', 'center');
+  } else if (runSettled) {
+    let y = 156;
+    if (levelUpsThisRun > 0) { txt('LEVEL UP! NOW LV '+lvl.level+' +25', W/2, y, 1, '#FFD75E', 'center'); y += 11; }
+    for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i]+' +25', W/2, y, 1, '#C77EFF', 'center'); y += 11; }
+    for (let i = 0; i < completedThisRun.length && i < 2; i++) { txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y, 1, '#62E8B5', 'center'); y += 11; }
+    if (mode === 'daily') { txt('DAILY STREAK ' + daily.streak, W/2, y, 1, '#FF9E5E', 'center'); y += 11; }
+  }
   ctx.fillStyle = 'rgba(94,200,242,0.9)'; ctx.fillRect(SHARE_BTN.x, SHARE_BTN.y, SHARE_BTN.w, SHARE_BTN.h);
   ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(SHARE_BTN.x, SHARE_BTN.y, SHARE_BTN.w, 1);
   txt('SHARE', W/2, SHARE_BTN.y + 5, 1, '#04222E', 'center');
-  if (overLock <= 0 && Math.floor(tick/30)%2===0) txt('TAP TO CONTINUE', W/2, H-68, 1, '#FFF6E8', 'center');
+  if (overLock <= 0 && Math.floor(tick/30)%2===0) txt(reviveOffered ? 'TAP TO SKIP' : 'TAP TO CONTINUE', W/2, H-68, 1, '#FFF6E8', 'center');
 }
 
 // ---------- loop ----------

@@ -10,6 +10,7 @@ A pixel-art block-stacking game for mobile and web. One self-contained HTML file
 - **4 modes** — ENDLESS, TIME 60, PURE (no power-ups, 1.5× points), DAILY (seeded run + streaks)
 - **Skill ladder** — x7 BLAZING → x10 FEVER (2×) → x15 SUPERNOVA (3×)
 - **12 skins**, 7 power-ups, missions, XP levels, achievements, coins
+- **Revive** — one paid second chance per run (coins; cost scales with height) in ENDLESS, TIME and campaign levels — never in PURE or DAILY
 - **Pause anytime** — top-left ❚❚ (or Escape); the run also auto-pauses when the app is backgrounded
 - **Procedural chiptune** — calm menus, intense in-game, escalates with height and fever
 - **10 seasonal events** — Christmas, Halloween, July 4th, Easter and more auto-activate for a 7-day window (holiday = middle day) from the device clock, each with its own UI colors, pixel decorations, free skin, themed music, and +25% coins
