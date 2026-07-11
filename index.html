@@ -1612,51 +1612,6 @@ function biomeBackdrop(tier, cy, a) {
   else                  drawStarsBg(cy, a, ph);
   ctx.globalAlpha = 1;
 }
-// one solid city tower, tiled vertically so its detailed roof scrolls past as you climb
-function cityBuilding(x, w, f, P, body, roofC, dark, warm, cool, baseA, ph, aFade, far) {
-  x = Math.round(x); w = Math.round(w);
-  const s = cy_ * f, off = ((s % P) + P) % P;
-  for (let roofY = -off - P; roofY < H + P; roofY += P) {
-    const rY = Math.round(roofY), seg = Math.round((roofY + s) / P), rh = bhash(seg*7 + x*13);
-    ctx.globalAlpha = baseA * aFade; ctx.fillStyle = body; ctx.fillRect(x, rY + 2, w, P);           // solid body
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';       ctx.fillRect(x, rY + 2, 2, P);                        // shadow (left)
-    ctx.fillStyle = 'rgba(255,232,176,0.14)'; ctx.fillRect(x + w - 2, rY + 2, 2, P);                // sun-lit (right)
-    ctx.fillStyle = roofC; ctx.fillRect(x - 2, rY, w + 4, 3);                                       // roof parapet
-    ctx.fillStyle = 'rgba(255,232,176,0.16)'; ctx.fillRect(x - 2, rY, w + 4, 1);
-    if (!far) {                                                                                     // rooftop clutter
-      if (rh > 0.55) { ctx.fillStyle = dark; ctx.fillRect(x + (w*0.45|0), rY - 6, 7, 6); ctx.fillRect(x + (w*0.45|0)+1, rY - 8, 5, 2); ctx.fillStyle = roofC; ctx.fillRect(x + (w*0.45|0), rY - 6, 7, 1); }  // water tank
-      else { const ax = x + (w*0.5|0); ctx.fillStyle = 'rgba(190,200,220,0.7)'; ctx.fillRect(ax, rY - 9, 1, 9); ctx.fillRect(ax-2, rY-5, 5, 1);
-             const blink = reduceMotion ? 1 : Math.sin(ph*.12 + seg)*.5 + .5; ctx.globalAlpha = (.3 + .6*blink)*aFade; ctx.fillStyle = '#FF5E5E'; ctx.fillRect(ax, rY - 10, 1, 1); }   // antenna + beacon
-      if (rh > 0.8 && w > 26) { ctx.globalAlpha = baseA*aFade; ctx.fillStyle = dark; ctx.fillRect(x + 3, rY - 5, w - 8, 4); ctx.fillStyle = seg&1 ? '#FF8A5E' : '#5EC8F2'; ctx.fillRect(x + 4, rY - 4, w - 10, 2); }  // rooftop billboard
-    }
-    const WP = far ? 10 : 13;                                                                        // daytime glass — panes reflect the sky, a few dark, a rare lit room
-    for (let wy = rY + 7; wy < rY + P - 3; wy += WP) for (let wx = x + 3; wx < x + w - 3; wx += far ? 5 : 6) {
-      const r = bhash(Math.round(wx*17 + wy*3 + seg*101));
-      if (far) { ctx.globalAlpha = (.16 + .2*r)*aFade; ctx.fillStyle = 'rgb('+cool+')'; ctx.fillRect(wx, wy, 2, 2); continue; }
-      if (r < 0.30) { ctx.globalAlpha = baseA*aFade*.85; ctx.fillStyle = dark; ctx.fillRect(wx, wy, 4, WP-4); continue; }        // dark / shadowed pane
-      if (r > 0.95 && !reduceMotion) { const fl = Math.sin(ph*.09 + wx + wy) > -.3 ? 1 : .35; ctx.globalAlpha = .8*aFade*fl; ctx.fillStyle = 'rgb('+warm+')'; ctx.fillRect(wx, wy, 4, WP-5); continue; }   // rare lit room
-      ctx.globalAlpha = (.4 + .4*r)*aFade; ctx.fillStyle = 'rgb('+cool+')'; ctx.fillRect(wx, wy, 4, WP-5);                       // sky-reflecting glass
-      ctx.globalAlpha = (.25 + .25*r)*aFade; ctx.fillStyle = '#EAF4FF'; ctx.fillRect(wx, wy, 4, 1);                              // reflection highlight
-    }
-  }
-  ctx.globalAlpha = 1;
-}
-function drawRooftopsBg(cy, a, ph) {   // climbing a sunlit city by day — hazy far skyline + solid, asymmetric daylit towers
-  cy_ = cy;
-  // far skyline: thin, hazy, sky-tinted towers of varied height + width (asymmetric), slow parallax
-  const farBody = '#8CA0BE', farRoof = '#A4B6D0';
-  const fx = [0.02, 0.15, 0.31, 0.47, 0.64, 0.79, 0.91];
-  for (let i = 0; i < fx.length; i++) { const w = W*(0.05 + bhash(i*5+1)*0.06), P = 120 + bhash(i*3)*70;
-    cityBuilding(W*fx[i] - w/2, w, 0.28, P, farBody, farRoof, '#6E82A2', '255,238,190', '186,214,240', 0.42*a, ph, a, true); }
-  // foreground towers: solid (opaque), asymmetric spacing/width/colour, daylit concrete + glass
-  const near = [
-    { x:0.00, w:0.20, body:'#68768E', roof:'#8E9CB2', P:210 },
-    { x:0.235,w:0.13, body:'#5A6B86', roof:'#82909E', P:168 },
-    { x:0.60, w:0.155,body:'#6E7A92', roof:'#94A0B4', P:194 },
-    { x:0.795,w:0.205,body:'#5E6C86', roof:'#8894AA', P:150 }
-  ];
-  for (const b of near) cityBuilding(W*b.x, W*b.w, 0.55, b.P, b.body, b.roof, '#39445E', '255,224,150', '176,206,238', 0.98*a, ph, a, false);
-}
 // a solid, rounded, 3-D-shaded clump of leaves (dark base → mid → sun-lit top-left)
 function foliageBlob(cx, cy2, r, a) {
   cx = Math.round(cx); cy2 = Math.round(cy2); r = Math.round(r);
@@ -1664,42 +1619,6 @@ function foliageBlob(cx, cy2, r, a) {
   pixDisc(cx-1, cy2, (r*.86)|0, '#1A4C22'); pixDisc(cx+((r*.4)|0), cy2+((r*.3)|0), (r*.5)|0, '#153F1C');
   pixDisc(cx-2, cy2-2, (r*.62)|0, '#2A7034');
   ctx.globalAlpha = .85*a; pixDisc(cx-((r*.4)|0), cy2-((r*.45)|0), (r*.34)|0, '#49A048');   // sun-lit crown
-  ctx.globalAlpha = 1;
-}
-// one whole tree: solid tapering trunk (bark-textured) + branches, each carrying a connected leaf mass
-function forestTree(x, w, f, P, ph, a, scale) {
-  const sway = reduceMotion ? 0 : Math.sin(ph*.018 + x)*2;
-  x = Math.round(x + sway);
-  const s = cy_ * f, off = ((s % P) + P) % P;
-  ctx.globalAlpha = .96*a; ctx.fillStyle = '#3A2616'; ctx.fillRect(x, 0, w, H);                 // solid trunk
-  ctx.fillStyle = 'rgba(96,66,36,0.55)'; ctx.fillRect(x + w - 2, 0, 2, H);                      // lit right edge
-  ctx.fillStyle = 'rgba(0,0,0,0.32)';    ctx.fillRect(x, 0, 2, H);                              // shadow left edge
-  ctx.fillStyle = 'rgba(22,14,7,0.5)';                                                          // bark texture
-  for (let ty = ((s % 16) + 16) % 16 - 16; ty < H; ty += 16) { ctx.fillRect(x + 2, Math.round(ty), w - 4, 1); ctx.fillRect(x + (w>>1), Math.round(ty)+5, 1, 4); }
-  for (let ny = -off - P; ny < H + P; ny += P) {                                                // branch nodes + connected foliage
-    const nd = Math.round((ny + s) / P), side = (nd & 1) ? 1 : -1, by = Math.round(ny), br = Math.round(18*scale);
-    ctx.globalAlpha = .96*a; ctx.fillStyle = '#3A2616';
-    ctx.fillRect(side > 0 ? x + w : x - br, by, br, 3);                                          // branch
-    ctx.fillRect(side > 0 ? x + w + br - 3 : x - br, by - 7, 3, 9);                              // upward fork
-    foliageBlob(side > 0 ? x + w + br : x - br, by - 4, 17*scale, a);                            // leaf mass at the tip
-    foliageBlob(x + (w>>1), by - 9*scale, 14*scale, a);                                          // mass hugging the trunk → one connected tree
-  }
-  ctx.globalAlpha = 1;
-}
-function drawTreetopsBg(cy, a, ph) {   // climbing through a forest — distant tree wall, solid layered trees, edge foliage
-  cy_ = cy;
-  const s0 = cy*.3, P0 = 104, o0 = ((s0 % P0) + P0) % P0;                                        // distant hazy forest wall (depth)
-  for (let y = -o0 - P0; y < H + P0; y += P0) { const rowOdd = ((y/P0)|0) & 1;
-    for (let dx = -4; dx < W + 30; dx += 34) { ctx.globalAlpha = .3*a; pixDisc(dx + (rowOdd?17:0), Math.round(y), 16, '#22482A'); ctx.globalAlpha = .22*a; pixDisc(dx + (rowOdd?17:0) - 3, Math.round(y)-4, 10, '#2E5E34'); } }
-  ctx.globalAlpha = 1;
-  forestTree(W*0.14, 14, .5,  158, ph, a, 1.05);                                                 // solid trees, asymmetric, off the centre corridor
-  forestTree(W*0.33, 11, .64, 176, ph, a, 0.85);
-  forestTree(W*0.82, 15, .5,  150, ph, a, 1.15);
-  const se = cy*.82, Pe = 116, oe = ((se % Pe) + Pe) % Pe;                                        // foreground foliage framing the very edges (keeps the tower corridor clear)
-  for (let ey = -oe - Pe; ey < H + Pe; ey += Pe) { foliageBlob(-6, ey, 22, a); foliageBlob(W + 6, ey + 58, 24, a); }
-  ctx.fillStyle = '#1E5228';                                                                     // a couple of hanging vines
-  for (let k = 0; k < 3; k++) { const P = 240, off = ((se % P) + P) % P, vy = -off + (k*150)%P, vx = Math.round((k*61+40) % (W-20) + 10 + (reduceMotion?0:Math.sin(ph*.03+k)*3));
-    ctx.globalAlpha = .5*a; ctx.fillRect(vx, Math.round(vy), 1, 46); foliageBlob(vx, Math.round(vy)+48, 4, a); }
   ctx.globalAlpha = 1;
 }
 function drawCloudNineBg(cy, a, ph) {   // fluffy animated cloud banks at two depths + soft sun shafts

@@ -377,7 +377,7 @@ check('drawBiomeDecor runs across the whole climb without throwing', () => {
 });
 // ---- realistic atmosphere (day -> sunset -> night -> space) ----
 check('sky helpers exist (drawBiomeSky, drawSun, atmoDark, currentBiome, SKY_STOPS)', () => bio.run(
-  '["drawBiomeSky","drawSun","atmoDark","currentBiome","cityBuilding","forestTree","foliageBlob"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function") && Array.isArray(SKY_STOPS)'));
+  '["drawBiomeSky","drawSun","atmoDark","currentBiome","rootedBuilding","rootedTree","foliageBlob"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function") && Array.isArray(SKY_STOPS)'));
 check('SKY_STOPS has a gradient (>=2 stops) for every tier', () => bio.run(
   'SKY_STOPS.length === 11 && SKY_STOPS.every(g => Array.isArray(g) && g.length >= 2 && g.every(st => st.length === 2))'));
 check('SKY_STOPS is index-aligned to the 11 stages', () => bio.run('SKY_STOPS.length === 11'));
@@ -416,7 +416,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v36', () => /const CACHE = 'skystack-v36'/.test(sw));
+check('sw.js cache bumped to v37', () => /const CACHE = 'skystack-v37'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
