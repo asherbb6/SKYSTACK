@@ -374,6 +374,25 @@ check('drawBiomeDecor runs across the whole climb without throwing', () => {
   bio.run('for (let a = 0; a < 520; a += 30) { drawBiomeDecor(GROUND_Y - a*BH - (H-100)); }');
   return true;
 });
+// ---- realistic atmosphere (day -> sunset -> night -> space) ----
+check('sky helpers exist (drawBiomeSky, drawSun, atmoDark, currentBiome, SKY_STOPS)', () => bio.run(
+  '["drawBiomeSky","drawSun","atmoDark","currentBiome","cityBuilding","forestTree","foliageBlob"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function") && Array.isArray(SKY_STOPS)'));
+check('SKY_STOPS has a gradient (>=2 stops) for every tier', () => bio.run(
+  'SKY_STOPS.length === 9 && SKY_STOPS.every(g => Array.isArray(g) && g.length >= 2 && g.every(st => st.length === 2))'));
+check('atmoDark rises from a bright day to a dark space', () => bio.run(
+  'atmoDark(5) < 0.2 && atmoDark(300) > 0.9 && atmoDark(90) > atmoDark(40)'));
+check('currentBiome returns tier + cross-fade weights in [0,1]', () => bio.run(
+  '(() => { const b = currentBiome(GROUND_Y - 40*BH - (H-100)); return b.ti >= 0 && b.ti < 9 && b.wUp >= 0 && b.wUp <= 1 && b.wDn >= 0 && b.wDn <= 1; })()'));
+check('drawBiomeSky + drawSun render across the whole climb without throwing', () => {
+  bio.run('for (let a = 0; a < 520; a += 24) { drawBiomeSky(GROUND_Y - a*BH - (H-100), a); drawSun(a); }');
+  return true;
+});
+check('drawBlock renders every skin style without throwing', () => {
+  bio.run('for (const st of ["gloss","stripe","ember","facet","sparkle","shimmer","glow"]) { drawBlock(10, 10, 96, 14, {h:200,s:80,l:56}, true, 0.4, st); drawBlock(10, 10, 6, 5, {h:40,s:90,l:60}, false, 0, st); }');
+  return true;
+});
+check('every skin base() yields a valid HSL colour drawBlock can use', () => bio.run(
+  'SKINS.every(sk => { const c = sk.base(3, 120); return typeof c.h === "number" && c.s >= 0 && c.s <= 100 && c.l >= 0 && c.l <= 100; })'));
 check('a campaign level starts in its tier biome (level 6 -> AURORA band)', () => {
   const bl = makeGame({ 'skystack-height': '900' });   // everything unlocked
   bl.run('startLevel(5)');   // level 6 = AURORA (index 5)
@@ -382,7 +401,7 @@ check('a campaign level starts in its tier biome (level 6 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v33', () => /const CACHE = 'skystack-v33'/.test(sw));
+check('sw.js cache bumped to v34', () => /const CACHE = 'skystack-v34'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
