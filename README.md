@@ -2,16 +2,18 @@
 
 A pixel-art block-stacking game for mobile and web. One self-contained HTML file, zero dependencies, installable as a PWA with full offline support.
 
-**Play:** deploy this repo to any static host and open `index.html` (Netlify / GitHub Pages both work as-is).
+**Play:** live at [playskystack.netlify.app](https://playskystack.netlify.app), or deploy this repo to any static host and open `index.html` (Netlify / GitHub Pages both work as-is).
 
 ## Game
 
-- **Stack blocks** — tap to drop, hold + drag to steer, center it for a PERFECT
+- **Stack blocks** — the block slides on its own; tap anywhere to drop it, center it for a PERFECT
 - **4 modes** — ENDLESS, TIME 60, PURE (no power-ups, 1.5× points), DAILY (seeded run + streaks)
 - **Skill ladder** — x7 BLAZING → x10 FEVER (2×) → x15 SUPERNOVA (3×)
 - **12 skins**, 7 power-ups, missions, XP levels, achievements, coins
+- **Pause anytime** — top-left ❚❚ (or Escape); the run also auto-pauses when the app is backgrounded
 - **Procedural chiptune** — calm menus, intense in-game, escalates with height and fever
 - **10 seasonal events** — Christmas, Halloween, July 4th, Easter and more auto-activate for a 7-day window (holiday = middle day) from the device clock, each with its own UI colors, pixel decorations, free skin, themed music, and +25% coins
+- **Fits any screen** — logical resolution matches the device aspect exactly (portrait, desktop, ultrawide) and re-adapts live on resize/rotate; on wide screens blocks travel a centered corridor with a pixel-fade wrap instead of crossing the whole screen
 
 ## Files
 
