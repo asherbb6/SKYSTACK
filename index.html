@@ -1928,11 +1928,75 @@ function drawSurfaceGround(ph, yCeil) {
   ctx.globalAlpha = 1;
 }
 
+// deterministic instances rooted at the surface. Trees top out ~TREETOPS(22); most roofs
+// ~ROOFTOPS(34); a couple towers reach toward the clouds. Fixed screen-X (the world never pans X).
+const BUILDINGS = [
+  { x:0.015, w:0.15, topA:30, body:'#68768E', roof:'#8E9CB2' },
+  { x:0.175, w:0.11, topA:45, body:'#5A6B86', roof:'#82909E' },   // tower
+  { x:0.31,  w:0.10, topA:26, body:'#6E7A92', roof:'#94A0B4' },
+  { x:0.585, w:0.12, topA:38, body:'#5E6C86', roof:'#8894AA' },
+  { x:0.735, w:0.105,topA:49, body:'#66748C', roof:'#8A97AD' },   // tower
+  { x:0.86,  w:0.135,topA:28, body:'#5A6880', roof:'#828FA6' }
+];
+const TREES = [
+  { x:0.085, topA:21, s:1.05 }, { x:0.245, topA:16, s:0.82 },
+  { x:0.66,  topA:23, s:1.15 }, { x:0.93,  topA:18, s:0.95 }
+];
+// one solid city tower rooted at the surface (base SURF_A) with a real roof at topA — climbed past.
+function rootedBuilding(b, seed) {
+  const baseY = worldY(SURF_A), topY = worldY(b.topA);
+  if (topY > H || baseY < 0) return;
+  const x = Math.round(W * b.x), w = Math.round(W * b.w);
+  const y0 = Math.max(topY, -2), y1 = Math.min(baseY, H + 2);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = b.body; ctx.fillRect(x, y0, w, y1 - y0);                                     // body
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';       ctx.fillRect(x, y0, 2, y1 - y0);                   // shadow (left)
+  ctx.fillStyle = 'rgba(255,232,176,0.14)'; ctx.fillRect(x + w - 2, y0, 2, y1 - y0);           // sun-lit (right)
+  if (topY > -6) {                                                                             // roof clutter (only when the top is near/on screen)
+    ctx.fillStyle = b.roof; ctx.fillRect(x - 2, topY, w + 4, 3);
+    ctx.fillStyle = 'rgba(255,232,176,0.16)'; ctx.fillRect(x - 2, topY, w + 4, 1);
+    if (bhash(seed*7) > 0.5) { ctx.fillStyle = '#39445E'; ctx.fillRect(x + (w*0.45|0), topY - 6, 7, 6); ctx.fillStyle = b.roof; ctx.fillRect(x + (w*0.45|0), topY - 6, 7, 1); }
+    else { const ax = x + (w*0.5|0); ctx.fillStyle = 'rgba(190,200,220,0.7)'; ctx.fillRect(ax, topY - 9, 1, 9); ctx.fillRect(ax - 2, topY - 5, 5, 1);
+      const blink = reduceMotion ? 1 : Math.sin(tick*.12 + seed)*.5 + .5; ctx.globalAlpha = .3 + .6*blink; ctx.fillStyle = '#FF5E5E'; ctx.fillRect(ax, topY - 10, 1, 1); ctx.globalAlpha = 1; }
+  }
+  for (let wy = y0 + 6; wy < y1 - 3; wy += 13) for (let wx = x + 3; wx < x + w - 3; wx += 6) {  // windows, pattern anchored to the base so it doesn't swim
+    const r = bhash(Math.round(wx*17 + (baseY - wy)*3 + seed*101));
+    if (r < 0.30) { ctx.globalAlpha = .85; ctx.fillStyle = '#39445E'; ctx.fillRect(wx, wy, 4, 9); continue; }
+    if (r > 0.95 && !reduceMotion) { const fl = Math.sin(tick*.09 + wx + wy) > -.3 ? 1 : .35; ctx.globalAlpha = .8*fl; ctx.fillStyle = 'rgb(255,224,150)'; ctx.fillRect(wx, wy, 4, 8); continue; }
+    ctx.globalAlpha = .4 + .4*r; ctx.fillStyle = 'rgb(176,206,238)'; ctx.fillRect(wx, wy, 4, 8);
+    ctx.globalAlpha = .25 + .25*r; ctx.fillStyle = '#EAF4FF'; ctx.fillRect(wx, wy, 4, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+// one whole tree rooted at the surface: tapering trunk + branches carrying connected canopy, top at topA
+function rootedTree(t, seed) {
+  const baseY = worldY(SURF_A), topY = worldY(t.topA);
+  if (topY > H || baseY < 0) return;
+  const sway = reduceMotion ? 0 : Math.sin(tick*.018 + seed)*2, x = Math.round(W * t.x + sway);
+  const w = Math.max(6, Math.round(9 * t.s)), trunkTop = Math.max(topY + 6, -20), y1 = Math.min(baseY, H + 2);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#3A2616';            ctx.fillRect(x, trunkTop, w, y1 - trunkTop);           // solid trunk
+  ctx.fillStyle = 'rgba(96,66,36,0.55)';ctx.fillRect(x + w - 2, trunkTop, 2, y1 - trunkTop);   // lit right edge
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';   ctx.fillRect(x, trunkTop, 2, y1 - trunkTop);           // shadow left edge
+  const P = Math.max(20, Math.round(34 * t.s));
+  for (let by = topY + 10; by < y1; by += P) {                                                 // branch nodes + connected foliage
+    if (by < -20 || by > H + 20) continue;
+    const nd = Math.round((baseY - by) / P), side = (nd & 1) ? 1 : -1, br = Math.round(16 * t.s);
+    ctx.fillStyle = '#3A2616'; ctx.fillRect(side > 0 ? x + w : x - br, by, br, 3); ctx.fillRect(side > 0 ? x + w + br - 3 : x - br, by - 6, 3, 8);
+    foliageBlob(side > 0 ? x + w + br : x - br, by - 3, 15 * t.s, 1);
+    foliageBlob(x + (w >> 1), by - 8 * t.s, 12 * t.s, 1);
+  }
+  if (topY < H + 20) { foliageBlob(x + (w >> 1), topY + 4, 18 * t.s, 1);                        // canopy crown at the top
+    foliageBlob(x + (w >> 1) - 6, topY + 2, 12 * t.s, 1); foliageBlob(x + (w >> 1) + 6, topY + 7, 12 * t.s, 1); }
+  ctx.globalAlpha = 1;
+}
+
 // draw the rooted low world for the current camera; each layer self-clips by altitude (no fade)
 function drawGroundWorld(cy, ph) {
   const yCeil = worldY(SURF_A, cy);
   if (yCeil < H) drawSkylineHaze(ph, yCeil);                                                   // daylight horizon behind everything
-  // (2b) rooted trees + buildings root at yCeil and rise above
+  for (let i = 0; i < BUILDINGS.length; i++) rootedBuilding(BUILDINGS[i], i + 3);              // rooted city towers (behind)
+  for (let i = 0; i < TREES.length; i++) rootedTree(TREES[i], i + 17);                         // rooted trees (in front of the towers)
   if (yCeil > 0) drawCaveWalls(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil);             // underground below the ceiling
   else if (worldY(0, cy) > 0) drawCaveWalls(ph, 0, -999);                                      // (transition safety) rock still below
   if (yCeil > -8 && yCeil < H + 8) drawSurfaceGround(ph, yCeil);
