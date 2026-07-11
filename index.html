@@ -887,6 +887,7 @@ function levelComplete() {
   stats.games++;
   stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
   settleRun(20);
+  setExpr('happy', 600);
   sfx.milestone(); sfx.unlock(); hapt([20, 30, 20, 30, 40]);
 }
 function gameOver(cause) {
@@ -2203,15 +2204,49 @@ function drawStarPix(x, y, s, filled) {
 }
 
 // ---------- level complete / level failed ----------
+function drawStageDecoScaled(i, x, y, s) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); drawStageDeco(i, 0, 0); ctx.restore();
+}
 function renderLevelWin() {
   const t = TIERS[runLevel], num = runLevel + 1;
-  ctx.fillStyle = 'rgba(11,14,26,0.74)'; ctx.fillRect(0, 0, W, H);
-  // confetti rains behind the text
+  // full themed backdrop: the exact slice of sky you just climbed — launch pad at the
+  // bottom of the screen, the stage goal at the top (same trick as the SKY MAP)
+  const goal = TIERS[runLevel].n, from = levelStartN(runLevel);
+  for (let y2 = 0; y2 < H; y2 += 3) {
+    const sky = skyColor(from + (1 - y2/H) * (goal - from));
+    ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')'; ctx.fillRect(0, y2, W, 3);
+  }
+  ctx.fillStyle = 'rgba(11,14,26,0.55)'; ctx.fillRect(0, 0, W, H);   // veil so the text pops
+  // altitude stars twinkle in for the high stages
+  for (let i = 0; i < 34; i++) {
+    const sx2 = (i*67 + 13) % W, sy2 = (i*131 + 7) % H;
+    const a = clamp((from + (1 - sy2/H)*(goal - from) - 110) / 160, 0, 1);
+    if (a <= 0) continue;
+    ctx.globalAlpha = a * (.25 + .5*(.5 + .5*Math.sin(winT*.05 + i)));
+    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(sx2, sy2, i%5===0?2:1, i%5===0?2:1);
+  }
+  ctx.globalAlpha = 1;
+  // pixel fireworks ring out around the title
+  if (!reduceMotion) for (let f = 0; f < 3; f++) {
+    const cyc = (winT * .9 + f * 37) % 95;
+    if (cyc < 26) {
+      const fx = (f*73 + 31) % (W - 40) + 20, fy = 16 + (f*47) % Math.round(H*.22);
+      const r = 2 + cyc * 1.05;
+      ctx.globalAlpha = 1 - cyc/26;
+      for (let k = 0; k < 8; k++) {
+        const ang = k/8*6.283 + f*.7;
+        ctx.fillStyle = k % 2 ? '#FFD75E' : t.c;
+        ctx.fillRect(Math.round(fx + Math.cos(ang)*r), Math.round(fy + Math.sin(ang)*r), 2, 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+  // confetti rains in the stage's own colors
   if (!reduceMotion) for (let i = 0; i < 36; i++) {
     const cx2 = (i*61 + 17) % W;
     const cy2 = ((winT * (1.1 + (i%4)*.35) + i*47) % (H + 20)) - 10;
     ctx.globalAlpha = .5 + .4*Math.sin(winT*.2 + i);
-    ctx.fillStyle = ['#FFD75E','#62E8B5','#5EC8F2','#FF9ED2','#C77EFF'][i % 5];
+    ctx.fillStyle = [t.c, '#FFD75E', '#FFF6E8', '#62E8B5', dkHex(t.c, .72)][i % 5];
     ctx.fillRect(Math.round(cx2 + Math.sin(winT*.08 + i)*4), Math.round(cy2), 2, 3);
   }
   ctx.globalAlpha = 1;
@@ -2224,12 +2259,28 @@ function renderLevelWin() {
     txt('COMPLETE!', W/2+1, topY + 33, sc, 'rgba(0,0,0,0.5)', 'center');
     txt('COMPLETE!', W/2, topY + 32, sc, '#FFF6E8', 'center');
   }
-  // stars pop one by one
   const starY = Math.round(H*.36);
+  // the stage's own emblem, big on a soft glow — when the screen has room for it
+  const gap = starY - (topY + 50);
+  if (gap > 30 && winT > 16) {
+    const ey = topY + 48 + Math.round((gap - 10) / 2), es = gap > 44 ? 3 : 2;
+    ctx.fillStyle = t.c;
+    ctx.globalAlpha = .1; ctx.fillRect(W/2 - es*9, ey - es*9, es*18, es*18);
+    ctx.globalAlpha = .16; ctx.fillRect(W/2 - es*7, ey - es*7, es*14, es*14);
+    ctx.globalAlpha = 1;
+    drawStageDecoScaled(runLevel, W/2, ey, es);
+  }
+  // stars pop one by one
   for (let k = 0; k < 3; k++) {
     const at = 24 + k*12, on = k < winStars && winT > at;
     const pop = on && winT < at + 6;
     drawStarPix(W/2 + (k-1)*30, starY, pop ? 4 : 3, on);
+  }
+  // a 3-star clear earns blinking glitter around the row
+  if (winStars === 3 && winT > 62 && !reduceMotion && Math.floor(winT/9) % 2 === 0) {
+    ctx.fillStyle = '#FFD75E';
+    ctx.fillRect(W/2 - 48, starY - 6, 2, 2); ctx.fillRect(W/2 + 46, starY + 2, 2, 2);
+    ctx.fillRect(W/2 - 40, starY + 8, 1, 1); ctx.fillRect(W/2 + 40, starY - 8, 1, 1);
   }
   const placed = Math.max(1, blocks.length - runLaunch);
   txt('PERFECTS ' + runPerfects + '/' + placed, W/2, starY + 18, 1, 'rgba(255,246,232,0.55)', 'center');
@@ -2246,6 +2297,14 @@ function renderLevelWin() {
       const main = rw.id === 'next';
       plate3D(rw.x, rw.y, rw.w, rw.h, main ? playA(.85) : 'rgba(255,246,232,0.12)', main ? null : t.c);
       txt(labels[rw.id], W/2, rw.y + 7, 1, main ? '#08301F' : '#FFF6E8', 'center');
+    }
+    // the mascot celebrates on a mini tower below the buttons when there's room
+    const btnBot = WIN_ROWS[2].y + WIN_ROWS[2].h;
+    if (H - btnBot > 44) {
+      const my = H - 12;
+      for (let k = 0; k < 2; k++) { ctx.fillStyle = k ? t.c : dkHex(t.c, .7); ctx.fillRect(W/2 - 13, my - 7*(k+1), 26, 7); }
+      const hop = reduceMotion ? 0 : Math.round(Math.abs(Math.sin(winT*.09))*4);
+      drawMascot(W/2, my - 14 - hop);
     }
   }
 }

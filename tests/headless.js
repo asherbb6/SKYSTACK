@@ -269,6 +269,21 @@ check('revived level run: records still untouched', () => lr.run(
 check('fail RETRY starts a fresh run with the revive back', () => lr.run(
   '(() => { pos = () => ({x:0,y:0}); pressDown(null); return state === "playing" && reviveUsed === false && runSettled === false; })()'));
 
+// ---------- stage clear celebration screen ----------
+const cel = makeGame();
+cel.run('winStars = 3; winReward = 40; winFirst = true; runLaunch = 0; runPerfects = 5; state = "levelwin";');
+check('themed win screen renders for all 9 stages at every phase', () => {
+  cel.run('for (let i = 0; i < 9; i++) { runLevel = i; for (const t of [5, 20, 40, 70, 120]) { winT = t; renderLevelWin(); } }');
+  return true;
+});
+check('drawStageDecoScaled helper exists', () => cel.run('typeof drawStageDecoScaled === "function"'));
+check('level win leaves the mascot celebrating', () => {
+  const lw = makeGame();
+  lw.run('startLevel(0); while (blocks.length < 10) blocks.push({x:0,w:96,col:"#fff"});');
+  lw.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
+  return lw.run('state === "levelwin" && mascot.expr === "happy"');
+});
+
 // modes/causes that never offer one
 const nx = makeGame({ 'skystack-coins': '500' });
 nx.run('mode = "pure"; resetRun(); state = "playing"; gameOver("miss")');
@@ -293,7 +308,7 @@ check('home PLAY starts the next level', () => home.run(
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v27', () => /const CACHE = 'skystack-v27'/.test(sw));
+check('sw.js cache bumped to v28', () => /const CACHE = 'skystack-v28'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
