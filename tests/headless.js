@@ -391,6 +391,17 @@ check('drawBiomeSky + drawSun render across the whole climb without throwing', (
   bio.run('for (let a = 0; a < 520; a += 24) { drawBiomeSky(GROUND_Y - a*BH - (H-100), a); drawSun(a); }');
   return true;
 });
+// ---- Phase 2: continuous anchored world ----
+check('worldY maps altitude to screen-y (higher A sits higher on screen)', () => bio.run(
+  'typeof worldY === "function" && worldY(10, 0) < worldY(0, 0) && (worldY(0,0) - worldY(1,0)) === BH'));
+check('anchored ground-world helpers exist + instance lists non-empty', () => bio.run(
+  '["drawGroundWorld","drawCaveWalls","drawSurfaceGround","rootedBuilding","rootedTree","foliageBlob"].every(f => eval("typeof "+f) === "function") && BUILDINGS.length > 0 && TREES.length > 0 && typeof SURF_A === "number"'));
+check('every rooted building/tree has a top ABOVE the surface line', () => bio.run(
+  'BUILDINGS.every(b => b.topA > SURF_A) && TREES.every(t => t.topA > SURF_A)'));
+check('drawGroundWorld renders across the whole climb without throwing', () => {
+  bio.run('for (let a = 0; a < 520; a += 20) { cameraY = GROUND_Y - a*BH - (H-100); drawGroundWorld(cameraY, 40); }');
+  return true;
+});
 check('drawBlock renders every skin style without throwing', () => {
   bio.run('for (const st of ["gloss","stripe","ember","facet","sparkle","shimmer","glow"]) { drawBlock(10, 10, 96, 14, {h:200,s:80,l:56}, true, 0.4, st); drawBlock(10, 10, 6, 5, {h:40,s:90,l:60}, false, 0, st); }');
   return true;
@@ -405,7 +416,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v35', () => /const CACHE = 'skystack-v35'/.test(sw));
+check('sw.js cache bumped to v36', () => /const CACHE = 'skystack-v36'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
