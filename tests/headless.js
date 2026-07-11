@@ -327,9 +327,36 @@ check('home: next-level card shows LEVEL 4', () => {
 check('home PLAY starts the next level', () => home.run(
   '(() => { const p = {x: PLAY_BTN.x + 5, y: PLAY_BTN.y + 5}; pos = () => p; pressDown({}); return state === "playing" && runLevel === 3 && runLaunch === 50; })()'));
 
+// ---------- dynamic difficulty (skill-adaptive assist) ----------
+const dd = makeGame();   // fresh profile: skill defaults to 0.35
+dd.run('mode = "endless"; resetRun();');
+check('endless run seeds assist from skill (>0 for a new player)', () => dd.run('assist > 0 && assist <= 0.5'));
+check('assist widens the perfect window; assist 0 == base window', () => dd.run(
+  '(() => { const base = PERFECT_PX*(auraBlocks>0?2:1); assist = 0.5; const wide = effPerfect(); assist = 0; const norm = effPerfect(); return wide > norm && Math.abs(norm - base) < 1e-9; })()'));
+check('assist slows the slider vs no assist', () => dd.run(
+  '(() => { assist = 0; spawnSlider(); const fast = slider.speed; assist = 0.5; spawnSlider(); const slow = slider.speed; return slow < fast; })()'));
+check('assistFloor stays within [0,0.5]', () => dd.run('assistFloor() >= 0 && assistFloor() <= 0.5'));
+check('drawStageWeather runs for all 9 stages without throwing', () => { dd.run('for (let i=0;i<9;i++) drawStageWeather(i, W/2, 100, 50)'); return true; });
+dd.run('mode = "pure"; resetRun();');
+check('PURE mode runs with no assist', () => dd.run('assist === 0'));
+dd.run('mode = "daily"; resetRun();');
+check('DAILY mode runs with no assist', () => dd.run('assist === 0'));
+
+const sk = makeGame();   // skill adapts when the run finalizes (revive declined) and persists
+sk.run('mode = "endless"; resetRun(); state = "playing"; globalThis.__s0 = skill;');
+sk.run('maxCombo = 12; score = 800; while (blocks.length < 40) blocks.push({x:0,w:96,col:"#fff"});');
+sk.run('gameOver("fall"); finalizeRun();');   // die, then decline the revive -> settle
+check('a strong run raises the personal skill estimate', () => sk.run('skill > __s0'));
+check('skill persists to storage', () => sk.mem.has('skystack-skill') && Math.abs(parseFloat(sk.mem.get('skystack-skill')) - sk.run('skill')) < 1e-6);
+check('a higher skill means a lower starting assist', () => {
+  const lo = makeGame({ 'skystack-skill': '0.1' }), hi = makeGame({ 'skystack-skill': '0.9' });
+  lo.run('mode="endless"; resetRun();'); hi.run('mode="endless"; resetRun();');
+  return lo.run('assist') > hi.run('assist');
+});
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v30', () => /const CACHE = 'skystack-v30'/.test(sw));
+check('sw.js cache bumped to v31', () => /const CACHE = 'skystack-v31'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));

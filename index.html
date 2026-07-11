@@ -520,6 +520,12 @@ const BH = 14, BASE_W = 96, METERS_PER = 3;
 let GROUND_Y = H - 20;
 const TOPPLE = 34;
 let PERFECT_PX = 2.6;
+// dynamic difficulty: a persisted skill estimate (0..1) sets each run's starting help,
+// and an in-run `assist` (0..1) rises when you miss and eases when you chain perfects.
+// Higher assist = slower blocks + a wider perfect window. Off in PURE/DAILY (kept pure).
+let skill = clamp(store.get('skystack-skill', 0.35), 0, 1);
+let assist = 0;
+function assistFloor() { return clamp((0.5 - skill * 0.55) * 0.4, 0, 0.5); }
 let state = 'splash';             // splash | home | shop | me | playing | dropping | gameover
 let blocks = [], slider = null, faller = null;
 let debris = [], particles = [], floaters = [], trails = [], coinFx = [], pickups = [];
@@ -565,7 +571,7 @@ let demo = { n: 1, t: 0 };
 function towerTopY() { return GROUND_Y - blocks.length * BH; }
 function blockCol(i) { const s = skin(); return s.base(i, hueBase); }
 function setExpr(e, t) { mascot.expr = e; mascot.exprT = t; }
-function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1); }
+function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assist); }
 
 function resetRun() {
   const m = curMode();
@@ -590,6 +596,7 @@ function resetRun() {
   balance = 0; swayX = 0; paused = false; dropPending = 0;
   timeLeft = m.time || 0;
   PERFECT_PX = 2.6;
+  assist = (m.pure || m.daily) ? 0 : clamp(0.5 - skill * 0.55, 0, 0.5);   // struggling players start with help
   mascot.hop = 0; mascot.expr = 'normal'; mascot.exprT = 0;
   tutStep = tutDone ? -1 : 0;
   if (!m.daily && !m.pure) {
@@ -618,8 +625,9 @@ function sliderWrapFx(x) {
 function spawnSlider() {
   const top = blocks[blocks.length - 1];
   const fromLeft = blocks.length % 2 === 1;
-  let speed = Math.min(1.15 + blocks.length * 0.028, 3.2);
-  if (runLevel >= 0) speed = Math.min(speed * (1 + runLevel * 0.04), 3.6);   // each level is a notch meaner
+  let speed = Math.min(1.1 + blocks.length * 0.020, 2.8);                    // gentler climb than before
+  if (runLevel >= 0) speed = Math.min(speed * (1 + runLevel * 0.03), 3.1);   // each level is a notch meaner
+  speed *= (1 - assist * 0.30);                                              // dynamic difficulty eases the pace
   if (slowBlocks > 0) { speed *= 0.55; slowBlocks--; }
   if (auraBlocks > 0) auraBlocks--;
   const SR = slideRange();
@@ -704,6 +712,7 @@ function land() {
   const oL = Math.max(f.x, top.x), oR = Math.min(f.x + f.w, top.x + top.w), overlap = oR - oL;
   const offset = f.x - top.x;
   const m = curMode();
+  const dda = !m.pure && !m.daily;   // dynamic difficulty adjusts only in the assisted modes
 
   if (balloon && !balloon.away && Math.abs((GROUND_Y - balloon.row * BH) - (towerTopY() - BH)) < BH &&
       balloon.x >= f.x - 4 && balloon.x <= f.x + f.w + 4) {
@@ -716,6 +725,7 @@ function land() {
   if (overlap <= 1) {
     if (shield > 0 || !m.fail) {
       if (shield > 0) shield--;
+      if (dda) assist = Math.min(0.85, assist + 0.15);   // a total miss: lean in with more help
       combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; setExpr('dizzy', 40);
       let nw = Math.max(top.w * 0.6, 26), nx = clamp(f.x, 0, W - nw);
       if (Math.abs(nx - top.x) > top.w) nx = clamp(top.x + (f.x < top.x ? -8 : 8), 0, W - nw);
@@ -735,6 +745,7 @@ function land() {
   if (isPerfect) {
     nx = top.x; nw = Math.min(f.w, top.w);
     combo++; runPerfects++; maxCombo = Math.max(maxCombo, combo);
+    if (dda) assist = Math.max(assistFloor(), assist - 0.05);   // you've got this: ease the help back down
     if (tutStep === 2) { tutStep = -1; tutDone = true; store.set('skystack-tut', true); }
     const grow = combo >= 8 ? 8 : combo >= 5 ? 5 : combo >= 3 ? 3 : 1;
     const cap = combo >= 5 ? W : BASE_W;
@@ -771,6 +782,7 @@ function land() {
     }
   } else {
     combo = 0; fever = false; feverT = 0; nova = false; novaT = 0;
+    if (dda) assist = Math.min(0.85, assist + 0.10);   // a sloppy drop: nudge the help up
     if (tutStep === 1) tutStep = 2;
     score += Math.round(10 * goldMult * (m.mult || 1));
     const cutW = f.w - overlap, cutX = offset > 0 ? oR : f.x;
@@ -811,7 +823,7 @@ function land() {
 
 function afterPlace(f, updateBalance, placedCenter) {
   stats.blocks++;
-  if (updateBalance) balance = balance * 0.5 + (placedCenter - W/2) * 0.5;
+  if (updateBalance) balance = balance * 0.5 + (placedCenter - W/2) * 0.5 * (1 - assist * 0.4);   // assist forgives lean
   const r = blocks.length - 1, b = blocks[r];
   for (const p of pickups) { if (p.got || p.row !== r) continue; if (p.x >= b.x && p.x <= b.x + b.w) collectPickup(p, p.x, towerTopY()); }
   schedulePickups();
@@ -868,6 +880,10 @@ function settleRun(xpBonus) {
     }
   }
   if (achThisRun.length) { store.set('skystack-ach', achDone); store.set('skystack-coins', coins); sfx.unlock(); }
+  // adapt the personal skill estimate so the next run's assist fits the player
+  const placed = Math.max(0, blocks.length - runLaunch);
+  const perf = clamp((Math.min(maxCombo, 12) / 12) * 0.6 + (Math.min(placed, 50) / 50) * 0.4, 0, 1);
+  skill += (perf - skill) * 0.2; store.set('skystack-skill', +skill.toFixed(3));
   saveStats();
 }
 // campaign level goal reached mid-run: freeze the run and celebrate
@@ -1947,6 +1963,33 @@ function drawIsland(i, cx, topY) {
     for (let k = 0; k < 4; k++) { const stx = cx-half+15+k*17, on2 = reduceMotion || (Math.floor(ph/10)+k)%3 !== 0; ctx.fillStyle = on2 ? '#FFF6C8' : '#B8860B'; ctx.fillRect(stx, sy-4, 1, 1); ctx.fillRect(stx-1, sy-3, 3, 1); ctx.fillRect(stx, sy-2, 1, 1); }
   }
 }
+// per-stage weather that drifts around an island band (foreground layer)
+function drawStageWeather(i, cx, y, ph) {
+  if (reduceMotion) return;
+  const half = Math.round(Math.min(W - 24, 104) / 2), w = half*2, x0 = cx - half;
+  if (i === 0) {            // ROOFTOPS — drifting pollen motes
+    ctx.fillStyle = 'rgba(255,246,232,0.35)';
+    for (let k = 0; k < 5; k++) ctx.fillRect(Math.round(x0 + ((k*37 + ph*.3) % w)), Math.round(y - 16 + ((k*53) % 30) + Math.sin(ph*.05+k)*3), 1, 1);
+  } else if (i === 1) {     // TREETOPS — falling leaves
+    for (let k = 0; k < 5; k++) { const px = x0 + 10 + (k*31)%(w-20) + Math.sin(ph*.06+k)*4, py = y - 24 + ((ph*.5 + k*44) % 58);
+      ctx.fillStyle = k%2 ? '#3FBF5A' : '#C98A3E'; ctx.fillRect(Math.round(px), Math.round(py), 2, 1); }
+  } else if (i === 2) {     // CLOUD NINE — a light shower under the cloud
+    ctx.fillStyle = 'rgba(190,232,255,0.6)';
+    for (let k = 0; k < 9; k++) ctx.fillRect(Math.round(x0 + 8 + (k*23)%(w-16)), Math.round(y + 2 + ((k*17 + ph*2.4) % 30)), 1, 3);
+  } else if (i === 3) {     // JET STREAM — fast wind streaks
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    for (let k = 0; k < 5; k++) ctx.fillRect(Math.round(x0 + ((k*40 + ph*3) % (w+20)) - 10), y - 20 + k*8, 6, 1);
+  } else if (i === 4) {     // STRATOSPHERE — thin high cirrus
+    ctx.fillStyle = 'rgba(255,246,232,0.16)';
+    for (let k = 0; k < 3; k++) ctx.fillRect(Math.round(x0 + ((k*50 + ph*.5) % (w+30)) - 15), y - 22 + k*11, 12, 1);
+  } else if (i === 5) {     // AURORA — falling snow
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    for (let k = 0; k < 12; k++) ctx.fillRect(Math.round(x0 + 6 + (k*19)%(w-12) + Math.sin(ph*.04+k)*3), Math.round(y - 26 + ((k*13 + ph*.8) % 46)), 1, 1);
+  } else {                  // SPACE / ORBIT / THE STARS — floating dust sparkles
+    for (let k = 0; k < 6; k++) { const tw = Math.sin(ph*.1 + k) > .3; ctx.fillStyle = tw ? 'rgba(255,246,232,0.8)' : 'rgba(255,246,232,0.22)';
+      ctx.fillRect(Math.round(x0 + 6 + (k*29)%(w-12)), Math.round(y - 22 + (((k*23 - ph*.3) % 44) + 44) % 44 + Math.sin(ph*.05+k)*2), 1, 1); }
+  }
+}
 // a numbered level badge (purple unlocked / gold cleared / gray locked) centered on (x, y)
 function mapBadge(num, x, y, cleared, isNext, unlocked, sel) {
   const face = cleared ? '#FFD75E' : unlocked ? '#7B54D6' : '#3A3550';
@@ -2037,19 +2080,27 @@ function renderSkyMap() {
     ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')';
     ctx.fillRect(0, y2, W, 3);
   }
-  // nebula washes bloom in at high altitude, drifting slowly
+  // nebula washes bloom in at high altitude, parallaxing slowly for depth
   for (let i = 0; i < 7; i++) {
-    const ny = (i*97 + 31) % H, alt = blocksAt(ny), a = clamp((alt - 180) / 220, 0, 1);
+    const ny = (((i*97 + 31) + mapScroll*0.06) % H + H) % H, alt = blocksAt(ny), a = clamp((alt - 180) / 220, 0, 1);
     if (a <= 0) continue;
     const nx = Math.round((i*83 + Math.sin(ph*.008 + i)*10) % (W+40)) - 20;
     ctx.globalAlpha = a * 0.10; ctx.fillStyle = i % 2 ? '#C77EFF' : '#5E8CFF';
     pixDisc(nx, ny, 16, ctx.fillStyle); pixDisc(nx+8, ny+4, 12, ctx.fillStyle);
   }
+  // far haze clouds drift behind everything at a slow parallax rate
+  for (let i = 0; i < 6; i++) {
+    const vy = (((i*97 + 30) + mapScroll*0.4) % (H+100) + H+100) % (H+100) - 50;
+    if (vy < -18 || vy > H+18) continue;
+    const cxp = ((i*71 + ph*(.06 + i*.02)) % (W+70) + W+70) % (W+70) - 35;
+    ctx.globalAlpha = 0.06; ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(cxp-9, vy, 18, 3); ctx.fillRect(cxp-5, vy-2, 12, 2); ctx.fillRect(cxp+3, vy+2, 8, 1);
+  }
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(11,14,26,0.5)'; ctx.fillRect(0, 0, W, H);   // night veil for readability
-  // starfield fades in with altitude; a few twinkle in color
+  // starfield fades in with altitude, parallaxing slower than the trail; a few twinkle in color
   for (let i = 0; i < 60; i++) {
-    const sx2 = (i*67 + 13) % W, sy2 = (i*131 + 7) % H;
+    const sx2 = (i*67 + 13) % W, sy2 = (((i*131 + 7) + mapScroll*0.12) % H + H) % H;
     const a = clamp((blocksAt(sy2) - 90) / 170, 0, 1);
     if (a <= 0) continue;
     ctx.globalAlpha = a * (.25 + .55*(.5 + .5*Math.sin(ph*.05 + i)));
@@ -2130,8 +2181,9 @@ function renderSkyMap() {
     }
     const t = TIERS[k];
     const cleared = k < prog, isNext = k === prog, unlocked = k <= prog, sel = selLevel === k && unlocked;
-    // floating themed island (bobs gently underneath the pinned badge)
+    // floating themed island (bobs gently underneath the pinned badge) + its weather
     drawIsland(k, pt.x, pt.y + 5 + bob);
+    drawStageWeather(k, pt.x, pt.y + bob, ph);
     // stage label stacked above the badge (clear of the badge top)
     txt((k+1) + '. ' + t.name, pt.x, pt.y - 30, 1, unlocked ? t.c : 'rgba(255,246,232,0.45)', 'center');
     txt(t.n*METERS_PER + 'M' + (cleared ? '' : isNext ? ' - NEXT' : ' - LOCKED'), pt.x, pt.y - 21, 1, 'rgba(255,246,232,0.55)', 'center');

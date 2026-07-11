@@ -11,7 +11,8 @@ A pixel-art block-stacking game for mobile and web. One self-contained HTML file
 - **Skill ladder** — x7 BLAZING → x10 FEVER (2×) → x15 SUPERNOVA (3×)
 - **12 skins**, 7 power-ups, missions, XP levels, achievements, coins
 - **Revive** — one paid second chance per run (coins; cost scales with height) in ENDLESS, TIME and campaign levels — never in PURE or DAILY
-- **SKY MAP** — a winding-trail level select: themed floating islands per stage, numbered star badges, a dotted path that glows gold up to your best height, drag/wheel to scroll
+- **SKY MAP** — a winding-trail level select: detailed floating islands (skylines, tree canopies, ice crystals, solar arrays…) that bob gently, per-stage weather (rain, snow, leaves, wind, dust), a parallax starfield + haze clouds, animated decorations (birds, balloons, plane, aurora, galaxy, moon, planet), numbered star badges, and a dotted path that glows gold up to your best height
+- **Adaptive difficulty** — the pace and perfect-window quietly ease when you're struggling and tighten when you're chaining perfects, tuned by a personal skill estimate that learns across runs (ENDLESS / TIME / campaign only — PURE and DAILY stay pure)
 - **Pause anytime** — top-left ❚❚ (or Escape); the run also auto-pauses when the app is backgrounded
 - **Procedural chiptune** — calm menus, intense in-game, escalates with height and fever
 - **10 seasonal events** — Christmas, Halloween, July 4th, Easter and more auto-activate for a 7-day window (holiday = middle day) from the device clock, each with its own UI colors, pixel decorations, free skin, themed music, and +25% coins
