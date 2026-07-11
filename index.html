@@ -483,17 +483,17 @@ function skyColor(h) {
 }
 const lum = c => (c[0]*.299 + c[1]*.587 + c[2]*.114) / 255;
 const TIERS = [
-  { n:6,   name:'CAVES',        c:'#7A8595' },
-  { n:12,  name:'SURFACE',      c:'#8FD46A' },
-  { n:22,  name:'TREETOPS',     c:'#62E8B5' },
-  { n:34,  name:'ROOFTOPS',     c:'#FF9E5E' },
-  { n:55,  name:'CLOUD NINE',   c:'#BFE8FF' },
-  { n:80,  name:'JET STREAM',   c:'#5EC8F2' },
-  { n:105, name:'STRATOSPHERE', c:'#C77EFF' },
-  { n:150, name:'AURORA',       c:'#7EF2C5' },
-  { n:200, name:'SPACE',        c:'#8FA8FF' },
-  { n:300, name:'ORBIT',        c:'#FFD75E' },
-  { n:500, name:'THE STARS',    c:'#FFF6E8' }
+  { n:33,  name:'CAVES',        c:'#7A8595' },   // ~100m deep underground climb
+  { n:44,  name:'SURFACE',      c:'#8FD46A' },
+  { n:60,  name:'TREETOPS',     c:'#62E8B5' },
+  { n:80,  name:'ROOFTOPS',     c:'#FF9E5E' },
+  { n:106, name:'CLOUD NINE',   c:'#BFE8FF' },
+  { n:136, name:'JET STREAM',   c:'#5EC8F2' },
+  { n:168, name:'STRATOSPHERE', c:'#C77EFF' },
+  { n:205, name:'AURORA',       c:'#7EF2C5' },
+  { n:260, name:'SPACE',        c:'#8FA8FF' },
+  { n:360, name:'ORBIT',        c:'#FFD75E' },
+  { n:540, name:'THE STARS',    c:'#FFF6E8' }
 ];
 prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed unlocks from lifetime best
 const levelStartN = i => i <= 0 ? 0 : TIERS[i-1].n;                   // level i climbs levelStartN(i) -> TIERS[i].n
@@ -1508,10 +1508,10 @@ const SKY_STOPS = [
 ];
 // how dark the sky reads at a given height (drives stars/moon/HUD) — night arrives with altitude
 function atmoDark(h) {
-  if (h < 34)  return 0.10;
-  if (h < 55)  return 0.10 + (h - 34) / 21 * 0.13;
-  if (h < 105) return 0.23 + (h - 55) / 50 * 0.42;
-  if (h < 150) return 0.65 + (h - 105) / 45 * 0.28;
+  if (h < 80)  return 0.10;                       // caves..rooftops: bright day (cave dark is drawn, not atmospheric)
+  if (h < 106) return 0.10 + (h - 80) / 26 * 0.13;
+  if (h < 168) return 0.23 + (h - 106) / 62 * 0.42;
+  if (h < 205) return 0.65 + (h - 168) / 37 * 0.28;
   return 0.95;
 }
 // which tier fills the screen + how strongly the neighbour stage bleeds in near a boundary
@@ -1773,7 +1773,7 @@ function biomeWeather(tier, cy, a, ph) {
 // ================= continuous anchored world (Phase 2) =================
 // The low world (caves, surface, trees, buildings) lives at ABSOLUTE world altitude and is
 // simply climbed PAST — never cross-faded. A=0 is the tower base / cave floor.
-const SURF_A = 6;                                            // surface line (blocks): cave ceiling / where trees+buildings root
+const SURF_A = 33;                                           // surface line (blocks): cave ceiling / where trees+buildings root (~100m deep cave below)
 const SHAFT_W_F = 0.52;                                      // central open shaft (the corridor the tower climbs) as a fraction of W
 function worldY(A, cy) { return Math.round(GROUND_Y - A * BH - (cy === undefined ? cameraY : cy)); }   // screen-y of world altitude A
 
@@ -1850,16 +1850,16 @@ function drawSurfaceGround(ph, yCeil) {
 // deterministic instances rooted at the surface. Trees top out ~TREETOPS(22); most roofs
 // ~ROOFTOPS(34); a couple towers reach toward the clouds. Fixed screen-X (the world never pans X).
 const BUILDINGS = [
-  { x:0.015, w:0.15, topA:30, body:'#68768E', roof:'#8E9CB2' },
-  { x:0.175, w:0.11, topA:45, body:'#5A6B86', roof:'#82909E' },   // tower
-  { x:0.31,  w:0.10, topA:26, body:'#6E7A92', roof:'#94A0B4' },
-  { x:0.585, w:0.12, topA:38, body:'#5E6C86', roof:'#8894AA' },
-  { x:0.735, w:0.105,topA:49, body:'#66748C', roof:'#8A97AD' },   // tower
-  { x:0.86,  w:0.135,topA:28, body:'#5A6880', roof:'#828FA6' }
+  { x:0.015, w:0.15, topA:66,  body:'#68768E', roof:'#8E9CB2' },
+  { x:0.175, w:0.11, topA:101, body:'#5A6B86', roof:'#82909E' },   // tower reaching the clouds
+  { x:0.31,  w:0.10, topA:58,  body:'#6E7A92', roof:'#94A0B4' },
+  { x:0.585, w:0.12, topA:78,  body:'#5E6C86', roof:'#8894AA' },
+  { x:0.735, w:0.105,topA:104, body:'#66748C', roof:'#8A97AD' },   // tower reaching the clouds
+  { x:0.86,  w:0.135,topA:62,  body:'#5A6880', roof:'#828FA6' }
 ];
 const TREES = [
-  { x:0.085, topA:21, s:1.05 }, { x:0.245, topA:16, s:0.82 },
-  { x:0.66,  topA:23, s:1.15 }, { x:0.93,  topA:18, s:0.95 }
+  { x:0.085, topA:57, s:1.05 }, { x:0.245, topA:47, s:0.82 },
+  { x:0.66,  topA:60, s:1.15 }, { x:0.93,  topA:50, s:0.95 }
 ];
 // one solid city tower rooted at the surface (base SURF_A) with a real roof at topA — climbed past.
 function rootedBuilding(b, seed) {
@@ -1984,7 +1984,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
   // aurora curtains — ribbon across the sky through the AURORA tier band only (~285-450M)
-  if (!menu && h >= 92 && h < 150 && dark > 0.3 && !reduceMotion) {
+  if (!menu && h >= 160 && h < 208 && dark > 0.3 && !reduceMotion) {
     for (let k = 0; k < 3; k++) {
       ctx.fillStyle = k === 1 ? 'hsl(285,80%,60%)' : 'hsl(150,85%,55%)';
       ctx.globalAlpha = 0.05 + 0.02*Math.sin(tick*.03 + k*2);
@@ -2001,7 +2001,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
   if (dark > .45 && !menu) {
-    const mA = Math.min(1,(dark-.45)*3) * clamp((175 - h)/25, 0, 1);   // a round glowing moon; fades out as SPACE's own bodies take over
+    const mA = Math.min(1,(dark-.45)*3) * clamp((252 - h)/30, 0, 1);   // a round glowing moon; fades out as SPACE's own bodies take over
     if (mA > 0.02) {
       const mx = W - 34, my = Math.round(48 - Math.min(h,120)*.12);
       ctx.globalAlpha = mA*.4; pixDisc(mx, my, 12, 'rgba(255,246,216,0.6)');       // soft halo
@@ -2011,7 +2011,7 @@ function render() {
       ctx.globalAlpha = 1;
     }
   }
-  if (dark < .58 && (menu || h < 140)) {   // clouds/birds belong to the lower sky — gone once SPACE begins
+  if (dark < .58 && (menu || h < 200)) {   // clouds/birds belong to the lower sky — gone once SPACE begins
     ctx.globalAlpha = (.58-dark)*.95; ctx.fillStyle = '#FFF6E8';
     for (const c of clouds) { const cyy = Math.floor(c.y - (menu?tick*.3:cy*.4)); if (cyy<-20||cyy>H+20) continue; const cx=Math.floor(c.x); ctx.fillRect(cx,cyy,Math.floor(c.w),5); ctx.fillRect(cx+4,cyy-3,Math.floor(c.w*.6),3); ctx.fillRect(cx+2,cyy+5,Math.floor(c.w*.75),3); }
     ctx.globalAlpha = 1;
