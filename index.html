@@ -104,7 +104,7 @@ const FONT = {
   '8':[14,17,17,14,17,17,14],'9':[14,17,17,15,1,2,12],
   '!':[4,4,4,4,4,0,4],'+':[0,4,4,31,4,4,0],'-':[0,0,0,31,0,0,0],'.':[0,0,0,0,0,6,6],':':[0,6,6,0,6,6,0],
   '<':[2,4,8,16,8,4,2],'>':[8,4,2,1,2,4,8],'/':[1,2,2,4,8,8,16],'%':[17,1,2,4,8,16,17],
-  '*':[0,10,4,31,4,10,0]
+  '*':[0,10,4,31,4,10,0],'?':[14,17,1,2,4,0,4]
 };
 function txt(text, x, y, sc, color, align) {
   text = String(text).toUpperCase();
@@ -409,6 +409,7 @@ if (!MODES.find(m => m.id === mode)) { mode = 'endless'; store.set('skystack-mod
 const curMode = () => MODES.find(m => m.id === mode) || MODES[0];
 let modePicker = false;
 let skyMap = false;
+let mapScroll = 0, mapScrollMax = 0, mapDrag = null;   // sky map list scroll state
 let modeBests = store.get('skystack-modebests', {});
 function bestBlocksFor(m) { return (modeBests[m] && modeBests[m].blocks) || 0; }
 function bestScoreFor(m) { return (modeBests[m] && modeBests[m].score) || 0; }
@@ -1024,22 +1025,9 @@ function pressDown(e) {
   if (state === 'home') {
     if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker) startRun(); return; }
     if (skyMap) {
-      const L = skyMapNodes();
-      // hit zone covers the node disc plus its label chip (which extends toward screen center)
-      const near = (pt, side) => {
-        if (Math.abs(p.y - pt.y) > 9) return false;
-        const d = (p.x - pt.x) * side;
-        return d >= -11 && d <= 115;
-      };
-      if (mode === 'endless') {
-        if (near(L.start, 1)) { launch = -1; store.set('skystack-launch', launch); sfx.tap(); return; }
-        for (let i = 0; i < TIERS.length; i++) if (near(L.pts[i], L.pts[i].x < W/2 ? 1 : -1)) {
-          if (i < prog) { launch = i; store.set('skystack-launch', launch); sfx.power(); }
-          else sfx.deny();                              // locked stage
-          return;
-        }
-      }
-      skyMap = false; sfx.tap(); return;                // elsewhere closes
+      // the map scrolls: a press starts a drag, selection happens on release (pressUp)
+      mapDrag = { y: p.y, scroll: mapScroll, moved: false };
+      return;
     }
     if (modePicker) {                                  // picker overlay swallows all input
       for (const rw of PICK_ROWS) if (inR(p, rw, 2)) { mode = rw.id; store.set('skystack-mode', mode); modePicker = false; sfx.tap(); return; }
@@ -1048,7 +1036,7 @@ function pressDown(e) {
     if (navHit(p)) return;
     if (deferredPrompt && inR(p, INSTALL_BTN, 3)) { const dp = deferredPrompt; deferredPrompt = null; try { dp.prompt(); } catch (err) {} return; }
     if (inR(p, MODE_BTN, 4)) { modePicker = true; sfx.tap(); return; }
-    if (inR(p, MAP_BTN, 4)) { skyMap = true; sfx.tap(); return; }
+    if (inR(p, MAP_BTN, 4)) { openSkyMap(); sfx.tap(); return; }
     if (inR(p, PLAY_BTN, 4)) { startRun(); return; }
   } else if (state === 'shop') {
     if (!p) return;
@@ -1088,7 +1076,27 @@ function pressDown(e) {
     state = 'home'; fadeT = 1;
   }
 }
+// sky map drag-to-scroll: move updates the scroll, release without movement is a tap
+function pressMove(e) {
+  if (!skyMap || !mapDrag) return;
+  const p = pos(e);
+  const dy = p.y - mapDrag.y;
+  if (Math.abs(dy) > 5) mapDrag.moved = true;
+  if (mapDrag.moved) mapScroll = clamp(mapDrag.scroll + dy, 0, mapScrollMax);
+}
+function pressUp(e) {
+  if (!skyMap || !mapDrag) return;
+  const wasDrag = mapDrag.moved;
+  mapDrag = null;
+  if (!wasDrag) { const p = e ? pos(e) : null; if (p) mapTapAt(p); }
+}
 canvas.addEventListener('pointerdown', e => { e.preventDefault(); pressDown(e); });
+canvas.addEventListener('pointermove', e => pressMove(e));
+canvas.addEventListener('pointerup', e => pressUp(e));
+canvas.addEventListener('pointercancel', () => { mapDrag = null; });
+canvas.addEventListener('wheel', e => {
+  if (skyMap) { mapScroll = clamp(mapScroll + e.deltaY * 0.4, 0, mapScrollMax); e.preventDefault(); }
+}, { passive: false });
 addEventListener('keydown', e => {
   if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; if (paused) sfx.pause(); else sfx.resume(); e.preventDefault(); return; }
   if (paused) { if (e.code === 'Space' || e.code === 'Enter') { paused = false; sfx.resume(); e.preventDefault(); } return; }
@@ -1638,14 +1646,47 @@ function renderPause() {
 }
 
 // ---------- sky map (level ladder: cleared stages are launch pads, next pulses) ----------
+// list layout: one generous row per stage on a straight climbing trail down a
+// centered column; the list drag-scrolls whenever it is taller than the screen
+const MAP_ROW = 30, MAP_HEAD = 40, MAP_FOOT = 34;
 function skyMapNodes() {
+  const viewTop = MAP_HEAD + 4, viewBot = H - MAP_FOOT - 4;
+  const colW = Math.min(W - 12, 288), colX = Math.round((W - colW) / 2);
   const n = TIERS.length;
-  const topY = 84, botY = H - 68, step = (botY - topY) / n;
-  const xOff = clamp(Math.round(W * 0.18), 32, 60);   // zigzag widens with the screen
+  const contentH = (n + 2) * MAP_ROW;                       // start + stages + gate
+  mapScrollMax = Math.max(0, contentH - (viewBot - viewTop));
+  mapScroll = clamp(mapScroll, 0, mapScrollMax);
+  const base = mapScrollMax > 0
+    ? viewBot - 15 + Math.round(mapScroll)
+    : Math.round((viewTop + viewBot) / 2 + contentH / 2) - 15;
+  const trailX = colX + 12, plateX = colX + 26;
   const pts = [];
-  for (let i = 0; i < n; i++) pts.push({ x: Math.round(W/2 + (i % 2 === 0 ? -xOff : xOff)), y: Math.round(botY - i * step) });
-  // start/gate offsets are capped so tall screens never push them into the header/hints
-  return { pts, start: { x: Math.round(W/2), y: Math.round(botY + clamp(step*0.75, 13, 14)) }, gate: { x: Math.round(W/2), y: Math.round(topY - Math.min(step*0.55, 12)) } };
+  for (let i = 0; i < n; i++) pts.push({ x: trailX, y: base - (i + 1) * MAP_ROW });
+  return { pts, start: { x: trailX, y: base }, gate: { x: trailX, y: base - (n + 1) * MAP_ROW },
+           colX, colW, trailX, plateX, viewTop, viewBot };
+}
+function openSkyMap() {   // focus the view on the next goal
+  skyMap = true; mapDrag = null; mapScroll = 0;
+  const L = skyMapNodes();                                  // computes mapScrollMax
+  const k = Math.min(prog, TIERS.length) + 1;               // row index of the next goal / gate
+  mapScroll = clamp(k * MAP_ROW - (L.viewBot - L.viewTop) / 2 + MAP_ROW, 0, mapScrollMax);
+}
+// a tap (pointerup without drag) on the open map
+function mapTapAt(p) {
+  const L = skyMapNodes();
+  if (mode === 'endless' && p.x >= L.colX && p.x <= L.colX + L.colW) {
+    const inView = y2 => y2 > L.viewTop - 2 && y2 < L.viewBot + 2;
+    if (inView(L.start.y) && Math.abs(p.y - L.start.y) <= 14) {
+      launch = -1; store.set('skystack-launch', launch); sfx.tap(); return;
+    }
+    for (let i = 0; i < TIERS.length; i++) if (inView(L.pts[i].y) && Math.abs(p.y - L.pts[i].y) <= 14) {
+      if (i < prog) { launch = i; store.set('skystack-launch', launch); sfx.power(); }
+      else sfx.deny();                                      // locked stage
+      return;
+    }
+    if (inView(L.gate.y) && Math.abs(p.y - L.gate.y) <= 14) { sfx.deny(); return; }   // sealed gate
+  }
+  skyMap = false; sfx.tap();
 }
 function dkHex(hex, f) {
   const v = parseInt(hex.slice(1), 16);
@@ -1659,21 +1700,7 @@ function mapNode3D(x, y, r, face, side) {
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.fillRect(x - 2, y - r + 1, 3, 1); ctx.fillRect(x - r + 1, y - 2, 1, 3);
 }
-// single-line label plate: dark chip with a tier-color spine on the node side
-function mapChip(np, side2, name, meters, accent, nameCol) {
-  const cw = (name.length + 1 + meters.length) * 6 - 1 + 8, chH = 13;
-  let x0 = side2 > 0 ? np.x + 12 : np.x - 12 - cw;
-  x0 = Math.max(2, Math.min(x0, W - 2 - cw));
-  const y0 = np.y - 6;
-  ctx.fillStyle = 'rgba(11,14,26,0.74)'; ctx.fillRect(x0, y0, cw, chH);
-  ctx.fillStyle = 'rgba(255,246,232,0.16)'; ctx.fillRect(x0, y0, cw, 1);
-  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x0 + 1, y0 + chH, cw, 1);          // dropped edge
-  ctx.fillStyle = accent; ctx.fillRect(side2 > 0 ? x0 : x0 + cw - 2, y0, 2, chH);
-  const tx = x0 + (side2 > 0 ? 6 : 4);
-  txt(name, tx, y0 + 3, 1, nameCol, 'left');
-  txt(meters, tx + name.length*6 + 4, y0 + 3, 1, 'rgba(255,246,232,0.55)', 'left');
-}
-// pixel vignette for each stage, drawn on the node's outer side
+// pixel vignette for each stage, drawn in the row's right column
 function drawStageDeco(i, x, y) {
   const c = TIERS[i].c, ph = reduceMotion ? 0 : tick;
   ctx.fillStyle = c;
@@ -1717,69 +1744,83 @@ function drawStageDeco(i, x, y) {
   }
 }
 function renderSkyMap() {
-  // OPAQUE themed backdrop: the actual in-game skies stacked ground -> deep space
+  const L = skyMapNodes();
+  const ph = reduceMotion ? 0 : tick;
+  // altitude at a screen y follows the rows, so the real stage skies scroll with the list
+  const bl = j => j <= 0 ? 0 : j <= TIERS.length ? TIERS[j-1].n : TIERS[TIERS.length-1].n + (j - TIERS.length) * 140;
+  const blocksAt = y2 => {
+    const k = (L.start.y - y2) / MAP_ROW;
+    if (k <= 0) return 0;
+    const i = Math.floor(k), f = k - i;
+    return bl(i) + (bl(i + 1) - bl(i)) * f;
+  };
+  // OPAQUE themed backdrop: the actual in-game skies, anchored to the stage rows
   for (let y2 = 0; y2 < H; y2 += 3) {
-    const sky = skyColor((1 - y2/H) * 560);
+    const sky = skyColor(blocksAt(y2));
     ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')';
     ctx.fillRect(0, y2, W, 3);
   }
   ctx.fillStyle = 'rgba(11,14,26,0.55)'; ctx.fillRect(0, 0, W, H);   // night veil for readability
-  const L = skyMapNodes();
-  const ph = reduceMotion ? 0 : tick;
-  // twinkling stars up high
-  for (let i = 0; i < 34; i++) {
-    const sx2 = (i*67 + 13) % W, sy2 = (i*131 + 7) % Math.round(H*.5);
-    ctx.globalAlpha = .2 + .5*(.5 + .5*Math.sin(ph*.05 + i));
+  // stars fade in with altitude
+  for (let i = 0; i < 40; i++) {
+    const sx2 = (i*67 + 13) % W, sy2 = (i*131 + 7) % H;
+    const a = clamp((blocksAt(sy2) - 110) / 160, 0, 1);
+    if (a <= 0) continue;
+    ctx.globalAlpha = a * (.25 + .5*(.5 + .5*Math.sin(ph*.05 + i)));
     ctx.fillStyle = '#FFF6E8'; ctx.fillRect(sx2, sy2, i%5===0?2:1, i%5===0?2:1);
   }
   ctx.globalAlpha = 1;
-  // shooting star streaks across the top now and then
-  if (!reduceMotion) {
+  // shooting star streaks across the top when you are up high
+  if (!reduceMotion && blocksAt(60) > 150) {
     const cyc = (tick % 480) / 480;
     if (cyc < .1) {
-      const f = cyc / .1, sx2 = Math.round(W*.8 - f*W*.55), sy2 = Math.round(58 + f*30);
+      const f = cyc / .1, sx2 = Math.round(W*.8 - f*W*.55), sy2 = Math.round(56 + f*30);
       ctx.fillStyle = '#FFF6E8';
       for (let k = 0; k < 5; k++) { ctx.globalAlpha = (1 - f) * (1 - k*.17); ctx.fillRect(sx2 + k*3, sy2 - k*2, 2, 1); }
       ctx.globalAlpha = 1;
     }
   }
-  // shaded moon floating in the space band
-  const mnX = W - 26, mnY = L.pts[6].y - 6;
-  pixDisc(mnX, mnY, 7, 'rgba(150,146,180,0.85)');
-  pixDisc(mnX - 1, mnY - 1, 6, 'rgba(216,212,232,0.9)');
-  ctx.fillStyle = 'rgba(150,146,180,0.8)'; ctx.fillRect(mnX+1, mnY+1, 2, 2); ctx.fillRect(mnX-3, mnY+3, 1, 1); ctx.fillRect(mnX-1, mnY-3, 1, 1);
-  // aurora curtains wave behind the AURORA band
-  for (let k = 0; k < 6; k++) {
+  const onScreen = y2 => y2 > -24 && y2 < H + 24;
+  // band decor rides along with its stage row, behind the list
+  if (onScreen(L.pts[7].y)) {   // shaded moon by ORBIT
+    const mnX = W - 18, mnY = L.pts[7].y - 10;
+    pixDisc(mnX, mnY, 7, 'rgba(150,146,180,0.85)');
+    pixDisc(mnX - 1, mnY - 1, 6, 'rgba(216,212,232,0.9)');
+    ctx.fillStyle = 'rgba(150,146,180,0.8)'; ctx.fillRect(mnX+1, mnY+1, 2, 2); ctx.fillRect(mnX-3, mnY+3, 1, 1); ctx.fillRect(mnX-1, mnY-3, 1, 1);
+  }
+  if (onScreen(L.pts[5].y)) for (let k = 0; k < 6; k++) {   // aurora curtains by AURORA
     const ax = Math.round(W*(k+.5)/6 + Math.sin(ph*.02 + k*1.7)*6), ay = L.pts[5].y;
     ctx.globalAlpha = .09 + .05*Math.sin(ph*.04 + k);
     ctx.fillStyle = k % 2 ? '#7EF2C5' : '#C77EFF';
-    for (let s2 = -8; s2 <= 8; s2 += 2) ctx.fillRect(ax + Math.round(Math.sin((ay+s2)*.2 + ph*.03)*2), ay + s2, 2, 2);
+    for (let s2 = -10; s2 <= 10; s2 += 2) ctx.fillRect(ax + Math.round(Math.sin((ay+s2)*.2 + ph*.03)*2), ay + s2, 2, 2);
   }
   ctx.globalAlpha = 1;
-  // clouds drift through the low bands
-  ctx.fillStyle = 'rgba(255,246,232,0.16)';
-  for (let k = 0; k < 4; k++) {
-    const span = W + 44;
-    const cx2 = Math.round(((k*83 + ph*(.12 + k*.03)) % span + span) % span) - 22;
-    const cy2 = L.pts[2].y + [-16, -4, 8, 22][k];
-    ctx.fillRect(cx2-6, cy2, 12, 2); ctx.fillRect(cx2-3, cy2-2, 7, 2); ctx.fillRect(cx2+2, cy2+2, 6, 1);
+  if (onScreen(L.pts[2].y)) {   // clouds drift by CLOUD NINE
+    ctx.fillStyle = 'rgba(255,246,232,0.16)';
+    for (let k = 0; k < 4; k++) {
+      const span = W + 44;
+      const cx2 = Math.round(((k*83 + ph*(.12 + k*.03)) % span + span) % span) - 22;
+      const cy2 = L.pts[2].y + [-18, -6, 8, 20][k];
+      ctx.fillRect(cx2-6, cy2, 12, 2); ctx.fillRect(cx2-3, cy2-2, 7, 2); ctx.fillRect(cx2+2, cy2+2, 6, 1);
+    }
   }
-  // birds flap through the treetop band
-  ctx.fillStyle = 'rgba(20,16,34,0.7)';
-  for (let k = 0; k < 2; k++) {
-    const span = W + 30;
-    const bx = Math.round(((k*140 + 40 + ph*.2) % span + span) % span - 15);
-    const by = L.pts[1].y - 8 + k*10;
-    const up = Math.floor(ph*.15 + k*3) % 2;
-    ctx.fillRect(bx-2, by + (up?-1:0), 2, 1); ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx+1, by + (up?-1:0), 2, 1);
+  if (onScreen(L.pts[1].y)) {   // birds flap by TREETOPS
+    ctx.fillStyle = 'rgba(20,16,34,0.7)';
+    for (let k = 0; k < 2; k++) {
+      const span = W + 30;
+      const bx = Math.round(((k*140 + 40 + ph*.2) % span + span) % span - 15);
+      const by = L.pts[1].y - 6 + k*12;
+      const up = Math.floor(ph*.15 + k*3) % 2;
+      ctx.fillRect(bx-2, by + (up?-1:0), 2, 1); ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx+1, by + (up?-1:0), 2, 1);
+    }
   }
-  // city skyline silhouette along the ground, a few windows lit
-  for (let x2 = 0; x2 < W; x2 += 13) {
+  const gy = L.start.y + 21;    // city skyline sits on the ground under START
+  if (gy > 0 && gy - 17 < H) for (let x2 = 0; x2 < W; x2 += 13) {
     const bh2 = 6 + (x2*7 + 5) % 11;
-    ctx.fillStyle = 'rgba(11,14,26,0.85)'; ctx.fillRect(x2, H - bh2, 11, bh2);
-    if (bh2 > 9) { ctx.fillStyle = 'rgba(255,215,94,0.35)'; ctx.fillRect(x2+2, H-bh2+2, 1, 1); ctx.fillRect(x2+7, H-bh2+4, 1, 1); }
+    ctx.fillStyle = 'rgba(11,14,26,0.85)'; ctx.fillRect(x2, gy - bh2, 11, bh2);
+    if (bh2 > 9) { ctx.fillStyle = 'rgba(255,215,94,0.35)'; ctx.fillRect(x2+2, gy-bh2+2, 1, 1); ctx.fillRect(x2+7, gy-bh2+4, 1, 1); }
   }
-  // where your lifetime best sits on the trail (mascot + edge markers)
+  // straight dotted trail up the gutter; walked part glows gold, mascot marks your best
   let mp = null;
   if (bestHeight > 0) {
     const nextIdx = TIERS.findIndex(t => bestHeight < t.n);
@@ -1788,93 +1829,100 @@ function renderSkyMap() {
       const prevN = nextIdx === 0 ? 0 : TIERS[nextIdx-1].n;
       const frac = clamp((bestHeight - prevN) / (TIERS[nextIdx].n - prevN), 0, 1);
       const a2 = nextIdx === 0 ? L.start : L.pts[nextIdx-1];
-      const b2 = L.pts[nextIdx];
-      mp = { x: Math.round(a2.x + (b2.x-a2.x)*frac), y: Math.round(a2.y + (b2.y-a2.y)*frac) };
+      mp = { x: L.trailX, y: Math.round(a2.y - frac * MAP_ROW) };
     }
   }
-  // altitude ticks on the screen edges line up with the stages
-  for (let i = 0; i < TIERS.length; i++) {
-    ctx.fillStyle = i < prog ? 'rgba(255,215,94,0.5)' : 'rgba(255,246,232,0.18)';
-    ctx.fillRect(2, L.pts[i].y, 4, 1); ctx.fillRect(W-6, L.pts[i].y, 4, 1);
+  for (let yy = L.gate.y; yy <= L.start.y; yy += 6) {
+    if (yy < L.viewTop - 4 || yy > L.viewBot + 4) continue;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(L.trailX - 1, yy + 1, 2, 2);
+    ctx.fillStyle = mp && yy >= mp.y ? 'rgba(255,215,94,0.6)' : 'rgba(255,246,232,0.28)';
+    ctx.fillRect(L.trailX - 1, yy, 2, 2);
   }
-  if (mp) {   // gold markers on both rulers point at your best height
-    ctx.fillStyle = 'rgba(255,215,94,' + (.6 + .3*Math.sin(ph*.1)) + ')';
-    ctx.fillRect(2, mp.y-1, 3, 3); ctx.fillRect(5, mp.y, 1, 1);
-    ctx.fillRect(W-5, mp.y-1, 3, 3); ctx.fillRect(W-6, mp.y, 1, 1);
+  if (mp && mp.y > L.viewTop - 6 && mp.y < L.viewBot + 6) drawMascot(L.trailX, mp.y + 4);
+  // one row per stage: plate + node on the trail + name/meters + vignette
+  const pw = L.colX + L.colW - L.plateX;
+  for (let k = -1; k <= TIERS.length; k++) {
+    const isStart = k === -1, isGate = k === TIERS.length;
+    const y = isStart ? L.start.y : isGate ? L.gate.y : L.pts[k].y;
+    if (y < L.viewTop - 15 || y > L.viewBot + 15) continue;
+    const t = isStart || isGate ? null : TIERS[k];
+    const cleared = !isStart && !isGate && k < prog, isNext = k === prog;
+    const champ = prog >= TIERS.length;
+    const sel = isStart ? launch < 0 : launch === k;
+    // plate
+    ctx.fillStyle = 'rgba(11,14,26,' + (sel ? '0.78' : '0.55') + ')'; ctx.fillRect(L.plateX, y-12, pw, 24);
+    ctx.fillStyle = 'rgba(255,246,232,0.09)'; ctx.fillRect(L.plateX, y-12, pw, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(L.plateX+1, y+12, pw, 1);
+    const accent = isStart ? (sel ? '#62E8B5' : 'rgba(255,246,232,0.25)')
+      : isGate ? (champ ? '#FFD75E' : 'rgba(255,246,232,0.18)')
+      : cleared ? '#FFD75E' : isNext ? t.c : 'rgba(255,246,232,0.18)';
+    ctx.fillStyle = accent; ctx.fillRect(L.plateX, y-12, 3, 24);
+    if (sel) {   // selected launch pad: white frame
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillRect(L.plateX-1, y-13, pw+2, 1); ctx.fillRect(L.plateX-1, y+12, pw+2, 1);
+      ctx.fillRect(L.plateX-1, y-13, 1, 26); ctx.fillRect(L.plateX+pw, y-13, 1, 26);
+    } else if (isNext && !reduceMotion) {   // next goal: soft pulsing frame in its color
+      ctx.globalAlpha = .25 + .3*(.5 + .5*Math.sin(tick*.1));
+      ctx.fillStyle = t ? t.c : '#FFF6E8';
+      ctx.fillRect(L.plateX-1, y-13, pw+2, 1); ctx.fillRect(L.plateX-1, y+12, pw+2, 1);
+      ctx.fillRect(L.plateX-1, y-13, 1, 26); ctx.fillRect(L.plateX+pw, y-13, 1, 26);
+      ctx.globalAlpha = 1;
+    }
+    // node on the trail
+    if (isStart) {
+      mapNode3D(L.trailX, y, 5, sel ? '#62E8B5' : 'rgba(255,246,232,0.35)', sel ? dkHex('#62E8B5', .45) : 'rgba(20,16,34,0.8)');
+      ctx.fillStyle = '#141022'; ctx.fillRect(L.trailX, y-2, 1, 5); ctx.fillRect(L.trailX-1, y-1, 3, 1);
+    } else if (isGate) {
+      if (champ) {
+        mapNode3D(L.trailX, y, 6, '#FFD75E', '#7A5A14'); pixDisc(L.trailX, y, 4, '#4A3A0C');
+        ctx.fillStyle = '#FFD75E'; ctx.fillRect(L.trailX-2, y-1, 5, 2);
+        ctx.fillRect(L.trailX-2, y-2, 1, 1); ctx.fillRect(L.trailX, y-2, 1, 1); ctx.fillRect(L.trailX+2, y-2, 1, 1);
+      } else {
+        pixDisc(L.trailX, y, 6, 'rgba(0,0,0,0.3)'); pixDisc(L.trailX, y, 5, 'rgba(255,246,232,0.14)'); pixDisc(L.trailX, y, 4, '#141022');
+        txt('?', L.trailX, y - 3, 1, 'rgba(255,246,232,0.55)', 'center');
+      }
+    } else if (cleared) {
+      mapNode3D(L.trailX, y, 6, '#FFD75E', '#7A5A14');
+      pixDisc(L.trailX, y, 4, '#4A3A0C');
+      ctx.fillStyle = '#FFD75E'; ctx.fillRect(L.trailX-2, y, 1, 2); ctx.fillRect(L.trailX-1, y+1, 1, 1); ctx.fillRect(L.trailX, y-1, 1, 1); ctx.fillRect(L.trailX+1, y-2, 1, 1);
+    } else if (isNext) {
+      if (!reduceMotion) pixDisc(L.trailX, y, 9, uiA(.1 + (.5 + .5*Math.sin(tick*.1))*.18));
+      mapNode3D(L.trailX, y, 6, t.c, dkHex(t.c, .4));
+      pixDisc(L.trailX, y, 4, '#141022');
+    } else {   // locked: recessed socket with a padlock
+      pixDisc(L.trailX, y, 6, 'rgba(0,0,0,0.3)'); pixDisc(L.trailX, y, 5, 'rgba(255,246,232,0.14)'); pixDisc(L.trailX, y, 4, '#141022');
+      ctx.fillStyle = 'rgba(255,246,232,0.45)'; ctx.fillRect(L.trailX-1, y-1, 3, 2); ctx.fillRect(L.trailX-1, y-2, 1, 1); ctx.fillRect(L.trailX+1, y-2, 1, 1);
+    }
+    // labels: name on top, meters below, consistent left alignment
+    const name = isStart ? 'START' : isGate ? (champ ? 'SKY CHAMPION' : '? ? ?') : t.name;
+    const meters = isStart ? 'GROUND - 0M' : isGate ? (champ ? 'THE GATE IS OPEN' : 'SEALED') : t.n*METERS_PER + 'M' + (cleared ? ' - CLEARED' : isNext ? ' - NEXT GOAL' : '');
+    const nameCol = isStart ? (sel ? '#62E8B5' : 'rgba(255,246,232,0.75)')
+      : isGate ? (champ ? '#FFD75E' : 'rgba(255,246,232,0.4)')
+      : cleared ? '#FFF6E8' : isNext ? t.c : 'rgba(255,246,232,0.4)';
+    txt(name, L.plateX + 10, y - 9, 1, nameCol, 'left');
+    txt(meters, L.plateX + 10, y + 2, 1, 'rgba(255,246,232,0.5)', 'left');
+    if (!isStart && !isGate) drawStageDeco(k, L.colX + L.colW - 16, y);
   }
   // header plate
-  ctx.fillStyle = 'rgba(11,14,26,0.5)'; ctx.fillRect(0, 0, W, 50);
-  ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, 50, W, 1);
-  txt('SKY MAP', W/2+1, 17, 2, 'rgba(0,0,0,0.5)', 'center');
-  txt('SKY MAP', W/2, 16, 2, '#FFF6E8', 'center');
-  txt('BEST ' + bestHeight*METERS_PER + 'M', W/2, 37, 1, '#FFD75E', 'center');
-  // dotted winding trail: launch pad -> stages -> gate (walked segments glow gold)
-  let prev = L.start;
-  for (let i = 0; i <= TIERS.length; i++) {
-    const np = i === TIERS.length ? L.gate : L.pts[i];
-    for (let s2 = 1; s2 < 7; s2++) {
-      const dx = Math.round(prev.x + (np.x-prev.x)*s2/7), dy = Math.round(prev.y + (np.y-prev.y)*s2/7);
-      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(dx, dy+1, 2, 2);
-      ctx.fillStyle = i < prog ? 'rgba(255,215,94,0.55)' : 'rgba(255,246,232,0.3)'; ctx.fillRect(dx, dy, 2, 2);
-    }
-    prev = np;
-  }
-  // mascot climbs the trail to your lifetime best (behind the pads/chips so labels stay readable)
-  if (mp) drawMascot(mp.x, mp.y - 4);
-  // ground launch pad
-  const selGround = launch < 0;
-  if (selGround) pixDisc(L.start.x, L.start.y, 8, 'rgba(255,255,255,0.85)');
-  mapNode3D(L.start.x, L.start.y, 5, selGround ? '#62E8B5' : 'rgba(255,246,232,0.35)', selGround ? dkHex('#62E8B5', .45) : 'rgba(20,16,34,0.8)');
-  ctx.fillStyle = '#141022';                                        // up arrow on the pad
-  ctx.fillRect(L.start.x, L.start.y-2, 1, 5); ctx.fillRect(L.start.x-1, L.start.y-1, 3, 1);
-  mapChip(L.start, 1, 'START', '0M', selGround ? '#62E8B5' : 'rgba(255,246,232,0.35)', selGround ? '#62E8B5' : 'rgba(255,246,232,0.7)');
-  // stage nodes: gold = cleared level (tap to launch), pulse = next goal, dim = locked
-  for (let i = 0; i < TIERS.length; i++) {
-    const t = TIERS[i], np = L.pts[i];
-    const cleared = i < prog, isNext = i === prog;
-    const side2 = np.x < W/2 ? 1 : -1;   // label toward screen center, deco on the outside
-    if (isNext && !reduceMotion) {
-      const pl = .5 + .5*Math.sin(tick*.1);
-      pixDisc(np.x, np.y, 10, uiA(.12 + pl*.2));
-    }
-    if (launch === i) pixDisc(np.x, np.y, 9, 'rgba(255,255,255,0.9)');   // selected launch pad
-    if (cleared) {
-      mapNode3D(np.x, np.y, 6, '#FFD75E', '#7A5A14');
-      pixDisc(np.x, np.y, 4, '#4A3A0C');
-      ctx.fillStyle = '#FFD75E'; ctx.fillRect(np.x-2, np.y, 1, 2); ctx.fillRect(np.x-1, np.y+1, 1, 1); ctx.fillRect(np.x, np.y-1, 1, 1); ctx.fillRect(np.x+1, np.y-2, 1, 1);
-    } else if (isNext) {
-      mapNode3D(np.x, np.y, 6, t.c, dkHex(t.c, .4));
-      pixDisc(np.x, np.y, 4, '#141022');
-    } else {   // locked: flat recessed socket with a padlock
-      pixDisc(np.x, np.y, 6, 'rgba(0,0,0,0.3)');
-      pixDisc(np.x, np.y, 5, 'rgba(255,246,232,0.14)');
-      pixDisc(np.x, np.y, 4, '#141022');
-      ctx.fillStyle = 'rgba(255,246,232,0.45)'; ctx.fillRect(np.x-1, np.y-1, 3, 2); ctx.fillRect(np.x-1, np.y-2, 1, 1); ctx.fillRect(np.x+1, np.y-2, 1, 1);
-    }
-    mapChip(np, side2, t.name, t.n*METERS_PER + 'M',
-      cleared ? '#FFD75E' : isNext ? t.c : 'rgba(255,246,232,0.25)',
-      cleared ? '#FFF6E8' : isNext ? t.c : 'rgba(255,246,232,0.45)');
-    drawStageDeco(i, np.x - side2*18, np.y);
-  }
-  // the gate above THE STARS: sealed until the sky is conquered
-  const champ = prog >= TIERS.length;
-  if (champ) {
-    mapNode3D(L.gate.x, L.gate.y, 6, '#FFD75E', '#7A5A14');
-    pixDisc(L.gate.x, L.gate.y, 4, '#4A3A0C');
-    ctx.fillStyle = '#FFD75E'; ctx.fillRect(L.gate.x-2, L.gate.y-1, 5, 2);   // crown
-    ctx.fillRect(L.gate.x-2, L.gate.y-2, 1, 1); ctx.fillRect(L.gate.x, L.gate.y-2, 1, 1); ctx.fillRect(L.gate.x+2, L.gate.y-2, 1, 1);
-    txt('SKY CHAMPION', L.gate.x, L.gate.y - 13, 1, '#FFD75E', 'center');
-  } else {
-    pixDisc(L.gate.x, L.gate.y, 6, 'rgba(0,0,0,0.3)');
-    pixDisc(L.gate.x, L.gate.y, 5, 'rgba(255,246,232,0.14)');
-    pixDisc(L.gate.x, L.gate.y, 4, '#141022');
-    txt('?', L.gate.x, L.gate.y - 3, 1, 'rgba(255,246,232,0.55)', 'center');
-  }
+  ctx.fillStyle = 'rgba(11,14,26,0.72)'; ctx.fillRect(0, 0, W, MAP_HEAD);
+  ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, MAP_HEAD, W, 1);
+  txt('SKY MAP', W/2+1, 10, 2, 'rgba(0,0,0,0.5)', 'center');
+  txt('SKY MAP', W/2, 9, 2, '#FFF6E8', 'center');
+  txt('BEST ' + bestHeight*METERS_PER + 'M', W/2, 27, 1, '#FFD75E', 'center');
+  // footer plate + hints
+  ctx.fillStyle = 'rgba(11,14,26,0.72)'; ctx.fillRect(0, H - MAP_FOOT, W, MAP_FOOT);
+  ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, H - MAP_FOOT, W, 1);
   const hint = mode === 'endless' ? 'TAP GOLD STAGE TO LAUNCH' : 'CHECKPOINTS: ENDLESS ONLY';
-  txt(hint, W/2+1, H - 37, 1, 'rgba(0,0,0,0.5)', 'center');
-  txt(hint, W/2, H - 38, 1, 'rgba(255,246,232,0.65)', 'center');
-  txt('TAP ELSEWHERE TO CLOSE', W/2+1, H - 26, 1, 'rgba(0,0,0,0.5)', 'center');
-  txt('TAP ELSEWHERE TO CLOSE', W/2, H - 27, 1, 'rgba(255,246,232,0.4)', 'center');
+  txt(hint, W/2, H - 27, 1, 'rgba(255,246,232,0.7)', 'center');
+  txt(mapScrollMax > 0 && Math.floor(tick/150) % 2 ? 'DRAG TO CLIMB' : 'TAP OUT TO CLOSE', W/2, H - 15, 1, 'rgba(255,246,232,0.38)', 'center');
+  // slim scrollbar on the right edge
+  if (mapScrollMax > 0) {
+    const trackH = L.viewBot - L.viewTop;
+    const thumbH = Math.max(14, Math.round(trackH * trackH / (trackH + mapScrollMax)));
+    const thumbY = Math.round(L.viewTop + (1 - mapScroll / mapScrollMax) * (trackH - thumbH));
+    ctx.fillStyle = 'rgba(255,246,232,0.1)'; ctx.fillRect(W - 4, L.viewTop, 2, trackH);
+    ctx.fillStyle = 'rgba(255,246,232,0.4)'; ctx.fillRect(W - 4, thumbY, 2, thumbH);
+  }
 }
 
 // ---------- mode picker overlay ----------

@@ -89,8 +89,12 @@ check('skyMapNodes: 9 pts + start + gate', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.pts.length === 9 && L.start && L.gate; })()'));
 check('skyMapNodes: start below first node, gate above last', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.start.y > L.pts[0].y && L.gate.y < L.pts[8].y; })()'));
-check('skyMapNodes: all nodes inside canvas', () => fresh.run(
-  '(() => { const L = skyMapNodes(); return [...L.pts, L.start, L.gate].every(p => p.x>=0 && p.x<=W && p.y>=0 && p.y<=H); })()'));
+check('skyMapNodes: rows evenly spaced on the straight trail', () => fresh.run(
+  '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => p.x === L.trailX && (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.pts[8].y - L.gate.y === MAP_ROW; })()'));
+check('skyMapNodes: column centered and inside canvas', () => fresh.run(
+  '(() => { const L = skyMapNodes(); return L.colX >= 0 && L.colX + L.colW <= W && Math.abs((L.colX) - (W - L.colX - L.colW)) <= 1; })()'));
+check('openSkyMap clamps scroll into range', () => fresh.run(
+  '(() => { openSkyMap(); return skyMap === true && mapScroll >= 0 && mapScroll <= mapScrollMax; })()'));
 check('renderSkyMap runs without throwing (prog=0)', () => { fresh.run('skyMap = true; renderSkyMap()'); return true; });
 check('drawStageDeco runs for all 9 stages', () => { fresh.run('for (let i=0;i<9;i++) drawStageDeco(i, 100, 100)'); return true; });
 check('renderHome runs without throwing', () => { fresh.run('state="home"; skyMap=false; renderHome()'); return true; });
@@ -167,28 +171,31 @@ check('reaching THE STARS first time: SKY CONQUERED banner', () => lc.run('banne
 check('game beaten: prog = 9 (all stages)', () => lc.run('prog === 9'));
 check('renderSkyMap champion state runs (crown/gate)', () => { lc.run('renderSkyMap()'); return true; });
 
-// ---------- map tap input ----------
+// ---------- map tap + drag input (taps resolve on release) ----------
 const tap = makeGame({ 'skystack-height': '60' });   // prog seeds to 3
-tap.run('mode = "endless"; state = "home"; skyMap = true;');
+tap.run('mode = "endless"; state = "home"; openSkyMap();');
 // pos() is a top-level function declaration -> reassignable on the sandbox global
 tap.run('var __p = {x:0,y:0}; pos = () => __p;');
-check('map tap: cleared stage selects launch pad', () => tap.run(
-  '(() => { const L = skyMapNodes(); __p = {x:L.pts[1].x, y:L.pts[1].y}; pressDown({}); return launch === 1 && skyMap === true; })()'));
+tap.run('var __T = (x, y) => { __p = {x:x, y:y}; pressDown({}); pressUp({}); };');
+check('map tap: cleared stage row selects launch pad', () => tap.run(
+  '(() => { const L = skyMapNodes(); __T(L.plateX + 20, L.pts[1].y); return launch === 1 && skyMap === true; })()'));
 check('map tap: launch persisted', () => tap.mem.get('skystack-launch') === '1' ? true : 'stored: ' + tap.mem.get('skystack-launch'));
 check('map tap: locked stage refused', () => tap.run(
-  '(() => { const L = skyMapNodes(); __p = {x:L.pts[6].x, y:L.pts[6].y}; pressDown({}); return launch === 1; })()'));
+  '(() => { const L = skyMapNodes(); __T(L.plateX + 20, L.pts[6].y); return launch === 1; })()'));
+check('map tap: whole row plate is tappable', () => tap.run(
+  '(() => { const L = skyMapNodes(); __T(L.colX + L.colW - 10, L.pts[2].y); return launch === 2 && skyMap === true; })()'));
 check('map tap: START resets to ground', () => tap.run(
-  '(() => { const L = skyMapNodes(); __p = {x:L.start.x, y:L.start.y}; pressDown({}); return launch === -1; })()'));
-check('map tap: elsewhere closes the map', () => tap.run(
-  '(() => { __p = {x:2, y:2}; pressDown({}); return skyMap === false; })()'));
+  '(() => { mapScroll = 0; const L = skyMapNodes(); __T(L.plateX + 20, L.start.y); return launch === -1; })()'));
+check('map tap: sealed gate refuses, map stays open', () => tap.run(
+  '(() => { mapScroll = mapScrollMax; const L = skyMapNodes(); __T(L.plateX + 10, L.gate.y); return skyMap === true && launch === -1; })()'));
+check('map tap: header tap closes the map', () => tap.run(
+  '(() => { __T(Math.round(W/2), 20); return skyMap === false; })()'));
+check('map drag: scrolls without selecting', () => tap.run(
+  '(() => { openSkyMap(); const s0 = mapScroll; launch = -1; const L = skyMapNodes(); __p = {x:100, y:L.pts[1].y}; pressDown({}); __p = {x:100, y:L.pts[1].y + 40}; pressMove({}); pressUp({}); return mapScroll !== s0 && launch === -1 && skyMap === true; })()'));
 check('map tap in PURE mode: tap just closes, no selection', () => tap.run(
-  '(() => { mode = "pure"; skyMap = true; launch = -1; const L = skyMapNodes(); __p = {x:L.pts[1].x, y:L.pts[1].y}; pressDown({}); return skyMap === false && launch === -1; })()'));
-check('map tap: label chip (toward center) also selects', () => tap.run(
-  '(() => { mode = "endless"; skyMap = true; launch = -1; const L = skyMapNodes(); const side = L.pts[2].x < W/2 ? 1 : -1; __p = {x:L.pts[2].x + side*40, y:L.pts[2].y}; pressDown({}); return launch === 2 && skyMap === true; })()'));
-check('map tap: outer (deco) side does not select', () => tap.run(
-  '(() => { launch = -1; const L = skyMapNodes(); const side = L.pts[2].x < W/2 ? 1 : -1; __p = {x:L.pts[2].x - side*40, y:L.pts[2].y}; pressDown({}); return launch === -1 && skyMap === false; })()'));
-check('3D map helpers exist (mapNode3D, mapChip, dkHex)', () => tap.run(
-  'typeof mapNode3D === "function" && typeof mapChip === "function" && typeof dkHex === "function"'));
+  '(() => { mode = "pure"; openSkyMap(); launch = -1; const L = skyMapNodes(); __T(L.plateX + 20, L.pts[1].y); return skyMap === false && launch === -1; })()'));
+check('map helpers exist (mapNode3D, dkHex, openSkyMap, mapTapAt)', () => tap.run(
+  'typeof mapNode3D === "function" && typeof dkHex === "function" && typeof openSkyMap === "function" && typeof mapTapAt === "function"'));
 check('dkHex darkens a hex color', () => tap.run('dkHex("#FFD75E", .5) === "rgb(128,108,47)"'));
 
 // ---------- home screen label ----------
@@ -206,7 +213,7 @@ check('home: no LAUNCH label on ground runs', () => {
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v24', () => /const CACHE = 'skystack-v24'/.test(sw));
+check('sw.js cache bumped to v25', () => /const CACHE = 'skystack-v25'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('no stray skymap.png in repo', () => !fs.existsSync(path.join(ROOT, 'skymap.png')));
 check('launch key stored under skystack-launch', () => /store\.set\('skystack-launch'/.test(src));
