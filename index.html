@@ -159,6 +159,8 @@ const sfx = {
   over() { tone(320, .15, 'sawtooth', .1); tone(220, .18, 'sawtooth', .1, .14); tone(140, .4, 'sawtooth', .12, .3); hapt([40, 60, 80]); },
   start() { tone(523, .07, 'square', .08); tone(784, .1, 'square', .08, .08); },
   tap() { tone(660, .05, 'square', .06); },
+  pause() { tone(660, .06, 'triangle', .08); tone(440, .1, 'triangle', .07, .06); },      // settle down
+  resume() { tone(440, .06, 'triangle', .07); tone(660, .1, 'triangle', .08, .06); },     // spin back up
   wind() { tone(220, .5, 'sine', .04); noise(.5, .03); }
 };
 
@@ -965,7 +967,7 @@ function pressDown(e) {
   audio();
   if (paused) {
     if (p) for (const rw of PAUSE_ROWS) if (inR(p, rw, 2)) {
-      if (rw.id === 'resume') { paused = false; sfx.tap(); }
+      if (rw.id === 'resume') { paused = false; sfx.resume(); }
       else if (rw.id === 'restart') { sfx.tap(); startRun(); }
       else if (rw.id === 'sound') { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); }
       else if (rw.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
@@ -1016,7 +1018,7 @@ function pressDown(e) {
     }
   } else if (state === 'playing' || state === 'dropping') {
     if (p && inR(p, SND_BTN, 3)) { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); return; }
-    if (p && inR(p, PAUSE_BTN, 3)) { paused = true; sfx.tap(); return; }
+    if (p && inR(p, PAUSE_BTN, 3)) { paused = true; sfx.pause(); return; }
     if (state === 'playing' && slider) drop();          // no steering — tap drops instantly
   } else if (state === 'gameover' && overLock <= 0) {
     if (p && inR(p, SHARE_BTN, 3)) { shareScore(); return; }
@@ -1025,8 +1027,8 @@ function pressDown(e) {
 }
 canvas.addEventListener('pointerdown', e => { e.preventDefault(); pressDown(e); });
 addEventListener('keydown', e => {
-  if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; sfx.tap(); e.preventDefault(); return; }
-  if (paused) { if (e.code === 'Space' || e.code === 'Enter') { paused = false; sfx.tap(); e.preventDefault(); } return; }
+  if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; if (paused) sfx.pause(); else sfx.resume(); e.preventDefault(); return; }
+  if (paused) { if (e.code === 'Space' || e.code === 'Enter') { paused = false; sfx.resume(); e.preventDefault(); } return; }
   if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { previewIdx = (previewIdx + (e.code==='ArrowLeft'?SKINS.length-1:1)) % SKINS.length; demo.n=1; sfx.tap(); e.preventDefault(); return; }
   if (e.code==='Space'||e.code==='Enter'||e.code==='ArrowDown') {
     e.preventDefault();
