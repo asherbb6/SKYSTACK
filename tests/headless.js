@@ -359,7 +359,17 @@ const bio = makeGame({ 'skystack-height': '300' });
 bio.run('mode = "endless"; resetRun(); state = "playing";');
 check('biome helpers exist (drawBiomeDecor, biomeSprite)', () => bio.run(
   'typeof drawBiomeDecor === "function" && typeof biomeSprite === "function"'));
+check('layered biome helpers exist (biomeBackdrop, biomeWeather, skyWash, biomeTierAt, bhash)', () => bio.run(
+  '["biomeBackdrop","biomeWeather","skyWash","biomeTierAt","bhash","ringFrame"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function")'));
 check('biomeSprite renders for all 9 tiers without throwing', () => { bio.run('for (let i=0;i<9;i++) biomeSprite(i, 50, 100, i, 40)'); return true; });
+check('biomeBackdrop renders every tier at full + faded alpha without throwing', () => {
+  bio.run('for (let i=0;i<9;i++) { biomeBackdrop(i, -1000, 1); biomeBackdrop(i, -6000, 0.4); }'); return true; });
+check('biomeWeather runs for every tier without throwing', () => {
+  bio.run('for (let i=0;i<9;i++) biomeWeather(i, -2000, 1, 40)'); return true; });
+check('biomeTierAt maps altitude to the SKY MAP stage', () => bio.run(
+  'biomeTierAt(0) === 0 && biomeTierAt(9) === 0 && biomeTierAt(10) === 1 && biomeTierAt(149) === 5 && biomeTierAt(499) === 8 && biomeTierAt(9999) === 8'));
+check('bhash is deterministic and in [0,1)', () => bio.run(
+  'bhash(7) === bhash(7) && bhash(7) >= 0 && bhash(7) < 1 && bhash(7) !== bhash(8)'));
 check('drawBiomeDecor runs across the whole climb without throwing', () => {
   bio.run('for (let a = 0; a < 520; a += 30) { drawBiomeDecor(GROUND_Y - a*BH - (H-100)); }');
   return true;
@@ -372,7 +382,7 @@ check('a campaign level starts in its tier biome (level 6 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v32', () => /const CACHE = 'skystack-v32'/.test(sw));
+check('sw.js cache bumped to v33', () => /const CACHE = 'skystack-v33'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));

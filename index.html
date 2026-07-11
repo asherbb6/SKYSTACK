@@ -1441,63 +1441,306 @@ function topBar(title) {
 }
 
 // ---------- biome backdrop ----------
-// themed sprites anchored to world altitude so each tier's biome (rooftops, treetops,
-// clouds, jet stream, stratosphere, aurora, space, orbit, stars) drifts past as you
-// climb — the same biomes the SKY MAP shows, so a level's sky matches its map stage
+// Each tier is its own living environment, not a colour swap: large parallax structures
+// (city towers, forest trunks, cloud banks, a planet limb…), drifting mid-ground sprites,
+// and animated weather (leaves, snow, contrails, meteors) — the same biomes the SKY MAP
+// shows, so a level's sky matches its map stage. Everything here draws BEHIND the tower
+// (render() calls it before renderWorld) and stays dark / low-alpha with clear parallax
+// separation so the tower and the falling block always read cleanly.
+function bhash(n) { return ((Math.imul(n | 0, 2654435761)) >>> 0) / 4294967296; }   // stable 0..1
+function biomeTierAt(A) { const ti = TIERS.findIndex(t => A < t.n); return ti < 0 ? TIERS.length - 1 : ti; }
+function ringFrame(x, y, r) { ctx.fillRect(x - r, y - r, 2*r, 1); ctx.fillRect(x - r, y + r, 2*r, 1); ctx.fillRect(x - r, y - r, 1, 2*r); ctx.fillRect(x + r, y - r, 1, 2*r + 1); }
+// a vertical gradient wash that gives each biome its own air/mood; stops = [[pos,'rgba…'],…]
+function skyWash(stops, a) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  for (const st of stops) g.addColorStop(st[0], st[1]);
+  ctx.globalAlpha = a; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+}
+
+// small drifting mid-ground sprite (kept subtle — the backdrops carry each biome now)
 function biomeSprite(tier, x, y, s, ph) {
   x = Math.round(x + (reduceMotion ? 0 : Math.sin(ph*.02 + s)*3));
-  if (tier === 0) {                    // ROOFTOPS — distant floating city towers
+  if (tier === 0) {                    // ROOFTOPS — a distant floating tower
     if (s & 1) return;
-    ctx.globalAlpha = .6;
+    ctx.globalAlpha = .5;
     const bh2 = 12 + (s*7 & 14);
-    ctx.fillStyle = '#26324C'; ctx.fillRect(x, y - bh2, 9, bh2);
-    ctx.fillStyle = '#34466A'; ctx.fillRect(x, y - bh2, 2, bh2);
-    ctx.fillStyle = 'rgba(255,224,138,0.85)';
+    ctx.fillStyle = '#20304C'; ctx.fillRect(x, y - bh2, 9, bh2);
+    ctx.fillStyle = 'rgba(255,224,138,0.7)';
     for (let wy = y - bh2 + 3; wy < y - 2; wy += 4) { ctx.fillRect(x+3, wy, 1, 1); ctx.fillRect(x+6, wy, 1, 1); }
-    const bh3 = 8 + (s*5 & 8); ctx.fillStyle = '#22304A'; ctx.fillRect(x+11, y - bh3, 6, bh3);
     ctx.globalAlpha = 1;
-  } else if (tier === 1) {             // TREETOPS — floating forest canopy
+  } else if (tier === 1) {             // TREETOPS — a floating leaf clump
     if (s & 1) return;
-    ctx.globalAlpha = .55; pixDisc(x, y-5, 6, '#20522A'); pixDisc(x-5, y-1, 5, '#20522A'); pixDisc(x+5, y-1, 5, '#20522A');
-    pixDisc(x, y-6, 4, '#2E6E3A'); ctx.fillStyle = '#6A4326'; ctx.fillRect(x-1, y, 2, 4); ctx.globalAlpha = 1;
-  } else if (tier === 2 || tier === 3) {   // CLOUD NINE / JET STREAM — clouds (+ jet contrails)
-    ctx.globalAlpha = tier === 3 ? .38 : .55;
+    ctx.globalAlpha = .5; pixDisc(x, y-5, 6, '#20522A'); pixDisc(x-5, y-1, 5, '#20522A'); pixDisc(x+5, y-1, 5, '#20522A');
+    pixDisc(x, y-6, 4, '#2E6E3A'); ctx.globalAlpha = 1;
+  } else if (tier === 2 || tier === 3) {   // CLOUD NINE / JET STREAM — a small puff
+    ctx.globalAlpha = tier === 3 ? .3 : .45;
     pixDisc(x, y, 7, '#FFFFFF'); pixDisc(x-6, y+2, 5, '#FFFFFF'); pixDisc(x+6, y+2, 5, '#FFFFFF');
     ctx.globalAlpha = 1;
-    if (tier === 3 && s % 3 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.4)'; for (let k = 0; k < 6; k++) ctx.fillRect(x - 8 - k*3, y - 6, 2, 1); }
-  } else if (tier === 4) {             // STRATOSPHERE — drifting high balloons
+  } else if (tier === 4) {             // STRATOSPHERE — a far balloon
     if (s % 3) return;
-    pixDisc(x, y, 4, '#FF9E3D'); ctx.fillStyle = 'rgba(255,215,94,0.9)'; ctx.fillRect(x-4, y-1, 8, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x-1, y+5, 2, 2);
-  } else if (tier === 5) {             // AURORA — drifting ice crystals
+    ctx.globalAlpha = .7; pixDisc(x, y, 4, '#FF9E3D'); ctx.fillStyle = 'rgba(255,215,94,0.9)'; ctx.fillRect(x-4, y-1, 8, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x-1, y+5, 2, 2); ctx.globalAlpha = 1;
+  } else if (tier === 5) {             // AURORA — a drifting ice crystal
     if (s & 1) return;
-    ctx.globalAlpha = .75; ctx.fillStyle = '#BFF0FA'; ctx.fillRect(x, y-3, 1, 6); ctx.fillRect(x-1, y-1, 3, 1); ctx.fillRect(x-2, y+2, 5, 1); ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, y-3, 1, 2); ctx.globalAlpha = 1;
-  } else if (tier === 6) {             // SPACE — little spiral galaxies
+    ctx.globalAlpha = .7; ctx.fillStyle = '#BFF0FA'; ctx.fillRect(x, y-3, 1, 6); ctx.fillRect(x-1, y-1, 3, 1); ctx.fillRect(x-2, y+2, 5, 1); ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, y-3, 1, 2); ctx.globalAlpha = 1;
+  } else if (tier === 6) {             // SPACE — a little star cluster
     if (s % 3) return;
-    for (let a = 0; a < 14; a++) { const ang = a*.55 + ph*.012, rr = a*.34; ctx.globalAlpha = .55 - a*.02; ctx.fillStyle = a%2 ? '#D7A0FF' : '#A8C8FF'; ctx.fillRect(Math.round(x+Math.cos(ang)*rr), Math.round(y+Math.sin(ang)*rr*.6), 1, 1); }
-    ctx.globalAlpha = .9; ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x, y, 2, 2); ctx.globalAlpha = 1;
-  } else if (tier === 7) {             // ORBIT — satellites + small moons
+    ctx.globalAlpha = .7; ctx.fillStyle = '#A8C8FF'; ctx.fillRect(x, y, 1, 1); ctx.fillRect(x+3, y-2, 1, 1); ctx.fillRect(x-2, y+2, 1, 1); ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+1, y+1, 1, 1); ctx.globalAlpha = 1;
+  } else if (tier === 7) {             // ORBIT — a far satellite
     if (s % 3) return;
-    pixDisc(x, y, 4, 'rgba(220,216,238,0.9)'); ctx.fillStyle = 'rgba(150,146,180,0.8)'; ctx.fillRect(x+1, y, 2, 1); ctx.fillRect(x-2, y+1, 1, 1);
-    if (s % 6 === 0) { ctx.fillStyle = '#8FB8FF'; ctx.fillRect(x-8, y, 3, 2); ctx.fillRect(x+6, y, 3, 2); ctx.fillStyle = '#C7CFE6'; ctx.fillRect(x-1, y-1, 2, 3); }   // satellite
-  } else {                             // THE STARS — ringed planets + big stars
+    ctx.globalAlpha = .6; pixDisc(x, y, 3, 'rgba(220,216,238,0.9)'); ctx.fillStyle = '#8FB8FF'; ctx.fillRect(x-6, y, 3, 2); ctx.fillRect(x+4, y, 3, 2); ctx.globalAlpha = 1;
+  } else {                             // THE STARS — a small ringed planet
     if (s % 3) return;
-    pixDisc(x, y, 5, '#B98CE6'); pixDisc(x-1, y-1, 4, '#C79AF2'); ctx.fillStyle = '#7A4AA6'; ctx.fillRect(x+1, y+1, 2, 2);
-    ctx.fillStyle = 'rgba(255,246,232,0.7)'; ctx.fillRect(x-8, y, 5, 1); ctx.fillRect(x+4, y, 5, 1);
-    if (s % 6 === 0) { ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x-11, y-8, 2, 2); ctx.fillRect(x+12, y+6, 1, 1); }
+    ctx.globalAlpha = .6; pixDisc(x, y, 4, '#B98CE6'); ctx.fillStyle = 'rgba(255,246,232,0.7)'; ctx.fillRect(x-7, y, 4, 1); ctx.fillRect(x+4, y, 4, 1); ctx.globalAlpha = 1;
   }
 }
+
+// ---- large per-tier parallax structures ----
+function biomeBackdrop(tier, cy, a) {
+  if (a <= 0.01) return;
+  const ph = reduceMotion ? 0 : tick;
+  if      (tier === 0) drawRooftopsBg(cy, a, ph);
+  else if (tier === 1) drawTreetopsBg(cy, a, ph);
+  else if (tier === 2) drawCloudNineBg(cy, a, ph);
+  else if (tier === 3) drawJetStreamBg(cy, a, ph);
+  else if (tier === 4) drawStratosphereBg(cy, a, ph);
+  else if (tier === 5) drawAuroraBg(cy, a, ph);
+  else if (tier === 6) drawSpaceBg(cy, a, ph);
+  else if (tier === 7) drawOrbitBg(cy, a, ph);
+  else                 drawStarsBg(cy, a, ph);
+  ctx.globalAlpha = 1;
+}
+function drawRooftopsBg(cy, a, ph) {   // climbing past a lit city — depth layers of towers, scrolling windows, roof beacons
+  skyWash([[0,'rgba(255,150,90,0.28)'],[0.55,'rgba(255,150,90,0)'],[1,'rgba(255,120,60,0.4)']], .55*a);   // golden-hour city haze, warm glow rising off the streets
+  const layers = [
+    { f:.30, col:'#141C33', win:'255,206,130', P:180, al:.34, cols:[{x:-6,w:34},{x:70,w:20},{x:W-42,w:36},{x:W-104,w:18}] },
+    { f:.55, col:'#1E2A47', win:'255,224,150', P:150, al:.46, cols:[{x:16,w:28},{x:W-60,w:30}] }
+  ];
+  for (const L of layers) {
+    const s = cy*L.f, off = ((s % L.P) + L.P) % L.P;
+    for (const c of L.cols) {
+      ctx.globalAlpha = L.al*a; ctx.fillStyle = L.col; ctx.fillRect(c.x, 0, c.w, H);
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(c.x, 0, 1, H);          // lit edge
+      for (let top = -off - L.P; top < H + L.P; top += L.P) {                        // roof parapet + antenna beacon
+        ctx.globalAlpha = L.al*a; ctx.fillStyle = L.col; ctx.fillRect(c.x-2, Math.round(top), c.w+4, 3);
+        const ax = c.x + (c.w*0.6 | 0);
+        ctx.fillStyle = 'rgba(180,190,210,0.5)'; ctx.fillRect(ax, Math.round(top)-7, 1, 7);
+        const blink = reduceMotion ? 1 : Math.sin(ph*.12 + c.x)*.5 + .5;
+        ctx.globalAlpha = (.3 + .55*blink)*a; ctx.fillStyle = '#FF5E5E'; ctx.fillRect(ax, Math.round(top)-8, 1, 1);
+      }
+      const WP = 15, woff = ((s % WP) + WP) % WP;                                     // scrolling window grid
+      for (let y = -woff; y < H; y += WP) for (let wx = c.x+4; wx < c.x+c.w-3; wx += 7) {
+        const seed = Math.round(wx*3 + (y+s)/WP), r = bhash(seed);
+        if (r < 0.42) continue;
+        const lit = (!reduceMotion && r > 0.9) ? Math.sin(ph*.08 + seed)*.5 + .5 : .55;
+        ctx.globalAlpha = (.16 + .5*lit)*a; ctx.fillStyle = 'rgb('+L.win+')'; ctx.fillRect(wx, Math.round(y), 3, 4);
+      }
+    }
+  }
+}
+function drawTreetopsBg(cy, a, ph) {   // stacking up through a forest — giant trunks, branches, vines, canopy layers
+  skyWash([[0,'rgba(10,44,20,0.95)'],[0.4,'rgba(24,74,34,0.28)'],[0.72,'rgba(24,74,34,0)'],[1,'rgba(18,58,26,0.35)']], .7*a);  // canopy shade above, forest-floor green below
+  const trunks = [ {x:22,w:12,f:.5,col:'#2A1B10'}, {x:W-42,w:14,f:.5,col:'#2A1B10'}, {x:W/2-5,w:10,f:.72,col:'#3A2616'} ];
+  for (const t of trunks) {
+    const tx = Math.round(t.x + (reduceMotion ? 0 : Math.sin(ph*.02 + t.x)*2));
+    ctx.globalAlpha = .5*a; ctx.fillStyle = t.col; ctx.fillRect(tx, 0, t.w, H);
+    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(tx, 0, 2, H);
+    ctx.fillStyle = 'rgba(130,95,55,0.3)'; ctx.fillRect(tx+t.w-2, 0, 2, H);          // bark rim light
+    const s = cy*t.f, P = 118, off = ((s % P) + P) % P;
+    for (let y = -off; y < H; y += P) {                                             // branches alternate sides + a leaf clump
+      const dir = (Math.round((y+s)/P) & 1) ? 1 : -1;
+      ctx.globalAlpha = .5*a; ctx.fillStyle = t.col; ctx.fillRect(dir>0 ? tx+t.w : tx-14, Math.round(y), 14, 3);
+      ctx.globalAlpha = .3*a; pixDisc(dir>0 ? tx+t.w+14 : tx-14, Math.round(y)+1, 6, '#1E5228');
+    }
+  }
+  ctx.fillStyle = '#215A2C';                                                          // hanging vines (near layer)
+  for (let k = 0; k < 5; k++) { const s = cy*.8, P = 210, off = ((s % P) + P) % P, vy = -off + (k*84)%P;
+    const vx = Math.round((k*67+30) % W + (reduceMotion ? 0 : Math.sin(ph*.03+k)*3));
+    ctx.globalAlpha = .38*a; ctx.fillRect(vx, Math.round(vy), 1, 42); ctx.fillRect(vx-1, Math.round(vy)+42, 3, 2); }
+  const s = cy*.42, P = 250, off = ((s % P) + P) % P;                                 // layered leafy canopy bands overhead
+  for (let y = -off - P; y < H + P; y += P) {
+    ctx.globalAlpha = .55*a; for (let cx = -10; cx < W+20; cx += 30) pixDisc(cx + (reduceMotion?0:Math.round(Math.sin(ph*.02+cx)*2)), Math.round(y), 17, '#123E1C');
+    ctx.globalAlpha = .5*a;  for (let cx = 6;  cx < W+20; cx += 34) pixDisc(cx, Math.round(y)-6, 13, '#1E5A28');
+    ctx.globalAlpha = .35*a; for (let cx = 14; cx < W+20; cx += 40) pixDisc(cx, Math.round(y)-11, 9, '#2E7A38');   // sun-touched top leaves
+  }
+}
+function drawCloudNineBg(cy, a, ph) {   // fluffy animated cloud banks at two depths + soft sun shafts
+  skyWash([[0,'rgba(120,186,240,0.95)'],[0.5,'rgba(180,220,250,0.85)'],[1,'rgba(150,205,246,0.9)']], .72*a);  // bright airy heaven-blue overrides the rainbow band
+  const layers = [ { f:.24, al:.30, sc:1.5, drift:.20, P:230, n:5, tone:'220,236,250' }, { f:.5, al:.42, sc:1.0, drift:.38, P:200, n:4, tone:'244,250,255' } ];
+  for (const L of layers) {
+    const s = cy*L.f, off = ((s % L.P) + L.P) % L.P;
+    for (let y = -off - L.P; y < H + L.P; y += L.P) for (let k = 0; k < L.n; k++) {
+      const base = bhash(Math.round((y+s)/L.P)*11 + k*7);
+      const dx = reduceMotion ? base*(W+120) : ((ph*L.drift + base*1300) % (W+140));
+      const cx = Math.round(-70 + dx), cyy = Math.round(y + base*44), r = Math.round(9*L.sc);
+      ctx.globalAlpha = L.al*a; const col = 'rgba('+L.tone+',0.95)';
+      pixDisc(cx, cyy, r, col); pixDisc(cx-r, cyy+3, (r*.7)|0, col); pixDisc(cx+r, cyy+3, (r*.7)|0, col);
+      ctx.globalAlpha = L.al*.6*a; pixDisc(cx-2, cyy-3, (r*.6)|0, 'rgba(255,255,255,0.95)');
+    }
+  }
+  ctx.fillStyle = '#FFFDF0';                                                          // diagonal sun shafts
+  for (let k = 0; k < 3; k++) { const rx = 50 + k*90 + (reduceMotion?0:Math.sin(ph*.01+k)*8);
+    for (let yy = 0; yy < H; yy += 6) { const wdt = 8 + yy*.05; ctx.globalAlpha = .045*a; ctx.fillRect(Math.round(rx - wdt/2 + yy*.14), yy, Math.round(wdt), 6); } }
+}
+function drawJetStreamBg(cy, a, ph) {   // high thin racing streaks + a jet crossing with a contrail
+  skyWash([[0,'rgba(96,168,224,0.9)'],[0.5,'rgba(150,200,238,0.78)'],[1,'rgba(120,182,230,0.85)']], .7*a);  // fast, cold steel-blue high-altitude air
+  const s = cy*.5, P = 60, off = ((s % P) + P) % P;   // dense racing wind streaks convey speed
+  ctx.fillStyle = 'rgb(240,250,255)';
+  for (let y = -off; y < H; y += P) for (let k = 0; k < 4; k++) {
+    const row = Math.round((y+s)/P), sp = reduceMotion ? (row*50)%(W+140) : ((ph*(3+k*1.4) + row*50 + k*120) % (W+140));
+    ctx.globalAlpha = (.16 + .07*k)*a; ctx.fillRect(Math.round(-70 + sp), Math.round(y + k*8), 46 + k*22, 2);
+  }
+  if (!reduceMotion) {                                                                // a jet sweeps across, trailing vapor
+    const cyc = (ph*.8) % (W + 300), px = Math.round(W + 140 - cyc), py = Math.round(64 + 44*Math.sin(ph*.005));
+    if (px > -50 && px < W + 50) {
+      for (let t = 0; t < 46; t++) { ctx.globalAlpha = (.42*(1 - t/46))*a; ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fillRect(px+9 + t*3, py+2, 3, 2); }
+      ctx.globalAlpha = .75*a; ctx.fillStyle = '#C7D2E6'; ctx.fillRect(px, py, 8, 3); ctx.fillRect(px-3, py+1, 3, 1); ctx.fillRect(px+3, py-2, 2, 2); ctx.fillRect(px+2, py+3, 2, 2);
+      ctx.fillStyle = '#8FB8FF'; ctx.fillRect(px+6, py, 1, 1);
+    }
+  }
+}
+function drawStratosphereBg(cy, a, ph) {   // thin edge-of-space cirrus, slow rising weather balloons, a dish pinging signals
+  skyWash([[0,'rgba(20,16,54,0.8)'],[0.55,'rgba(70,54,120,0.18)'],[1,'rgba(120,90,170,0.22)']], .6*a);  // atmosphere thinning to indigo space
+  const s = cy*.35, P = 108, off = ((s % P) + P) % P;
+  ctx.fillStyle = 'rgb(255,246,232)';
+  for (let y = -off; y < H; y += P) { ctx.globalAlpha = .10*a; ctx.fillRect(0, Math.round(y), W, 1); ctx.globalAlpha = .06*a; ctx.fillRect(20, Math.round(y)+5, W-40, 1); }
+  const bs = cy*.6, BP = 150, boff = ((bs % BP) + BP) % BP;
+  for (let y = -boff - BP; y < H + BP; y += BP) for (let k = 0; k < 2; k++) {
+    const row = Math.round((y+bs)/BP), bx = Math.round(24 + bhash(row*13 + k*29)*(W-70) + (reduceMotion?0:Math.sin(ph*.02+row+k)*4)), by = Math.round(y + k*72);
+    ctx.globalAlpha = .5*a; pixDisc(bx, by, 6, '#E8823D'); ctx.fillStyle = 'rgba(255,215,120,0.9)'; ctx.fillRect(bx-6, by, 12, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx-1, by+8, 2, 3); ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(bx-2, by+6, 4, 1);
+  }
+  const ds = cy*.6, DP = 300, doff = ((ds % DP) + DP) % DP;                            // relay dish + expanding signal ring
+  for (let y = -doff; y < H; y += DP) {
+    const dx = 20, dy = Math.round(y);
+    ctx.globalAlpha = .55*a; ctx.fillStyle = '#9AA6C2'; ctx.fillRect(dx, dy, 1, 12); pixDisc(dx+4, dy-2, 4, '#C9D2E6'); pixDisc(dx+5, dy-2, 3, '#8A93AD');
+    if (!reduceMotion) { const pr = 4 + (ph*.4) % 26; ctx.globalAlpha = (.35*(1 - (pr-4)/26))*a; ctx.fillStyle = '#BFE8FF'; ringFrame(dx+4, dy-2, Math.round(pr)); }
+  }
+}
+function drawAuroraBg(cy, a, ph) {   // bold waving aurora curtains + big floating ice crystals
+  skyWash([[0,'rgba(6,16,38,0.85)'],[0.6,'rgba(12,30,52,0.55)'],[1,'rgba(20,44,60,0.6)']], .7*a);  // deep polar night so the curtains blaze
+  if (!reduceMotion) {
+    const hues = [150, 168, 285, 200];
+    for (let k = 0; k < 4; k++) { ctx.fillStyle = 'hsl('+hues[k]+',85%,60%)';
+      for (let ax = 0; ax < W; ax += 4) { const ay = 34 + k*24 + Math.sin(ph*.02 + ax*.03 + k*1.7)*22 + Math.sin(ph*.05 + ax*.09)*6;
+        ctx.globalAlpha = (.05 + .03*Math.sin(ph*.03 + k + ax*.02))*a; ctx.fillRect(ax, Math.round(ay), 4, 60); } }
+  } else { ctx.globalAlpha = .06*a; ctx.fillStyle = 'hsl(160,80%,55%)'; ctx.fillRect(0, 60, W, 50); }
+  const s = cy*.5, P = 158, off = ((s % P) + P) % P;
+  for (let y = -off; y < H; y += P) for (let k = 0; k < 2; k++) {
+    const row = Math.round((y+s)/P), cx = Math.round(bhash(row*7 + k*17)*W), cyy = Math.round(y + k*72);
+    ctx.globalAlpha = .4*a; ctx.fillStyle = '#BFF0FA'; ctx.fillRect(cx, cyy-6, 1, 12); ctx.fillRect(cx-4, cyy, 9, 1); ctx.fillRect(cx-3, cyy-3, 7, 1); ctx.fillRect(cx-3, cyy+3, 7, 1);
+    ctx.globalAlpha = .6*a; ctx.fillStyle = '#FFFFFF'; ctx.fillRect(cx, cyy-2, 1, 4);
+  }
+}
+function drawSpaceBg(cy, a, ph) {   // deep cosmos — spiral galaxies + drifting asteroids
+  ctx.globalAlpha = .72*a; ctx.fillStyle = '#05081C'; ctx.fillRect(0, 0, W, H);   // true black-space, hides the rainbow band
+  const s = cy*.3, P = 280, off = ((s % P) + P) % P;
+  for (let y = -off - P; y < H + P; y += P) {
+    const row = Math.round((y+s)/P), gx = Math.round(bhash(row*5)*W), gy = Math.round(y + bhash(row*9)*60);
+    for (let arm = 0; arm < 2; arm++) for (let i2 = 0; i2 < 26; i2++) { const ang = i2*.5 + arm*Math.PI + ph*.006, rr = i2*1.1;
+      ctx.globalAlpha = (.5 - i2*.017)*a; ctx.fillStyle = i2%2 ? '#C8A0FF' : '#88B0FF'; ctx.fillRect(Math.round(gx + Math.cos(ang)*rr), Math.round(gy + Math.sin(ang)*rr*.5), 1, 1); }
+    ctx.globalAlpha = .7*a; ctx.fillStyle = '#FFF6E8'; ctx.fillRect(gx-1, gy-1, 2, 2);
+  }
+  const as = cy*.7, AP = 120, aoff = ((as % AP) + AP) % AP;
+  for (let y = -aoff; y < H; y += AP) { const row = Math.round((y+as)/AP), ax = Math.round(bhash(row*3+1)*W + (reduceMotion?0:Math.sin(ph*.02+row)*6)), ay = Math.round(y);
+    ctx.globalAlpha = .5*a; pixDisc(ax, ay, 3, '#5A5468'); ctx.fillStyle = '#3A3648'; ctx.fillRect(ax-1, ay, 2, 1); ctx.fillRect(ax+1, ay-1, 1, 1);
+  }
+}
+function drawOrbitBg(cy, a, ph) {   // low orbit — a huge planet limb below, satellites + debris crossing above it
+  ctx.globalAlpha = .72*a; ctx.fillStyle = '#03061A'; ctx.fillRect(0, 0, W, H);
+  const horizon = Math.round(H*0.60 + clamp((cy*.05) % 60, -30, 60));                 // planet curve drifts gently as you climb
+  for (let x = 0; x < W; x += 2) { const t = (x - W/2)/W, top = horizon + Math.round(t*t*90);
+    ctx.globalAlpha = .55*a; ctx.fillStyle = '#183566'; ctx.fillRect(x, top, 2, H-top);
+    ctx.globalAlpha = .55*a; ctx.fillStyle = '#2E5A9E'; ctx.fillRect(x, top, 2, 3);                 // sunlit surface
+    ctx.globalAlpha = .22*a; ctx.fillStyle = '#8FC0FF'; ctx.fillRect(x, top-3, 2, 3);               // atmosphere glow
+  }
+  ctx.globalAlpha = .4*a; ctx.fillStyle = '#22508A';                                   // continents
+  for (let k = 0; k < 4; k++) { const cx = Math.round(bhash(k*13)*W), t = (cx - W/2)/W, top = horizon + Math.round(t*t*90); pixDisc(cx, top + 14 + (k*7), 8 + (k&3), '#22508A'); }
+  const ss = cy*.8, SP = 140, soff = ((ss % SP) + SP) % SP;                            // satellites + debris streaking across
+  for (let y = -soff; y < horizon; y += SP) {
+    const row = Math.round((y+ss)/SP), dir = (row & 1) ? 1 : -1, prog = reduceMotion ? bhash(row*3) : ((ph*.6 + row*90) % (W+80))/(W+80);
+    const sx = Math.round(dir > 0 ? -40 + prog*(W+80) : W+40 - prog*(W+80)), sy = Math.round(y);
+    ctx.globalAlpha = .7*a; ctx.fillStyle = '#C7CFE6'; ctx.fillRect(sx-1, sy-1, 3, 3);
+    ctx.fillStyle = '#8FB8FF'; ctx.fillRect(sx-6, sy, 4, 2); ctx.fillRect(sx+3, sy, 4, 2);
+  }
+}
+function drawStarsBg(cy, a, ph) {   // the summit — a radiant golden gate, huge twinkling stars, a ringed planet
+  ctx.globalAlpha = .70*a; ctx.fillStyle = '#0A0622'; ctx.fillRect(0, 0, W, H);
+  skyWash([[0,'rgba(120,80,20,0.55)'],[0.35,'rgba(70,44,14,0.12)'],[1,'rgba(40,26,60,0)']], .6*a);   // warm golden glow spilling from the gate
+  const gx = Math.round(W/2), gy = 46;                                                 // radiant golden gate — glowing orb, halo, light spokes
+  ctx.globalAlpha = .10*a; pixDisc(gx, gy, 34, '#6A4A12');
+  ctx.globalAlpha = .16*a; pixDisc(gx, gy, 22, '#9A6E1A');
+  if (!reduceMotion) { ctx.fillStyle = '#FFE9A0'; for (let k = 0; k < 8; k++) { const ang = k*0.785 + ph*.01; ctx.globalAlpha = (.10 + .06*Math.sin(ph*.06 + k))*a;
+    for (let d = 10; d < 34; d += 3) ctx.fillRect(Math.round(gx + Math.cos(ang)*d), Math.round(gy + Math.sin(ang)*d), 1, 1); } }
+  ctx.globalAlpha = .55*a; pixDisc(gx, gy, 8, '#FFE28A'); ctx.globalAlpha = .8*a; pixDisc(gx, gy, 4, '#FFF6E8');
+  const s = cy*.4, P = 168, off = ((s % P) + P) % P;                                    // huge twinkling 4-point stars
+  for (let y = -off; y < H; y += P) { const row = Math.round((y+s)/P), sx = Math.round(bhash(row*7)*W), sy = Math.round(y + bhash(row*3)*50), tw = reduceMotion ? 1 : Math.sin(ph*.06 + row)*.5 + .5;
+    ctx.globalAlpha = (.4 + .5*tw)*a; ctx.fillStyle = '#FFF0C0'; ctx.fillRect(sx-1, sy-6, 2, 13); ctx.fillRect(sx-6, sy-1, 13, 2); ctx.fillRect(sx-3, sy-3, 7, 5);
+    ctx.globalAlpha = (.6 + .4*tw)*a; ctx.fillStyle = '#FFFFFF'; ctx.fillRect(sx-1, sy-1, 3, 3);
+  }
+  const ps = cy*.55, PP = 320, poff = ((ps % PP) + PP) % PP;                            // a slow gold ringed planet
+  for (let y = -poff; y < H; y += PP) { const px = Math.round(W*0.24 + bhash(Math.round((y+ps)/PP))*W*0.5), py = Math.round(y);
+    ctx.globalAlpha = .6*a; pixDisc(px, py, 10, '#D8A63E'); pixDisc(px-2, py-2, 7, '#F2C766');
+    ctx.globalAlpha = .5*a; ctx.fillStyle = 'rgba(255,246,232,0.85)'; ctx.fillRect(px-16, py, 12, 1); ctx.fillRect(px+6, py, 12, 1); ctx.fillRect(px-15, py-1, 10, 1); ctx.fillRect(px+7, py+1, 10, 1);
+  }
+}
+
+// ---- animated per-tier weather (screen-anchored particles) ----
+function biomeWeather(tier, cy, a, ph) {
+  if (reduceMotion || a <= 0.01) return;
+  if (tier === 1) {                                                                    // TREETOPS — falling leaves
+    for (let k = 0; k < 9; k++) { const lx = (k*47) % W + Math.sin(ph*.05 + k)*10, ly = ((ph*.7 + k*70) % (H+40)) - 20;
+      ctx.globalAlpha = .5*a; ctx.fillStyle = k%3===0 ? '#C98A3E' : (k%3===1 ? '#3FBF5A' : '#E0B84A'); ctx.fillRect(Math.round(lx), Math.round(ly), 2, 1); ctx.fillRect(Math.round(lx)+(Math.floor(ph*.1+k)%2?1:-1), Math.round(ly)-1, 1, 1); }
+  } else if (tier === 2) {                                                              // CLOUD NINE — light motes
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (let k = 0; k < 7; k++) { ctx.globalAlpha = (.15 + .2*(Math.sin(ph*.06+k)*.5+.5))*a; ctx.fillRect(Math.round((k*53 + ph*.15)%W), Math.round(40 + (k*57)%(H-80) + Math.sin(ph*.04+k)*4), 1, 1); }
+  } else if (tier === 3) {                                                              // JET STREAM — speed lines
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    for (let k = 0; k < 7; k++) { ctx.globalAlpha = .3*a; const sx = (W+60) - (ph*(5+k) + k*70) % (W+60); ctx.fillRect(Math.round(sx), 20 + (k*33)%(H-40), 10 + (k%3)*6, 1); }
+  } else if (tier === 5) {                                                              // AURORA — snow
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (let k = 0; k < 16; k++) { ctx.globalAlpha = .7*a; ctx.fillRect(Math.round((k*33) % W + Math.sin(ph*.03+k)*6), Math.round(((ph*.6 + k*40) % (H+30)) - 15), 1, 1); }
+  } else if (tier === 6) {                                                              // SPACE — a meteor streaks now and then
+    const cyc = (ph*3) % 640; if (cyc < 120) { const t = cyc, mx = W - t*1.4, my = 30 + t*.9;
+      for (let i2 = 0; i2 < 10; i2++) { ctx.globalAlpha = (.7*(1 - i2/10))*a; ctx.fillStyle = '#FFF6E8'; ctx.fillRect(Math.round(mx + i2*2.4), Math.round(my - i2*1.5), 2, 2); } }
+  } else if (tier === 7) {                                                              // ORBIT — tumbling debris sparks
+    for (let k = 0; k < 6; k++) { ctx.globalAlpha = .5*a; ctx.fillStyle = k%2 ? '#C7CFE6' : '#8FB8FF'; ctx.fillRect(Math.round((W+40) - (ph*(1.4+k*.3) + k*60)%(W+40)), Math.round(30 + (k*41)%(H-120) + Math.sin(ph*.05+k)*4), 2, 1); }
+  } else if (tier === 8) {                                                              // THE STARS — celebratory gold sparks
+    for (let k = 0; k < 10; k++) { const tw = Math.sin(ph*.1 + k*1.3); ctx.globalAlpha = (tw > .2 ? .8 : .2)*a; ctx.fillStyle = k%2 ? '#FFE28A' : '#FFFFFF'; ctx.fillRect(Math.round((k*31 + Math.sin(ph*.02+k)*8) % W), Math.round((k*53) % H), tw > .5 ? 2 : 1, tw > .5 ? 2 : 1); }
+  } else if (tier === 0) {                                                              // ROOFTOPS — drifting dust motes
+    ctx.fillStyle = 'rgba(255,246,232,0.5)';
+    for (let k = 0; k < 5; k++) { ctx.globalAlpha = .35*a; ctx.fillRect(Math.round((k*67 + ph*.3)%W), Math.round(60 + (k*51)%(H-120) + Math.sin(ph*.05+k)*5), 1, 1); }
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawBiomeDecor(cy) {
   const ph = reduceMotion ? 0 : tick;
-  const lowA = (GROUND_Y - cy - H - 30) / BH, highA = (GROUND_Y - cy + 30) / BH, STEP = 4;
+  // anchor the biome to the player's own altitude (== the SKY MAP stage they're on),
+  // then cross-fade the next stage in as they approach its boundary
+  const centerA = (GROUND_Y - cy - (H - 100)) / BH;
+  const ti = biomeTierAt(centerA), BLEND = 5;
+  const upN = TIERS[ti].n, dnN = ti > 0 ? TIERS[ti-1].n : 0;
+  const wUp = ti < TIERS.length-1 ? clamp((BLEND - (upN - centerA)) / BLEND, 0, 1) : 0;
+  const wDn = ti > 0             ? clamp((BLEND - (centerA - dnN)) / BLEND, 0, 1) : 0;
+  biomeBackdrop(ti, cy, 1);
+  if (wUp > 0) biomeBackdrop(ti+1, cy, wUp);
+  if (wDn > 0) biomeBackdrop(ti-1, cy, wDn);
+
+  // sparse drifting mid-ground sprites anchored to world altitude (extra depth between backdrop + tower)
+  const lowA = (GROUND_Y - cy - H - 30) / BH, highA = (GROUND_Y - cy + 30) / BH, STEP = 6;
   for (let s = Math.floor(lowA / STEP); s <= Math.ceil(highA / STEP); s++) {
-    const A = s * STEP; if (A < 3) continue;                       // near the ground the world art takes over
+    const A = s * STEP; if (A < 3) continue;
     const sy = Math.round(GROUND_Y - A*BH - cy);
     if (sy < -30 || sy > H + 30) continue;
-    const ti = TIERS.findIndex(t => A < t.n), tier = ti < 0 ? TIERS.length - 1 : ti;
     const seed = (s * 2654435761) >>> 0, x = (seed % (W + 40)) - 20;
-    biomeSprite(tier, x, sy, s, ph);
+    biomeSprite(biomeTierAt(A), x, sy, s, ph);
   }
+
+  // animated weather for the on-screen tier(s)
+  biomeWeather(ti, cy, 1, ph);
+  if (wUp > 0) biomeWeather(ti+1, cy, wUp, ph);
+  if (wDn > 0) biomeWeather(ti-1, cy, wDn, ph);
 }
 
 // ---------- background & world render ----------
@@ -1530,8 +1773,8 @@ function render() {
     }
     ctx.globalAlpha = 1;
   }
-  // aurora curtains — ribbon across the sky through the AURORA tier band (~300-600M)
-  if (!menu && h >= 95 && h < 210 && dark > 0.3 && !reduceMotion) {
+  // aurora curtains — ribbon across the sky through the AURORA tier band only (~285-450M)
+  if (!menu && h >= 92 && h < 150 && dark > 0.3 && !reduceMotion) {
     for (let k = 0; k < 3; k++) {
       ctx.fillStyle = k === 1 ? 'hsl(285,80%,60%)' : 'hsl(150,85%,55%)';
       ctx.globalAlpha = 0.05 + 0.02*Math.sin(tick*.03 + k*2);
@@ -1548,11 +1791,17 @@ function render() {
     ctx.globalAlpha = 1;
   }
   if (dark > .45 && !menu) {
-    const moonY = 44 - Math.min(h,120)*.12;
-    ctx.globalAlpha = Math.min(1,(dark-.45)*3); ctx.fillStyle = '#FDF6D8'; ctx.fillRect(W-44, moonY, 16, 16);
-    ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(W-40,moonY+3,3,3); ctx.fillRect(W-34,moonY+9,4,3); ctx.globalAlpha = 1;
+    const mA = Math.min(1,(dark-.45)*3) * clamp((175 - h)/25, 0, 1);   // a round glowing moon; fades out as SPACE's own bodies take over
+    if (mA > 0.02) {
+      const mx = W - 34, my = Math.round(48 - Math.min(h,120)*.12);
+      ctx.globalAlpha = mA*.4; pixDisc(mx, my, 12, 'rgba(255,246,216,0.6)');       // soft halo
+      ctx.globalAlpha = mA;    pixDisc(mx, my, 8, '#FDF6D8');                        // disc
+      ctx.fillStyle = 'rgba(0,0,0,0.10)'; ctx.fillRect(mx-3, my-2, 3, 3); ctx.fillRect(mx+2, my+3, 3, 2); ctx.fillRect(mx-1, my+4, 2, 2);   // craters
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(mx-6, my-5, 2, 2);     // rim light
+      ctx.globalAlpha = 1;
+    }
   }
-  if (dark < .58) {
+  if (dark < .58 && (menu || h < 140)) {   // clouds/birds belong to the lower sky — gone once SPACE begins
     ctx.globalAlpha = (.58-dark)*.95; ctx.fillStyle = '#FFF6E8';
     for (const c of clouds) { const cyy = Math.floor(c.y - (menu?tick*.3:cy*.4)); if (cyy<-20||cyy>H+20) continue; const cx=Math.floor(c.x); ctx.fillRect(cx,cyy,Math.floor(c.w),5); ctx.fillRect(cx+4,cyy-3,Math.floor(c.w*.6),3); ctx.fillRect(cx+2,cyy+5,Math.floor(c.w*.75),3); }
     ctx.globalAlpha = 1;
