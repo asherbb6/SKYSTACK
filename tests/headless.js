@@ -354,9 +354,25 @@ check('a higher skill means a lower starting assist', () => {
   return lo.run('assist') > hi.run('assist');
 });
 
+// ---------- in-game biome backdrop (matches the map per tier) ----------
+const bio = makeGame({ 'skystack-height': '300' });
+bio.run('mode = "endless"; resetRun(); state = "playing";');
+check('biome helpers exist (drawBiomeDecor, biomeSprite)', () => bio.run(
+  'typeof drawBiomeDecor === "function" && typeof biomeSprite === "function"'));
+check('biomeSprite renders for all 9 tiers without throwing', () => { bio.run('for (let i=0;i<9;i++) biomeSprite(i, 50, 100, i, 40)'); return true; });
+check('drawBiomeDecor runs across the whole climb without throwing', () => {
+  bio.run('for (let a = 0; a < 520; a += 30) { drawBiomeDecor(GROUND_Y - a*BH - (H-100)); }');
+  return true;
+});
+check('a campaign level starts in its tier biome (level 6 -> AURORA band)', () => {
+  const bl = makeGame({ 'skystack-height': '900' });   // everything unlocked
+  bl.run('startLevel(5)');   // level 6 = AURORA (index 5)
+  return bl.run('(() => { const A = blocks.length; const ti = TIERS.findIndex(t => A < t.n); return TIERS[ti].name === "AURORA"; })()');
+});
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v31', () => /const CACHE = 'skystack-v31'/.test(sw));
+check('sw.js cache bumped to v32', () => /const CACHE = 'skystack-v32'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));

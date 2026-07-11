@@ -16,6 +16,7 @@ A pixel-art block-stacking game for mobile and web. One self-contained HTML file
 - **Pause anytime** — top-left ❚❚ (or Escape); the run also auto-pauses when the app is backgrounded
 - **Procedural chiptune** — calm menus, intense in-game, escalates with height and fever
 - **10 seasonal events** — Christmas, Halloween, July 4th, Easter and more auto-activate for a 7-day window (holiday = middle day) from the device clock, each with its own UI colors, pixel decorations, free skin, themed music, and +25% coins
+- **Biome-matched skies** — the in-game background changes per tier to match its SKY MAP stage: city towers at Rooftops, forest canopy at Treetops, clouds at Cloud Nine, contrails at Jet Stream, balloons at Stratosphere, aurora curtains at Aurora, and deep cosmic space with galaxies / satellites / ringed planets for Space, Orbit and The Stars (campaign levels start pre-stacked in their own biome)
 - **Fits any screen** — logical resolution matches the device aspect exactly (portrait, desktop, ultrawide) and re-adapts live on resize/rotate; on wide screens blocks travel a centered corridor with a pixel-fade wrap instead of crossing the whole screen
 
 ## Files
