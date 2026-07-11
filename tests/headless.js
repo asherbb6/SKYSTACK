@@ -183,6 +183,13 @@ check('map tap: elsewhere closes the map', () => tap.run(
   '(() => { __p = {x:2, y:2}; pressDown({}); return skyMap === false; })()'));
 check('map tap in PURE mode: tap just closes, no selection', () => tap.run(
   '(() => { mode = "pure"; skyMap = true; launch = -1; const L = skyMapNodes(); __p = {x:L.pts[1].x, y:L.pts[1].y}; pressDown({}); return skyMap === false && launch === -1; })()'));
+check('map tap: label chip (toward center) also selects', () => tap.run(
+  '(() => { mode = "endless"; skyMap = true; launch = -1; const L = skyMapNodes(); const side = L.pts[2].x < W/2 ? 1 : -1; __p = {x:L.pts[2].x + side*40, y:L.pts[2].y}; pressDown({}); return launch === 2 && skyMap === true; })()'));
+check('map tap: outer (deco) side does not select', () => tap.run(
+  '(() => { launch = -1; const L = skyMapNodes(); const side = L.pts[2].x < W/2 ? 1 : -1; __p = {x:L.pts[2].x - side*40, y:L.pts[2].y}; pressDown({}); return launch === -1 && skyMap === false; })()'));
+check('3D map helpers exist (mapNode3D, mapChip, dkHex)', () => tap.run(
+  'typeof mapNode3D === "function" && typeof mapChip === "function" && typeof dkHex === "function"'));
+check('dkHex darkens a hex color', () => tap.run('dkHex("#FFD75E", .5) === "rgb(128,108,47)"'));
 
 // ---------- home screen label ----------
 const home = makeGame({ 'skystack-height': '60', 'skystack-launch': '1' });
@@ -199,7 +206,7 @@ check('home: no LAUNCH label on ground runs', () => {
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v23', () => /const CACHE = 'skystack-v23'/.test(sw));
+check('sw.js cache bumped to v24', () => /const CACHE = 'skystack-v24'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('no stray skymap.png in repo', () => !fs.existsSync(path.join(ROOT, 'skymap.png')));
 check('launch key stored under skystack-launch', () => /store\.set\('skystack-launch'/.test(src));

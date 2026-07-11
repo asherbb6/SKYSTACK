@@ -1025,10 +1025,15 @@ function pressDown(e) {
     if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker) startRun(); return; }
     if (skyMap) {
       const L = skyMapNodes();
-      const near = pt => Math.abs(p.x - pt.x) <= 11 && Math.abs(p.y - pt.y) <= 11;
+      // hit zone covers the node disc plus its label chip (which extends toward screen center)
+      const near = (pt, side) => {
+        if (Math.abs(p.y - pt.y) > 9) return false;
+        const d = (p.x - pt.x) * side;
+        return d >= -11 && d <= 115;
+      };
       if (mode === 'endless') {
-        if (near(L.start)) { launch = -1; store.set('skystack-launch', launch); sfx.tap(); return; }
-        for (let i = 0; i < TIERS.length; i++) if (near(L.pts[i])) {
+        if (near(L.start, 1)) { launch = -1; store.set('skystack-launch', launch); sfx.tap(); return; }
+        for (let i = 0; i < TIERS.length; i++) if (near(L.pts[i], L.pts[i].x < W/2 ? 1 : -1)) {
           if (i < prog) { launch = i; store.set('skystack-launch', launch); sfx.power(); }
           else sfx.deny();                              // locked stage
           return;
@@ -1635,38 +1640,80 @@ function renderPause() {
 // ---------- sky map (level ladder: cleared stages are launch pads, next pulses) ----------
 function skyMapNodes() {
   const n = TIERS.length;
-  const topY = 78, botY = H - 62, step = (botY - topY) / n;
+  const topY = 84, botY = H - 68, step = (botY - topY) / n;
+  const xOff = clamp(Math.round(W * 0.18), 32, 60);   // zigzag widens with the screen
   const pts = [];
-  for (let i = 0; i < n; i++) pts.push({ x: Math.round(W/2 + (i % 2 === 0 ? -34 : 34)), y: Math.round(botY - i * step) });
-  return { pts, start: { x: Math.round(W/2), y: Math.round(botY + step*0.7) }, gate: { x: Math.round(W/2), y: Math.round(topY - step*0.5) } };
+  for (let i = 0; i < n; i++) pts.push({ x: Math.round(W/2 + (i % 2 === 0 ? -xOff : xOff)), y: Math.round(botY - i * step) });
+  // start/gate offsets are capped so tall screens never push them into the header/hints
+  return { pts, start: { x: Math.round(W/2), y: Math.round(botY + clamp(step*0.75, 13, 14)) }, gate: { x: Math.round(W/2), y: Math.round(topY - Math.min(step*0.55, 12)) } };
 }
-// tiny pixel vignette for each stage, drawn on the node's outer side
+function dkHex(hex, f) {
+  const v = parseInt(hex.slice(1), 16);
+  return 'rgb(' + Math.round((v>>16 & 255)*f) + ',' + Math.round((v>>8 & 255)*f) + ',' + Math.round((v & 255)*f) + ')';
+}
+// raised pixel disc: drop shadow + dark extruded side + lit face + bevel highlight
+function mapNode3D(x, y, r, face, side) {
+  pixDisc(x + 1, y + 3, r, 'rgba(0,0,0,0.35)');
+  pixDisc(x, y + 2, r, side);
+  pixDisc(x, y, r, face);
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.fillRect(x - 2, y - r + 1, 3, 1); ctx.fillRect(x - r + 1, y - 2, 1, 3);
+}
+// single-line label plate: dark chip with a tier-color spine on the node side
+function mapChip(np, side2, name, meters, accent, nameCol) {
+  const cw = (name.length + 1 + meters.length) * 6 - 1 + 8, chH = 13;
+  let x0 = side2 > 0 ? np.x + 12 : np.x - 12 - cw;
+  x0 = Math.max(2, Math.min(x0, W - 2 - cw));
+  const y0 = np.y - 6;
+  ctx.fillStyle = 'rgba(11,14,26,0.74)'; ctx.fillRect(x0, y0, cw, chH);
+  ctx.fillStyle = 'rgba(255,246,232,0.16)'; ctx.fillRect(x0, y0, cw, 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x0 + 1, y0 + chH, cw, 1);          // dropped edge
+  ctx.fillStyle = accent; ctx.fillRect(side2 > 0 ? x0 : x0 + cw - 2, y0, 2, chH);
+  const tx = x0 + (side2 > 0 ? 6 : 4);
+  txt(name, tx, y0 + 3, 1, nameCol, 'left');
+  txt(meters, tx + name.length*6 + 4, y0 + 3, 1, 'rgba(255,246,232,0.55)', 'left');
+}
+// pixel vignette for each stage, drawn on the node's outer side
 function drawStageDeco(i, x, y) {
-  const c = TIERS[i].c;
+  const c = TIERS[i].c, ph = reduceMotion ? 0 : tick;
   ctx.fillStyle = c;
-  if (i === 0) {        // rooftops: little house
-    ctx.fillRect(x-3, y-1, 7, 4); ctx.fillRect(x-2, y-3, 5, 2); ctx.fillRect(x, y-4, 1, 1);
-    ctx.fillStyle = '#141022'; ctx.fillRect(x-1, y, 1, 2); ctx.fillRect(x+1, y, 1, 1);
-  } else if (i === 1) { // treetops: tree
-    ctx.fillRect(x-2, y-3, 5, 3); ctx.fillRect(x-3, y-1, 7, 2);
-    ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x, y+1, 1, 3);
-  } else if (i === 2) { // cloud nine: cloud
-    ctx.fillRect(x-4, y, 8, 2); ctx.fillRect(x-2, y-2, 4, 2); ctx.fillRect(x+1, y-1, 3, 1);
-  } else if (i === 3) { // jet stream: speed dashes
-    ctx.fillRect(x-4, y-2, 5, 1); ctx.fillRect(x-2, y, 6, 1); ctx.fillRect(x-4, y+2, 4, 1);
-  } else if (i === 4) { // stratosphere: weather balloon
-    ctx.fillRect(x-2, y-4, 4, 3); ctx.fillRect(x-3, y-3, 6, 2);
-    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x, y-1, 1, 3); ctx.fillRect(x-1, y+2, 3, 2);
-  } else if (i === 5) { // aurora: ribbons
-    for (let k = 0; k < 3; k++) { const wob = Math.round(Math.sin(tick*.06 + k*2)*1); ctx.fillRect(x-3+k*3, y-3+wob, 1, 5); }
-  } else if (i === 6) { // space: star cluster
-    ctx.fillRect(x-3, y-2, 1, 1); ctx.fillRect(x+2, y-3, 2, 2); ctx.fillRect(x-1, y+1, 1, 1); ctx.fillRect(x+3, y+2, 1, 1);
-  } else if (i === 7) { // orbit: ringed planet
+  if (i === 0) {        // rooftops: two houses
+    ctx.fillRect(x-5, y+1, 4, 3); ctx.fillRect(x-4, y-1, 2, 2);
+    ctx.fillRect(x, y-1, 6, 5); ctx.fillRect(x+1, y-3, 4, 2); ctx.fillRect(x+2, y-4, 2, 1);
+    ctx.fillStyle = '#141022'; ctx.fillRect(x+2, y+1, 1, 2); ctx.fillRect(x+4, y, 1, 1); ctx.fillRect(x-4, y+2, 1, 1);
+  } else if (i === 1) { // treetops: two trees
+    ctx.fillRect(x+1, y-4, 4, 3); ctx.fillRect(x, y-2, 6, 2);
+    ctx.fillRect(x-5, y-1, 4, 2);
+    ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x+2, y, 2, 4); ctx.fillRect(x-4, y+1, 1, 3);
+  } else if (i === 2) { // cloud nine: puffy cloud
+    ctx.fillRect(x-5, y, 10, 2); ctx.fillRect(x-3, y-2, 5, 2); ctx.fillRect(x+2, y-1, 3, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x-4, y-1, 2, 1);
+  } else if (i === 3) { // jet stream: tiny jet + speed dashes
+    ctx.fillRect(x-5, y-3, 4, 1); ctx.fillRect(x-4, y+3, 5, 1);
+    ctx.fillRect(x-1, y-1, 5, 2); ctx.fillRect(x+1, y-2, 1, 1); ctx.fillRect(x, y+1, 2, 1);
+    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-1, 1, 1);
+  } else if (i === 4) { // stratosphere: weather balloon with basket
+    ctx.fillRect(x-2, y-5, 4, 3); ctx.fillRect(x-3, y-4, 6, 2);
+    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-1, y-1, 1, 2); ctx.fillRect(x+1, y-1, 1, 2);
+    ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x-1, y+1, 3, 2);
+  } else if (i === 5) { // aurora: waving two-tone ribbons
+    for (let k = 0; k < 4; k++) {
+      const wob = Math.round(Math.sin(ph*.06 + k*1.8)*1.5);
+      ctx.fillStyle = k % 2 ? '#C77EFF' : c;
+      ctx.fillRect(x-4+k*3, y-4+wob, 1, 7);
+    }
+  } else if (i === 6) { // space: star cluster + comet
+    ctx.fillRect(x-3, y-2, 1, 1); ctx.fillRect(x+2, y-4, 2, 2); ctx.fillRect(x-1, y+1, 1, 1); ctx.fillRect(x+3, y+2, 1, 1);
+    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-5, y+3, 3, 1); ctx.fillRect(x-2, y+2, 1, 1);
+  } else if (i === 7) { // orbit: shaded ringed planet + orbiting moon
     ctx.fillRect(x-2, y-2, 4, 4); ctx.fillRect(x-1, y-3, 2, 6);
+    ctx.fillStyle = dkHex(c, .55); ctx.fillRect(x, y, 2, 2);
     ctx.fillStyle = 'rgba(255,246,232,0.55)'; ctx.fillRect(x-4, y, 3, 1); ctx.fillRect(x+2, y, 3, 1);
-  } else {              // the stars: big star
-    ctx.fillRect(x-1, y-3, 2, 7); ctx.fillRect(x-3, y-1, 7, 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(x-1, y-1, 2, 2);
+    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x + Math.round(Math.cos(ph*.07)*5), y + Math.round(Math.sin(ph*.07)*3), 1, 1);
+  } else {              // the stars: big star with sparkles
+    ctx.fillRect(x-1, y-4, 2, 8); ctx.fillRect(x-4, y-1, 8, 2); ctx.fillRect(x-2, y-2, 4, 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fillRect(x-1, y-1, 2, 2);
+    if (!reduceMotion && Math.floor(tick/14)%2===0) { ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-4, 1, 1); ctx.fillRect(x-5, y+3, 1, 1); }
   }
 }
 function renderSkyMap() {
@@ -1677,62 +1724,65 @@ function renderSkyMap() {
     ctx.fillRect(0, y2, W, 3);
   }
   ctx.fillStyle = 'rgba(11,14,26,0.55)'; ctx.fillRect(0, 0, W, H);   // night veil for readability
-  for (let i = 0; i < 34; i++) {                                    // fixed twinkling stars up high
-    const sx2 = (i*67 + 13) % W, sy2 = (i*131 + 7) % Math.round(H*.55);
-    ctx.globalAlpha = .2 + .5*(.5 + .5*Math.sin(tick*.05 + i));
+  const L = skyMapNodes();
+  const ph = reduceMotion ? 0 : tick;
+  // twinkling stars up high
+  for (let i = 0; i < 34; i++) {
+    const sx2 = (i*67 + 13) % W, sy2 = (i*131 + 7) % Math.round(H*.5);
+    ctx.globalAlpha = .2 + .5*(.5 + .5*Math.sin(ph*.05 + i));
     ctx.fillStyle = '#FFF6E8'; ctx.fillRect(sx2, sy2, i%5===0?2:1, i%5===0?2:1);
   }
   ctx.globalAlpha = 1;
-  const L = skyMapNodes();
-  txt('SKY MAP', W/2+1, 23, 2, 'rgba(0,0,0,0.4)', 'center');
-  txt('SKY MAP', W/2, 22, 2, '#FFF6E8', 'center');
-  txt('BEST ' + bestHeight*METERS_PER + 'M', W/2, 40, 1, '#FFD75E', 'center');
-  // dotted winding trail: launch pad -> stages -> gate
-  let prev = L.start;
-  ctx.fillStyle = 'rgba(255,246,232,0.3)';
-  for (let i = 0; i <= TIERS.length; i++) {
-    const np = i === TIERS.length ? L.gate : L.pts[i];
-    for (let s2 = 1; s2 < 7; s2++)
-      ctx.fillRect(Math.round(prev.x + (np.x-prev.x)*s2/7), Math.round(prev.y + (np.y-prev.y)*s2/7), 2, 2);
-    prev = np;
-  }
-  // ground launch pad
-  const selGround = launch < 0;
-  if (selGround) pixDisc(L.start.x, L.start.y, 7, 'rgba(255,255,255,0.85)');
-  pixDisc(L.start.x, L.start.y, 5, selGround ? '#62E8B5' : 'rgba(255,246,232,0.35)');
-  pixDisc(L.start.x, L.start.y, 3, '#141022');
-  txt('START 0M', L.start.x + 11, L.start.y - 3, 1, selGround ? '#62E8B5' : 'rgba(255,246,232,0.6)', 'left');
-  // stage nodes: gold = cleared level (tap to launch), pulse = next goal, dim = locked
-  for (let i = 0; i < TIERS.length; i++) {
-    const t = TIERS[i], np = L.pts[i];
-    const cleared = i < prog, isNext = i === prog;
-    if (isNext && !reduceMotion) {
-      const pl = .5 + .5*Math.sin(tick*.1);
-      pixDisc(np.x, np.y, 9, uiA(.14 + pl*.22));
+  // shooting star streaks across the top now and then
+  if (!reduceMotion) {
+    const cyc = (tick % 480) / 480;
+    if (cyc < .1) {
+      const f = cyc / .1, sx2 = Math.round(W*.8 - f*W*.55), sy2 = Math.round(58 + f*30);
+      ctx.fillStyle = '#FFF6E8';
+      for (let k = 0; k < 5; k++) { ctx.globalAlpha = (1 - f) * (1 - k*.17); ctx.fillRect(sx2 + k*3, sy2 - k*2, 2, 1); }
+      ctx.globalAlpha = 1;
     }
-    if (launch === i) pixDisc(np.x, np.y, 9, 'rgba(255,255,255,0.85)');   // selected launch pad
-    pixDisc(np.x, np.y, 6, cleared ? '#FFD75E' : isNext ? t.c : 'rgba(255,246,232,0.16)');
-    pixDisc(np.x, np.y, 4, cleared ? '#4A3A0C' : '#141022');
-    if (cleared) { ctx.fillStyle = '#FFD75E'; ctx.fillRect(np.x-2, np.y, 1, 2); ctx.fillRect(np.x-1, np.y+1, 1, 1); ctx.fillRect(np.x, np.y-1, 1, 1); ctx.fillRect(np.x+1, np.y-2, 1, 1); }
-    const side2 = np.x < W/2 ? 1 : -1;   // label toward screen center, deco on the outside
-    const lc = cleared ? '#FFF6E8' : isNext ? t.c : 'rgba(255,246,232,0.4)';
-    txt(t.name, np.x + side2*11, np.y - 6, 1, lc, side2 > 0 ? 'left' : 'right');
-    txt(t.n*METERS_PER + 'M', np.x + side2*11, np.y + 3, 1, 'rgba(255,246,232,0.45)', side2 > 0 ? 'left' : 'right');
-    drawStageDeco(i, np.x - side2*16, np.y);
   }
-  // the gate above THE STARS: sealed until the sky is conquered
-  const champ = prog >= TIERS.length;
-  pixDisc(L.gate.x, L.gate.y, 6, champ ? '#FFD75E' : 'rgba(255,246,232,0.16)');
-  pixDisc(L.gate.x, L.gate.y, 4, champ ? '#4A3A0C' : '#141022');
-  if (champ) {   // crown
-    ctx.fillStyle = '#FFD75E'; ctx.fillRect(L.gate.x-2, L.gate.y-1, 5, 2);
-    ctx.fillRect(L.gate.x-2, L.gate.y-2, 1, 1); ctx.fillRect(L.gate.x, L.gate.y-2, 1, 1); ctx.fillRect(L.gate.x+2, L.gate.y-2, 1, 1);
-    txt('SKY CHAMPION', L.gate.x, L.gate.y - 13, 1, '#FFD75E', 'center');
-  } else txt('?', L.gate.x, L.gate.y - 3, 1, 'rgba(255,246,232,0.55)', 'center');
-  // mascot climbs the trail to your lifetime best
+  // shaded moon floating in the space band
+  const mnX = W - 26, mnY = L.pts[6].y - 6;
+  pixDisc(mnX, mnY, 7, 'rgba(150,146,180,0.85)');
+  pixDisc(mnX - 1, mnY - 1, 6, 'rgba(216,212,232,0.9)');
+  ctx.fillStyle = 'rgba(150,146,180,0.8)'; ctx.fillRect(mnX+1, mnY+1, 2, 2); ctx.fillRect(mnX-3, mnY+3, 1, 1); ctx.fillRect(mnX-1, mnY-3, 1, 1);
+  // aurora curtains wave behind the AURORA band
+  for (let k = 0; k < 6; k++) {
+    const ax = Math.round(W*(k+.5)/6 + Math.sin(ph*.02 + k*1.7)*6), ay = L.pts[5].y;
+    ctx.globalAlpha = .09 + .05*Math.sin(ph*.04 + k);
+    ctx.fillStyle = k % 2 ? '#7EF2C5' : '#C77EFF';
+    for (let s2 = -8; s2 <= 8; s2 += 2) ctx.fillRect(ax + Math.round(Math.sin((ay+s2)*.2 + ph*.03)*2), ay + s2, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+  // clouds drift through the low bands
+  ctx.fillStyle = 'rgba(255,246,232,0.16)';
+  for (let k = 0; k < 4; k++) {
+    const span = W + 44;
+    const cx2 = Math.round(((k*83 + ph*(.12 + k*.03)) % span + span) % span) - 22;
+    const cy2 = L.pts[2].y + [-16, -4, 8, 22][k];
+    ctx.fillRect(cx2-6, cy2, 12, 2); ctx.fillRect(cx2-3, cy2-2, 7, 2); ctx.fillRect(cx2+2, cy2+2, 6, 1);
+  }
+  // birds flap through the treetop band
+  ctx.fillStyle = 'rgba(20,16,34,0.7)';
+  for (let k = 0; k < 2; k++) {
+    const span = W + 30;
+    const bx = Math.round(((k*140 + 40 + ph*.2) % span + span) % span - 15);
+    const by = L.pts[1].y - 8 + k*10;
+    const up = Math.floor(ph*.15 + k*3) % 2;
+    ctx.fillRect(bx-2, by + (up?-1:0), 2, 1); ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx+1, by + (up?-1:0), 2, 1);
+  }
+  // city skyline silhouette along the ground, a few windows lit
+  for (let x2 = 0; x2 < W; x2 += 13) {
+    const bh2 = 6 + (x2*7 + 5) % 11;
+    ctx.fillStyle = 'rgba(11,14,26,0.85)'; ctx.fillRect(x2, H - bh2, 11, bh2);
+    if (bh2 > 9) { ctx.fillStyle = 'rgba(255,215,94,0.35)'; ctx.fillRect(x2+2, H-bh2+2, 1, 1); ctx.fillRect(x2+7, H-bh2+4, 1, 1); }
+  }
+  // where your lifetime best sits on the trail (mascot + edge markers)
+  let mp = null;
   if (bestHeight > 0) {
     const nextIdx = TIERS.findIndex(t => bestHeight < t.n);
-    let mp;
     if (nextIdx === -1) mp = L.gate;
     else {
       const prevN = nextIdx === 0 ? 0 : TIERS[nextIdx-1].n;
@@ -1741,10 +1791,90 @@ function renderSkyMap() {
       const b2 = L.pts[nextIdx];
       mp = { x: Math.round(a2.x + (b2.x-a2.x)*frac), y: Math.round(a2.y + (b2.y-a2.y)*frac) };
     }
-    drawMascot(mp.x, mp.y - 4);
   }
-  txt(mode === 'endless' ? 'TAP GOLD STAGE TO LAUNCH' : 'CHECKPOINTS: ENDLESS ONLY', W/2, H - 38, 1, 'rgba(255,246,232,0.5)', 'center');
-  txt('TAP ELSEWHERE TO CLOSE', W/2, H - 27, 1, 'rgba(255,246,232,0.3)', 'center');
+  // altitude ticks on the screen edges line up with the stages
+  for (let i = 0; i < TIERS.length; i++) {
+    ctx.fillStyle = i < prog ? 'rgba(255,215,94,0.5)' : 'rgba(255,246,232,0.18)';
+    ctx.fillRect(2, L.pts[i].y, 4, 1); ctx.fillRect(W-6, L.pts[i].y, 4, 1);
+  }
+  if (mp) {   // gold markers on both rulers point at your best height
+    ctx.fillStyle = 'rgba(255,215,94,' + (.6 + .3*Math.sin(ph*.1)) + ')';
+    ctx.fillRect(2, mp.y-1, 3, 3); ctx.fillRect(5, mp.y, 1, 1);
+    ctx.fillRect(W-5, mp.y-1, 3, 3); ctx.fillRect(W-6, mp.y, 1, 1);
+  }
+  // header plate
+  ctx.fillStyle = 'rgba(11,14,26,0.5)'; ctx.fillRect(0, 0, W, 50);
+  ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, 50, W, 1);
+  txt('SKY MAP', W/2+1, 17, 2, 'rgba(0,0,0,0.5)', 'center');
+  txt('SKY MAP', W/2, 16, 2, '#FFF6E8', 'center');
+  txt('BEST ' + bestHeight*METERS_PER + 'M', W/2, 37, 1, '#FFD75E', 'center');
+  // dotted winding trail: launch pad -> stages -> gate (walked segments glow gold)
+  let prev = L.start;
+  for (let i = 0; i <= TIERS.length; i++) {
+    const np = i === TIERS.length ? L.gate : L.pts[i];
+    for (let s2 = 1; s2 < 7; s2++) {
+      const dx = Math.round(prev.x + (np.x-prev.x)*s2/7), dy = Math.round(prev.y + (np.y-prev.y)*s2/7);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(dx, dy+1, 2, 2);
+      ctx.fillStyle = i < prog ? 'rgba(255,215,94,0.55)' : 'rgba(255,246,232,0.3)'; ctx.fillRect(dx, dy, 2, 2);
+    }
+    prev = np;
+  }
+  // mascot climbs the trail to your lifetime best (behind the pads/chips so labels stay readable)
+  if (mp) drawMascot(mp.x, mp.y - 4);
+  // ground launch pad
+  const selGround = launch < 0;
+  if (selGround) pixDisc(L.start.x, L.start.y, 8, 'rgba(255,255,255,0.85)');
+  mapNode3D(L.start.x, L.start.y, 5, selGround ? '#62E8B5' : 'rgba(255,246,232,0.35)', selGround ? dkHex('#62E8B5', .45) : 'rgba(20,16,34,0.8)');
+  ctx.fillStyle = '#141022';                                        // up arrow on the pad
+  ctx.fillRect(L.start.x, L.start.y-2, 1, 5); ctx.fillRect(L.start.x-1, L.start.y-1, 3, 1);
+  mapChip(L.start, 1, 'START', '0M', selGround ? '#62E8B5' : 'rgba(255,246,232,0.35)', selGround ? '#62E8B5' : 'rgba(255,246,232,0.7)');
+  // stage nodes: gold = cleared level (tap to launch), pulse = next goal, dim = locked
+  for (let i = 0; i < TIERS.length; i++) {
+    const t = TIERS[i], np = L.pts[i];
+    const cleared = i < prog, isNext = i === prog;
+    const side2 = np.x < W/2 ? 1 : -1;   // label toward screen center, deco on the outside
+    if (isNext && !reduceMotion) {
+      const pl = .5 + .5*Math.sin(tick*.1);
+      pixDisc(np.x, np.y, 10, uiA(.12 + pl*.2));
+    }
+    if (launch === i) pixDisc(np.x, np.y, 9, 'rgba(255,255,255,0.9)');   // selected launch pad
+    if (cleared) {
+      mapNode3D(np.x, np.y, 6, '#FFD75E', '#7A5A14');
+      pixDisc(np.x, np.y, 4, '#4A3A0C');
+      ctx.fillStyle = '#FFD75E'; ctx.fillRect(np.x-2, np.y, 1, 2); ctx.fillRect(np.x-1, np.y+1, 1, 1); ctx.fillRect(np.x, np.y-1, 1, 1); ctx.fillRect(np.x+1, np.y-2, 1, 1);
+    } else if (isNext) {
+      mapNode3D(np.x, np.y, 6, t.c, dkHex(t.c, .4));
+      pixDisc(np.x, np.y, 4, '#141022');
+    } else {   // locked: flat recessed socket with a padlock
+      pixDisc(np.x, np.y, 6, 'rgba(0,0,0,0.3)');
+      pixDisc(np.x, np.y, 5, 'rgba(255,246,232,0.14)');
+      pixDisc(np.x, np.y, 4, '#141022');
+      ctx.fillStyle = 'rgba(255,246,232,0.45)'; ctx.fillRect(np.x-1, np.y-1, 3, 2); ctx.fillRect(np.x-1, np.y-2, 1, 1); ctx.fillRect(np.x+1, np.y-2, 1, 1);
+    }
+    mapChip(np, side2, t.name, t.n*METERS_PER + 'M',
+      cleared ? '#FFD75E' : isNext ? t.c : 'rgba(255,246,232,0.25)',
+      cleared ? '#FFF6E8' : isNext ? t.c : 'rgba(255,246,232,0.45)');
+    drawStageDeco(i, np.x - side2*18, np.y);
+  }
+  // the gate above THE STARS: sealed until the sky is conquered
+  const champ = prog >= TIERS.length;
+  if (champ) {
+    mapNode3D(L.gate.x, L.gate.y, 6, '#FFD75E', '#7A5A14');
+    pixDisc(L.gate.x, L.gate.y, 4, '#4A3A0C');
+    ctx.fillStyle = '#FFD75E'; ctx.fillRect(L.gate.x-2, L.gate.y-1, 5, 2);   // crown
+    ctx.fillRect(L.gate.x-2, L.gate.y-2, 1, 1); ctx.fillRect(L.gate.x, L.gate.y-2, 1, 1); ctx.fillRect(L.gate.x+2, L.gate.y-2, 1, 1);
+    txt('SKY CHAMPION', L.gate.x, L.gate.y - 13, 1, '#FFD75E', 'center');
+  } else {
+    pixDisc(L.gate.x, L.gate.y, 6, 'rgba(0,0,0,0.3)');
+    pixDisc(L.gate.x, L.gate.y, 5, 'rgba(255,246,232,0.14)');
+    pixDisc(L.gate.x, L.gate.y, 4, '#141022');
+    txt('?', L.gate.x, L.gate.y - 3, 1, 'rgba(255,246,232,0.55)', 'center');
+  }
+  const hint = mode === 'endless' ? 'TAP GOLD STAGE TO LAUNCH' : 'CHECKPOINTS: ENDLESS ONLY';
+  txt(hint, W/2+1, H - 37, 1, 'rgba(0,0,0,0.5)', 'center');
+  txt(hint, W/2, H - 38, 1, 'rgba(255,246,232,0.65)', 'center');
+  txt('TAP ELSEWHERE TO CLOSE', W/2+1, H - 26, 1, 'rgba(0,0,0,0.5)', 'center');
+  txt('TAP ELSEWHERE TO CLOSE', W/2, H - 27, 1, 'rgba(255,246,232,0.4)', 'center');
 }
 
 // ---------- mode picker overlay ----------
