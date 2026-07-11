@@ -1871,27 +1871,81 @@ function drawStageDeco(i, x, y) {
     if (!reduceMotion && Math.floor(tick/14)%2===0) { ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-4, 1, 1); ctx.fillRect(x-5, y+3, 1, 1); }
   }
 }
-// a floating stage island centered at (cx) with its surface at topY
+// blend a hex color toward white by f (0..1) -> 'rgb(...)'
+function liteHex(hex, f) {
+  const v = parseInt(hex.slice(1), 16), r = v>>16&255, g = v>>8&255, b = v&255, m = c => Math.round(c + (255-c)*f);
+  return 'rgb(' + m(r) + ',' + m(g) + ',' + m(b) + ')';
+}
+// a puffy multi-lobe cloud platform (stages 2/3); wispy adds jet-stream contrails
+function drawCloudIsland(cx, topY, half, ph, wispy) {
+  const drift = Math.round(Math.sin(ph*.03)*2);
+  pixDisc(cx-16, topY+8, 9, 'rgba(168,188,218,0.85)'); pixDisc(cx+16, topY+8, 9, 'rgba(168,188,218,0.85)'); pixDisc(cx, topY+10, 12, 'rgba(168,188,218,0.85)');
+  pixDisc(cx-18+drift, topY+4, 9, 'rgba(200,216,238,0.94)'); pixDisc(cx+18-drift, topY+5, 9, 'rgba(200,216,238,0.94)');
+  pixDisc(cx-8, topY+3, 10, 'rgba(200,216,238,0.94)'); pixDisc(cx+9, topY+3, 10, 'rgba(200,216,238,0.94)'); pixDisc(cx, topY+5, 13, 'rgba(200,216,238,0.94)');
+  pixDisc(cx, topY+1, 12, 'rgba(242,248,255,0.98)'); pixDisc(cx-10+drift, topY+2, 8, 'rgba(242,248,255,0.98)'); pixDisc(cx+11-drift, topY+2, 8, 'rgba(242,248,255,0.98)');
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(cx-13, topY-3, 12, 2); ctx.fillRect(cx+2, topY-2, 9, 1);
+  if (wispy && !reduceMotion) {   // jet-stream vapor streaks skim past
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let k = 0; k < 3; k++) { const span = half*2 + 34, wx = ((ph*(1.3+k*.5) + k*44) % span + span) % span; ctx.fillRect(cx-half-12+wx, topY+2+k*3, 6, 1); }
+  }
+}
+// a floating stage island centered at (cx) with its surface top near topY, plus themed scenery
 function drawIsland(i, cx, topY) {
   const w = Math.min(W - 24, 104), half = Math.round(w / 2);
   const P = ISLES[i] || ISLES[0];
   cx = Math.round(cx); topY = Math.round(topY);
-  if (P.cloud) {   // puffy cloud platform (no dirt underside)
-    const cs = 'rgba(236,244,255,0.96)', csd = 'rgba(198,214,236,0.9)';
-    pixDisc(cx, topY + 4, 12, csd);
-    pixDisc(cx - Math.round(half*0.5), topY + 5, 9, csd); pixDisc(cx + Math.round(half*0.5), topY + 5, 9, csd);
-    pixDisc(cx, topY + 1, 12, cs);
-    pixDisc(cx - Math.round(half*0.45), topY + 3, 8, cs); pixDisc(cx + Math.round(half*0.5), topY + 3, 8, cs);
-    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(cx - 9, topY - 4, 11, 2);
-    return;
+  const ph = reduceMotion ? 0 : tick;
+  if (P.cloud) { drawCloudIsland(cx, topY, half, ph, i === 3); return; }
+  // --- shared floating slab ---
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(cx - half + 4, topY + 17, w - 8, 3);   // cast shadow
+  ctx.fillStyle = P.e;                                                                      // tapering rocky underside
+  for (let r = 0; r < 13; r++) { const ww = half - 2 - Math.round(r * (half-4) / 15); if (ww > 0) ctx.fillRect(cx - ww, topY + 6 + r, ww*2, 1); }
+  ctx.fillStyle = P.s; ctx.fillRect(cx - half, topY + 2, w, 6);                             // rock strata
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(cx - half, topY + 7, w, 1);              // strata shadow line
+  ctx.fillStyle = P.top; ctx.fillRect(cx - half, topY - 1, w, 4);                           // surface
+  ctx.fillStyle = 'rgba(255,255,255,0.30)'; ctx.fillRect(cx - half, topY - 1, w, 1);        // rim light
+  ctx.fillStyle = P.s; ctx.fillRect(cx - half + 8, topY + 22 + (Math.sin(ph*.05)*1|0), 3, 2); ctx.fillRect(cx + half - 12, topY + 25, 4, 2);   // crumbs
+  const sy = topY - 1;   // surface line — scenery stands up from here
+  if (i === 0) {         // ROOFTOPS — a little skyline on grass
+    ctx.fillStyle = liteHex(P.top,.28); ctx.fillRect(cx-half, sy, w, 1);
+    ctx.fillStyle = liteHex(P.top,.12); for (let g = -half+7; g < half-7; g += 12) { ctx.fillRect(cx+g, sy-2, 1, 2); ctx.fillRect(cx+g+3, sy-1, 1, 1); }
+    const bldg = (bx, bh2, bw2) => { ctx.fillStyle = '#3E4C68'; ctx.fillRect(bx, sy-bh2, bw2, bh2); ctx.fillStyle = '#586A8C'; ctx.fillRect(bx, sy-bh2, 1, bh2);
+      ctx.fillStyle = '#FFE08A'; for (let wy = sy-bh2+2; wy < sy-2; wy += 3) for (let wx = bx+2; wx < bx+bw2-1; wx += 3) if ((wx*7+wy) % 5 < 3) ctx.fillRect(wx, wy, 1, 1); };
+    bldg(cx-half+7, 12, 8); bldg(cx-half+17, 16, 7); bldg(cx+half-15, 13, 8);
+    ctx.fillStyle = '#8AA0BE'; ctx.fillRect(cx-half+20, sy-22, 1, 6);
+    if (!reduceMotion && Math.floor(ph/18)%2===0) { ctx.fillStyle = '#FF5E5E'; ctx.fillRect(cx-half+20, sy-23, 1, 1); }
+  } else if (i === 1) {  // TREETOPS — layered canopies
+    ctx.fillStyle = liteHex(P.top,.22); ctx.fillRect(cx-half, sy, w, 1);
+    const tree = tx => { ctx.fillStyle = '#7A4A24'; ctx.fillRect(tx-1, sy-4, 2, 5);
+      pixDisc(tx, sy-8, 4, P.s); pixDisc(tx-3, sy-5, 3, P.s); pixDisc(tx+3, sy-5, 3, P.s);
+      pixDisc(tx-1, sy-9, 3, P.top); pixDisc(tx-1, sy-10, 2, liteHex(P.top,.3)); };
+    tree(cx-half+13); tree(cx+half-13); tree(cx-half+30);
+    ctx.fillStyle = '#FF9ED2'; ctx.fillRect(cx+half-25, sy-2, 1, 1); ctx.fillStyle = '#FFD75E'; ctx.fillRect(cx+half-20, sy-2, 1, 1);   // flowers
+  } else if (i === 4) {  // STRATOSPHERE — mesa with a dish + relay tower
+    ctx.fillStyle = liteHex(P.top,.2); ctx.fillRect(cx-half, sy, w, 1);
+    ctx.fillStyle = '#8A93AD'; ctx.fillRect(cx-half+13, sy-7, 1, 7);
+    pixDisc(cx-half+17, sy-9, 4, '#C9D2E6'); pixDisc(cx-half+18, sy-9, 3, '#8A93AD'); ctx.fillStyle = '#E6ECFF'; ctx.fillRect(cx-half+16, sy-10, 1, 1);
+    ctx.fillStyle = '#9AA6C2'; ctx.fillRect(cx+half-16, sy-14, 1, 14); ctx.fillRect(cx+half-19, sy-4, 7, 1); ctx.fillRect(cx+half-18, sy-9, 5, 1);
+    if (!reduceMotion && Math.floor(ph/16)%2===0) { ctx.fillStyle = '#FF5E5E'; ctx.fillRect(cx+half-16, sy-15, 1, 1); }
+  } else if (i === 5) {  // AURORA — ice crystals + shimmer
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(cx-half, sy-1, w, 1);
+    const shard = (sx, h) => { for (let r = 0; r < h; r++) { const ww = Math.max(1, Math.round((h-r)*.55)); ctx.fillStyle = r < 2 ? '#FFFFFF' : '#BFF0FA'; ctx.fillRect(sx-Math.floor(ww/2), sy-h+r, ww, 1); } ctx.fillStyle = '#7FD4EC'; ctx.fillRect(sx-1, sy-1, 2, 1); };
+    shard(cx-half+16, 12); shard(cx-half+27, 8); shard(cx+half-16, 10);
+    if (!reduceMotion) { ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fillRect(cx-half+16 + (Math.floor(ph/12)%3)*6, sy-13, 1, 1); }
+  } else if (i === 6) {  // SPACE — cratered asteroid + planted flag
+    pixDisc(cx-half+16, sy+2, 3, dkHex(P.top,.6)); pixDisc(cx+half-18, sy+3, 2, dkHex(P.top,.6)); pixDisc(cx-3, sy+4, 2, dkHex(P.top,.6));
+    ctx.fillStyle = 'rgba(255,246,232,0.8)'; ctx.fillRect(cx-half+10, sy-2, 1, 1); ctx.fillRect(cx+half-12, sy-3, 1, 1);
+    ctx.fillStyle = '#8A93AD'; ctx.fillRect(cx+half-24, sy-8, 1, 8); ctx.fillStyle = TIERS[6].c; ctx.fillRect(cx+half-24, sy-8, 4, 3);
+  } else if (i === 7) {  // ORBIT — solar array + station module
+    ctx.fillStyle = '#3A5E88'; ctx.fillRect(cx-half+8, sy-10, 15, 8); ctx.fillStyle = '#5E9AD6'; ctx.fillRect(cx-half+9, sy-9, 13, 6);
+    ctx.fillStyle = '#2E4E74'; for (let gx = cx-half+11; gx < cx-half+22; gx += 3) ctx.fillRect(gx, sy-9, 1, 6); for (let gy = sy-8; gy < sy-3; gy += 2) ctx.fillRect(cx-half+9, gy, 13, 1);
+    ctx.fillStyle = '#AEB6CC'; ctx.fillRect(cx+half-20, sy-8, 10, 7); ctx.fillStyle = '#5E9AD6'; ctx.fillRect(cx+half-16, sy-6, 3, 3);
+    if (!reduceMotion && Math.floor(ph/14)%2===0) { ctx.fillStyle = '#62E8B5'; ctx.fillRect(cx+half-11, sy-8, 1, 1); }
+  } else if (i === 8) {  // THE STARS — golden dais with twinkling studs
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(cx-half, sy-1, w, 1);
+    ctx.fillStyle = '#C99A2E'; ctx.fillRect(cx-half+8, sy-6, 2, 6); ctx.fillRect(cx+half-10, sy-6, 2, 6);
+    for (let k = 0; k < 4; k++) { const stx = cx-half+15+k*17, on2 = reduceMotion || (Math.floor(ph/10)+k)%3 !== 0; ctx.fillStyle = on2 ? '#FFF6C8' : '#B8860B'; ctx.fillRect(stx, sy-4, 1, 1); ctx.fillRect(stx-1, sy-3, 3, 1); ctx.fillRect(stx, sy-2, 1, 1); }
   }
-  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(cx - half + 3, topY + 16, w - 6, 3);   // ground shadow
-  ctx.fillStyle = P.e;                                                                     // tapering underside
-  for (let r = 0; r < 12; r++) { const ww = half - 3 - Math.round(r * half / 16); if (ww > 0) ctx.fillRect(cx - ww, topY + 6 + r, ww*2, 1); }
-  ctx.fillStyle = P.s; ctx.fillRect(cx - half, topY + 2, w, 6);                            // rock band
-  ctx.fillStyle = P.top; ctx.fillRect(cx - half, topY - 1, w, 4);                          // surface (grass/ice/metal/gold)
-  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(cx - half, topY - 1, w, 1);       // top highlight
-  ctx.fillStyle = P.s; ctx.fillRect(cx - half + 6, topY + 21, 3, 2); ctx.fillRect(cx + half - 10, topY + 24, 4, 2);   // drifting crumbs
 }
 // a numbered level badge (purple unlocked / gold cleared / gray locked) centered on (x, y)
 function mapBadge(num, x, y, cleared, isNext, unlocked, sel) {
@@ -1918,6 +1972,54 @@ function mapBadge(num, x, y, cleared, isNext, unlocked, sel) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y+1, 1, 2);
   }
 }
+// animated background decorations, each anchored to its stage row so they scroll with
+// the map and drift behind the islands (birds, balloons, plane, aurora, galaxy, moon, planet)
+function drawMapDecor(L, ph) {
+  const on = y2 => y2 > -34 && y2 < H + 34;
+  const P = L.pts;
+  if (on(P[1].y)) {   // TREETOPS — a small flock flaps across
+    ctx.fillStyle = 'rgba(20,16,34,0.6)';
+    for (let k = 0; k < 3; k++) { const span = W+40, bx = Math.round(((k*120+30+ph*.25)%span+span)%span-20), by = P[1].y-26+k*9, up = Math.floor(ph*.18+k*2)%2;
+      ctx.fillRect(bx-2, by+(up?-1:0), 2, 1); ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx+1, by+(up?-1:0), 2, 1); }
+  }
+  if (on(P[2].y)) {   // CLOUD NINE — drifting clouds + a pink gift balloon
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    for (let k = 0; k < 3; k++) { const span = W+60, cx2 = Math.round(((k*90+ph*(.15+k*.05))%span+span)%span)-30, cy2 = P[2].y-30+[0,14,26][k];
+      ctx.fillRect(cx2-7, cy2, 14, 3); ctx.fillRect(cx2-3, cy2-2, 8, 2); }
+    const balx = W - (W>200?40:20), baly = P[2].y-16 + Math.round(Math.sin(ph*.04)*3);
+    pixDisc(balx, baly, 5, '#FF7EA5'); pixDisc(balx, baly, 4, '#FF5E8E'); ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(balx-2, baly-3, 2, 2);
+    ctx.fillStyle = 'rgba(255,246,232,0.5)'; ctx.fillRect(balx, baly+5, 1, 6); ctx.fillStyle = '#C77EFF'; ctx.fillRect(balx-2, baly+11, 4, 3); ctx.fillStyle = '#FFD75E'; ctx.fillRect(balx-2, baly+11, 4, 1);
+  }
+  if (on(P[3].y)) {   // JET STREAM — an airliner trailing vapor
+    const span = W+50, px = Math.round(((ph*.6)%span+span)%span)-25, py = P[3].y-22;
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; for (let k = 1; k < 9; k++) ctx.fillRect(px-k*3, py+1, 2, 1);
+    ctx.fillStyle = '#C7CFE6'; ctx.fillRect(px, py, 6, 2); ctx.fillRect(px+5, py-1, 2, 1); ctx.fillStyle = '#8A93AD'; ctx.fillRect(px+1, py-1, 2, 1); ctx.fillRect(px+1, py+2, 2, 1);
+  }
+  if (on(P[4].y)) {   // STRATOSPHERE — a hot-air balloon
+    const hx = 24, hy = P[4].y-16 + Math.round(Math.sin(ph*.03+1)*3);
+    pixDisc(hx, hy, 6, '#FF9E3D'); ctx.fillStyle = '#FFD75E'; ctx.fillRect(hx-6, hy-1, 12, 1); ctx.fillStyle = '#C7502A'; ctx.fillRect(hx-1, hy-6, 2, 12);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(hx-2, hy+7, 4, 3); ctx.fillStyle = 'rgba(255,246,232,0.4)'; ctx.fillRect(hx-3, hy+6, 1, 1); ctx.fillRect(hx+2, hy+6, 1, 1);
+  }
+  if (on(P[5].y) && !reduceMotion) {   // AURORA — shimmering curtains
+    for (let k = 0; k < 7; k++) { const ax = Math.round(W*(k+.5)/7 + Math.sin(ph*.02+k*1.4)*5); ctx.globalAlpha = .10+.06*Math.sin(ph*.05+k); ctx.fillStyle = k%2 ? '#7EF2C5' : '#C77EFF';
+      for (let s2 = -14; s2 <= 14; s2 += 2) ctx.fillRect(ax + Math.round(Math.sin((P[5].y+s2)*.15+ph*.03)*3), P[5].y-24+s2, 2, 2); }
+    ctx.globalAlpha = 1;
+  }
+  if (on(P[6].y)) {   // SPACE — a slow spiral galaxy
+    const gx = 30, gy = P[6].y-18;
+    for (let a = 0; a < 28; a++) { const ang = a*.5 + ph*.01, rr = a*.4; ctx.globalAlpha = .5 - a*.015; ctx.fillStyle = a%2 ? '#C77EFF' : '#8FB8FF'; ctx.fillRect(Math.round(gx+Math.cos(ang)*rr), Math.round(gy+Math.sin(ang)*rr*.6), 1, 1); }
+    ctx.globalAlpha = 1; ctx.fillStyle = '#FFF6E8'; ctx.fillRect(gx, gy, 2, 2);
+  }
+  if (on(P[7].y)) {   // ORBIT — a cratered moon with an orbiting satellite
+    const mx = W-24, my = P[7].y-20; pixDisc(mx, my, 9, 'rgba(150,146,180,0.8)'); pixDisc(mx-1, my-1, 8, 'rgba(220,216,236,0.92)');
+    pixDisc(mx+2, my+2, 2, 'rgba(150,146,180,0.7)'); pixDisc(mx-3, my+3, 1, 'rgba(150,146,180,0.7)'); pixDisc(mx+1, my-3, 1, 'rgba(150,146,180,0.7)');
+    const ang = ph*.05, sxx = Math.round(mx+Math.cos(ang)*13), syy = Math.round(my+Math.sin(ang)*8); ctx.fillStyle = '#C7CFE6'; ctx.fillRect(sxx, syy, 2, 1);
+  }
+  if (on(P[8].y)) {   // THE STARS — a ringed planet
+    const px2 = 26, py2 = P[8].y-18; pixDisc(px2, py2, 6, '#B98CE6'); pixDisc(px2-1, py2-1, 5, '#C79AF2'); pixDisc(px2+1, py2+1, 2, '#7A4AA6');
+    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(px2-8, py2+1, 6, 1); ctx.fillRect(px2+3, py2+1, 6, 1);
+  }
+}
 function renderSkyMap() {
   const L = skyMapNodes();
   const ph = reduceMotion ? 0 : tick;
@@ -1929,32 +2031,45 @@ function renderSkyMap() {
     const i = Math.floor(k), f = k - i;
     return bl(i) + (bl(i + 1) - bl(i)) * f;
   };
-  // OPAQUE themed backdrop: the actual in-game skies, anchored to the stage rows
+  // themed backdrop: the actual in-game skies, anchored to the stage rows
   for (let y2 = 0; y2 < H; y2 += 3) {
     const sky = skyColor(blocksAt(y2));
     ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')';
     ctx.fillRect(0, y2, W, 3);
   }
-  ctx.fillStyle = 'rgba(11,14,26,0.55)'; ctx.fillRect(0, 0, W, H);   // night veil for readability
-  // stars fade in with altitude
-  for (let i = 0; i < 40; i++) {
-    const sx2 = (i*67 + 13) % W, sy2 = (i*131 + 7) % H;
-    const a = clamp((blocksAt(sy2) - 110) / 160, 0, 1);
+  // nebula washes bloom in at high altitude, drifting slowly
+  for (let i = 0; i < 7; i++) {
+    const ny = (i*97 + 31) % H, alt = blocksAt(ny), a = clamp((alt - 180) / 220, 0, 1);
     if (a <= 0) continue;
-    ctx.globalAlpha = a * (.25 + .5*(.5 + .5*Math.sin(ph*.05 + i)));
-    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(sx2, sy2, i%5===0?2:1, i%5===0?2:1);
+    const nx = Math.round((i*83 + Math.sin(ph*.008 + i)*10) % (W+40)) - 20;
+    ctx.globalAlpha = a * 0.10; ctx.fillStyle = i % 2 ? '#C77EFF' : '#5E8CFF';
+    pixDisc(nx, ny, 16, ctx.fillStyle); pixDisc(nx+8, ny+4, 12, ctx.fillStyle);
   }
   ctx.globalAlpha = 1;
-  // shooting star streaks across the top when you are up high
-  if (!reduceMotion && blocksAt(60) > 150) {
-    const cyc = (tick % 480) / 480;
+  ctx.fillStyle = 'rgba(11,14,26,0.5)'; ctx.fillRect(0, 0, W, H);   // night veil for readability
+  // starfield fades in with altitude; a few twinkle in color
+  for (let i = 0; i < 60; i++) {
+    const sx2 = (i*67 + 13) % W, sy2 = (i*131 + 7) % H;
+    const a = clamp((blocksAt(sy2) - 90) / 170, 0, 1);
+    if (a <= 0) continue;
+    ctx.globalAlpha = a * (.25 + .55*(.5 + .5*Math.sin(ph*.05 + i)));
+    ctx.fillStyle = i % 9 === 0 ? '#BFE8FF' : i % 7 === 0 ? '#FFE0B0' : '#FFF6E8';
+    const sz = i % 6 === 0 ? 2 : 1; ctx.fillRect(sx2, sy2, sz, sz);
+  }
+  ctx.globalAlpha = 1;
+  // shooting stars streak across the top when you are up high
+  if (!reduceMotion && blocksAt(60) > 150) for (let lane = 0; lane < 2; lane++) {
+    const cyc = ((tick + lane*260) % 520) / 520;
     if (cyc < .1) {
-      const f = cyc / .1, sx2 = Math.round(W*.8 - f*W*.55), sy2 = Math.round(56 + f*30);
-      ctx.fillStyle = '#FFF6E8';
-      for (let k = 0; k < 5; k++) { ctx.globalAlpha = (1 - f) * (1 - k*.17); ctx.fillRect(sx2 + k*3, sy2 - k*2, 2, 1); }
+      const f = cyc / .1, sx2 = Math.round(W*(lane?.3:.85) - f*W*.5), sy2 = Math.round(40 + lane*36 + f*30);
+      for (let k = 0; k < 5; k++) { ctx.globalAlpha = (1 - f) * (1 - k*.17); ctx.fillStyle = '#FFF6E8'; ctx.fillRect(sx2 + k*3, sy2 - k*2, 2, 1); }
       ctx.globalAlpha = 1;
     }
   }
+  // side vignette to draw the eye down the trail
+  for (let e = 0; e < 10; e++) { ctx.globalAlpha = (10-e)/10 * 0.06; ctx.fillStyle = '#0B0E1A'; ctx.fillRect(e, 0, 1, H); ctx.fillRect(W-1-e, 0, 1, H); }
+  ctx.globalAlpha = 1;
+  drawMapDecor(L, ph);   // birds, balloons, plane, aurora, galaxy, moon, planet — behind the islands
   // best-height marker point along the winding trail (mascot rides it, walked dots glow)
   let mp = null;
   if (bestHeight > 0) {
@@ -1992,9 +2107,10 @@ function renderSkyMap() {
     const isGate = k === TIERS.length;
     const pt = isGate ? L.gate : L.pts[k];
     if (pt.y < L.viewTop - 26 || pt.y > L.viewBot + 28) continue;
+    const bob = reduceMotion ? 0 : Math.round(Math.sin(tick*.045 + k*1.3)*2);   // islands drift like they float
     if (isGate) {
       if (champ) {
-        drawIsland(8, pt.x, pt.y + 6);
+        drawIsland(8, pt.x, pt.y + 6 + bob);
         mapNode3D(pt.x, pt.y, 7, '#FFD75E', '#7A5A14'); pixDisc(pt.x, pt.y, 4, '#4A3A0C');
         ctx.fillStyle = '#FFD75E'; ctx.fillRect(pt.x-2, pt.y-1, 5, 2);
         ctx.fillRect(pt.x-2, pt.y-2, 1, 1); ctx.fillRect(pt.x, pt.y-2, 1, 1); ctx.fillRect(pt.x+2, pt.y-2, 1, 1);
@@ -2014,10 +2130,8 @@ function renderSkyMap() {
     }
     const t = TIERS[k];
     const cleared = k < prog, isNext = k === prog, unlocked = k <= prog, sel = selLevel === k && unlocked;
-    // floating island + its themed stage art
-    drawIsland(k, pt.x, pt.y + 5);
-    const decoSide = pt.x <= L.midX ? 1 : -1;
-    drawStageDecoScaled(k, pt.x + decoSide*24, pt.y + 2, 2);
+    // floating themed island (bobs gently underneath the pinned badge)
+    drawIsland(k, pt.x, pt.y + 5 + bob);
     // stage label stacked above the badge (clear of the badge top)
     txt((k+1) + '. ' + t.name, pt.x, pt.y - 30, 1, unlocked ? t.c : 'rgba(255,246,232,0.45)', 'center');
     txt(t.n*METERS_PER + 'M' + (cleared ? '' : isNext ? ' - NEXT' : ' - LOCKED'), pt.x, pt.y - 21, 1, 'rgba(255,246,232,0.55)', 'center');

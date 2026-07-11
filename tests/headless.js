@@ -225,6 +225,15 @@ check('map renders the redesigned winding trail at every scroll', () => {
   r.run('for (let s = 0; s <= mapScrollMax; s += 40) { mapScroll = s; renderSkyMap(); }');
   return true;
 });
+check('map art helpers exist (drawIsland, drawCloudIsland, drawMapDecor, liteHex)', () => tap.run(
+  '["drawIsland","drawCloudIsland","drawMapDecor","liteHex"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function")'));
+check('liteHex lightens a hex color toward white', () => tap.run('liteHex("#000000", .5) === "rgb(128,128,128)" && liteHex("#3F9E4C", 0) === "rgb(63,158,76)"'));
+check('drawMapDecor + drawIsland run for every stage without throwing', () => {
+  const r = makeGame({ 'skystack-height': '200', 'skystack-tiers': '6' });
+  r.run('state = "home"; openSkyMap();');
+  r.run('const L = skyMapNodes(); drawMapDecor(L, 100); for (let i = 0; i < 9; i++) drawIsland(i, W/2, 100 + i);');
+  return true;
+});
 check('map helpers exist (mapNode3D, dkHex, openSkyMap, mapTapAt, drawIsland, mapBadge)', () => tap.run(
   '["mapNode3D","dkHex","openSkyMap","mapTapAt","drawIsland","mapBadge"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function")'));
 check('dkHex darkens a hex color', () => tap.run('dkHex("#FFD75E", .5) === "rgb(128,108,47)"'));
@@ -320,7 +329,7 @@ check('home PLAY starts the next level', () => home.run(
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v29', () => /const CACHE = 'skystack-v29'/.test(sw));
+check('sw.js cache bumped to v30', () => /const CACHE = 'skystack-v30'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
