@@ -408,6 +408,7 @@ let mode = store.get('skystack-mode', 'endless');
 if (!MODES.find(m => m.id === mode)) { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
 const curMode = () => MODES.find(m => m.id === mode) || MODES[0];
 let modePicker = false;
+let skyMap = false;
 let modeBests = store.get('skystack-modebests', {});
 function bestBlocksFor(m) { return (modeBests[m] && modeBests[m].blocks) || 0; }
 function bestScoreFor(m) { return (modeBests[m] && modeBests[m].score) || 0; }
@@ -606,7 +607,8 @@ function schedulePickups() {
   if (curMode().pure) return;                       // PURE: zero power-ups, pure skill
   while (nextPickupRow < blocks.length + 16) {
     const type = pick(['coin','coin','coin','wide','slow','shield','aura','gold','fever']);
-    const x = 18 + rnd() * (W - 36);
+    const SR = slideRange();                          // always reachable: spawn inside the block corridor
+    const x = SR.l + 22 + rnd() * (SR.r - SR.l - 44);
     pickups.push({ row: nextPickupRow, x, type, got: false });
     nextPickupRow += 8 + Math.floor(rnd() * 6);     // sparser than before — less visual clutter
   }
@@ -630,7 +632,14 @@ function applyPower(type, cx, cy2, silent) {
   floaters.push({ text: P.label, x: cx, y: cy2, vy: -.4, life: 1.2, color: P.c1 });
   if (type !== 'coin') for (let i = 0; i < 12; i++) particles.push({ x: cx, y: cy2, vx:(Math.random()-.5)*2.6, vy:(Math.random()-.5)*2.6, life: 1, color: P.c1 });
 }
-function collectPickup(p, cx, cy2) { p.got = true; runPowerups++; applyPower(p.type, cx, cy2); }
+function collectPickup(p, cx, cy2) {
+  p.got = true; runPowerups++;
+  for (let i = 0; i < 10; i++) {                     // badge shatters outward in a ring
+    const a = i / 10 * 6.283;
+    particles.push({ x: cx, y: cy2, vx: Math.cos(a)*1.8, vy: Math.sin(a)*1.8, life: .7, color: POW[p.type].c1 });
+  }
+  applyPower(p.type, cx, cy2);
+}
 function enterFever() {
   fever = true; feverT = 180; runFevers++;
   floaters.push({ text:'FEVER!', x:W/2, y:towerTopY()-BH-10, vy:-.5, life:1.6, color:'#FFF6E8' });
@@ -644,11 +653,16 @@ function maybeSpawnBalloon() {
   if (rnd() > 0.5) { lastBalloonRow = blocks.length; return; }
   const top = blocks[blocks.length - 1];
   const side = rnd() < 0.5 ? -1 : 1;
-  const bx = side < 0 ? Math.max(8, top.x - 16) : Math.min(W - 8, top.x + top.w + 16);
-  balloon = { x: bx, row: blocks.length + 1, ph: rnd() * 6.28, type: pick(GIFT_POOL) };
+  const SR = slideRange();
+  const bx = side < 0 ? Math.max(SR.l + 10, top.x - 16) : Math.min(SR.r - 10, top.x + top.w + 16);
+  balloon = { x: bx, row: blocks.length + 1, ph: rnd() * 6.28, type: pick(GIFT_POOL), inT: 0, away: 0 };
   lastBalloonRow = blocks.length;
 }
-function balloonWorldY() { return GROUND_Y - balloon.row * BH - BH/2 + Math.sin(tick * .06 + balloon.ph) * 3; }
+function balloonWorldY() {
+  const rise = (1 - balloon.inT) * 56;               // drifts UP into position instead of popping in
+  const esc = balloon.away * balloon.away * 110;     // missed: accelerates away into the sky
+  return GROUND_Y - balloon.row * BH - BH/2 + rise - esc + Math.sin(tick * .06 + balloon.ph) * 3;
+}
 
 function land() {
   const top = blocks[blocks.length - 1], f = faller;
@@ -656,7 +670,7 @@ function land() {
   const offset = f.x - top.x;
   const m = curMode();
 
-  if (balloon && Math.abs((GROUND_Y - balloon.row * BH) - (towerTopY() - BH)) < BH &&
+  if (balloon && !balloon.away && Math.abs((GROUND_Y - balloon.row * BH) - (towerTopY() - BH)) < BH &&
       balloon.x >= f.x - 4 && balloon.x <= f.x + f.w + 4) {
     runBalloons++; runPowerups++; stats.balloons++;
     applyPower(balloon.type, balloon.x, balloonWorldY());
@@ -767,7 +781,7 @@ function afterPlace(f, updateBalance, placedCenter) {
   for (const p of pickups) { if (p.got || p.row !== r) continue; if (p.x >= b.x && p.x <= b.x + b.w) collectPickup(p, p.x, towerTopY()); }
   schedulePickups();
   maybeSpawnBalloon();
-  if (balloon && blocks.length > balloon.row + 1) balloon = null;
+  if (balloon && !balloon.away && blocks.length > balloon.row + 1) balloon.away = 0.01;   // missed — it escapes upward
   const h = blocks.length;
   if (tier < TIERS.length && h >= TIERS[tier].n) {
     const t = TIERS[tier]; bannerText = t.n + ' - ' + t.name; bannerT = 1;
@@ -878,7 +892,7 @@ function shareScore() {
 // ---------- layout constants ----------
 const PAD = 6;
 const NAV_H = 20;
-let NAV_TABS, NAV_Y, MODE_BTN, PICK_ROWS, PLAY_BTN, MISS_PANEL, INSTALL_BTN,
+let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, PLAY_BTN, MISS_PANEL, INSTALL_BTN,
     SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
@@ -889,8 +903,9 @@ function relayout() {
     { id:'me',   label:'ME' }
   ].map((t, i) => ({ ...t, x: Math.round(i * W/3), w: Math.ceil(W/3) }));   // tabs share the full width on any screen
   NAV_Y = H - NAV_H;
-  // home
-  MODE_BTN = { x:W/2-56, y:70, w:112, h:20 };
+  // home (mode button + sky-map button share the row, centered as a pair)
+  MODE_BTN = { x:Math.max(2, W/2-76), y:70, w:112, h:20 };
+  MAP_BTN = { x:Math.min(W-38, W/2+40), y:70, w:36, h:20 };
   const pickW = Math.min(W - 24, 240);
   PICK_ROWS = MODES.map((m, i) => ({ x: Math.round((W-pickW)/2), y:74 + i*44, w:pickW, h:40, id:m.id }));
   PLAY_BTN = { x:W/2-50, y:130, w:100, h:30 };
@@ -925,7 +940,8 @@ function adaptToScreen() {
   if (slider) { slider.x += dx; slider.y += dgy; }
   if (faller) { faller.x += dx; faller.y += dgy; }
   if (balloon) balloon.x = clamp(balloon.x + dx, 10, W - 10);
-  for (const p of pickups) p.x = clamp(p.x + dx, 14, W - 14);
+  const SRn = slideRange();
+  for (const p of pickups) p.x = clamp(p.x + dx, SRn.l + 20, SRn.r - 20);   // keep pickups reachable
   for (const d of debris) { d.x += dx; d.y += dgy; }
   for (const pt of particles) { pt.x += dx; pt.y += dgy; }
   for (const f of floaters) { f.x += dx; f.y += dgy; }
@@ -978,7 +994,8 @@ function pressDown(e) {
   }
   if (state === 'splash') { state = 'home'; fadeT = 1; musicNext = 0; sfx.tap(); tryFullscreen(); return; }
   if (state === 'home') {
-    if (!p) { if (!modePicker) startRun(); return; }
+    if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker) startRun(); return; }
+    if (skyMap) { skyMap = false; sfx.tap(); return; }  // any tap closes the map
     if (modePicker) {                                  // picker overlay swallows all input
       for (const rw of PICK_ROWS) if (inR(p, rw, 2)) { mode = rw.id; store.set('skystack-mode', mode); modePicker = false; sfx.tap(); return; }
       modePicker = false; sfx.tap(); return;           // tap anywhere else closes
@@ -986,6 +1003,7 @@ function pressDown(e) {
     if (navHit(p)) return;
     if (deferredPrompt && inR(p, INSTALL_BTN, 3)) { const dp = deferredPrompt; deferredPrompt = null; try { dp.prompt(); } catch (err) {} return; }
     if (inR(p, MODE_BTN, 4)) { modePicker = true; sfx.tap(); return; }
+    if (inR(p, MAP_BTN, 4)) { skyMap = true; sfx.tap(); return; }
     if (inR(p, PLAY_BTN, 4)) { startRun(); return; }
   } else if (state === 'shop') {
     if (!p) return;
@@ -1078,6 +1096,14 @@ function update(dt) {
     if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = 280 + Math.random()*320; } }
   } else wind = null;
 
+  if (balloon && (state === 'playing' || state === 'dropping')) {
+    if (balloon.inT < 1) balloon.inT = Math.min(1, balloon.inT + .02*dt);
+    if (balloon.away) {
+      balloon.away += .014*dt;
+      balloon.x += Math.sin(tick*.1 + balloon.ph) * .35 * dt;
+      if (balloonWorldY() - cameraY < -40) balloon = null;
+    }
+  }
   if (dropPending > 0 && state === 'playing') {
     dropPending -= dt;
     if (dropPending <= 0) { dropPending = 0; releaseBlock(); }
@@ -1178,19 +1204,34 @@ function drawPow(p, cy) {
   pixDisc(cx2, cy3, 5, '#141022');                                     // dark coin face
   drawIcon(p.type, cx2-4, cy3-4, true);
   ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(cx2-3, cy3-5, 2, 1); ctx.fillRect(cx2-5, cy3-3, 1, 1);  // glint
+  if (!reduceMotion) {                               // single pixel orbits the rim
+    const oa = tick*.09 + p.row;
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillRect(Math.round(cx2 + Math.cos(oa)*7) - 1, Math.round(cy3 + Math.sin(oa)*7) - 1, 2, 2);
+  }
 }
 function drawBalloon(cy) {
   if (!balloon) return;
   const y = balloonWorldY() - cy;
-  if (y < -16 || y > H + 16) return;
+  if (y < -40 || y > H + 60) return;
   const P = POW[balloon.type];
+  const sway = Math.sin(tick*.05 + balloon.ph);
   const bx = Math.round(balloon.x), by = Math.round(y);
+  ctx.globalAlpha = Math.min(1, balloon.inT * 1.6);        // fades in while drifting up
+  // envelope: dark silhouette rim, bright body, sheen, taper + knot
+  ctx.fillStyle = P.c2;
+  ctx.fillRect(bx-5, by-7, 10, 10); ctx.fillRect(bx-6, by-6, 12, 8); ctx.fillRect(bx-4, by-8, 8, 12);
   ctx.fillStyle = P.c1;
-  ctx.fillRect(bx-4, by-6, 8, 8); ctx.fillRect(bx-5, by-5, 10, 6); ctx.fillRect(bx-3, by+2, 6, 1);
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(bx-3, by-5, 2, 2);
-  ctx.fillStyle = P.c2; ctx.fillRect(bx-1, by+3, 2, 1);
-  ctx.fillStyle = 'rgba(255,246,232,0.5)'; ctx.fillRect(bx, by+4, 1, 5);
-  drawIcon(balloon.type, bx-4, by+10);
+  ctx.fillRect(bx-4, by-7, 8, 10); ctx.fillRect(bx-5, by-6, 10, 8); ctx.fillRect(bx-3, by-8, 6, 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(bx-3, by-6, 2, 3); ctx.fillRect(bx-2, by-7, 1, 1);
+  ctx.fillStyle = P.c2; ctx.fillRect(bx-2, by+3, 4, 1); ctx.fillRect(bx-1, by+4, 2, 1);
+  // string sways as it bobs, gift badge hangs at the end
+  ctx.fillStyle = 'rgba(255,246,232,0.6)';
+  for (let s2 = 0; s2 < 6; s2++) ctx.fillRect(bx + Math.round(sway * s2/5 * 2), by + 5 + s2, 1, 1);
+  const gx = bx + Math.round(sway * 2), gy = by + 16;
+  pixDisc(gx, gy, 6, P.c2); pixDisc(gx, gy, 5, '#141022');
+  drawIcon(balloon.type, gx-4, gy-4, true);
+  ctx.globalAlpha = 1;
 }
 const MASCOT_BODY = '#FFE7A8', MASCOT_SHADE = '#E8B860';
 function drawMascot(cx, topScreenY) {
@@ -1288,7 +1329,7 @@ function render() {
   if (!menu) renderWorld(cy, shX);
 
   if (state === 'splash') renderSplash();
-  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); }
+  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (skyMap) renderSkyMap(); }
   else if (state === 'shop') { renderShop(); drawNav(); }
   else if (state === 'me') { renderMe(); drawNav(); }
   else if (state === 'gameover') renderGameOver();
@@ -1402,18 +1443,35 @@ function renderWorld(cy, shX) {
 }
 
 // ---------- HOME ----------
+// shine that lives ON the letterforms: re-draws the title in white inside narrow
+// vertical strips around a sweeping center, so it hugs every pixel of the glyphs
+// and eases in/out over its cycle — never a box, never a hard cut-off
+function titleShine(str, y, scale) {
+  if (reduceMotion) return;
+  const tw2 = str.length * 6 * scale, ttx = Math.round(W/2 - tw2/2);
+  const phase = (tick % 150) / 150;                  // sweep, then rest
+  if (phase >= 0.5) return;
+  const p2 = phase / 0.5;
+  const cx3 = ttx - 8 + (tw2 + 16) * p2;             // sweep center
+  const fade = Math.sin(p2 * Math.PI);               // soft start + finish
+  const gh = 7 * scale + 2;                          // glyph height + slack
+  for (const band of [[0, .55], [3, .3], [6, .12]]) {
+    for (const s2 of [-1, 1]) {
+      const bx2 = cx3 + band[0] * s2 - (s2 < 0 ? 3 : 0);
+      ctx.save(); ctx.beginPath(); ctx.rect(bx2, y - 1, 3, gh); ctx.clip();
+      txt(str, W/2, y, scale, 'rgba(255,255,255,' + (band[1] * fade).toFixed(3) + ')', 'center');
+      ctx.restore();
+      if (band[0] === 0) break;                      // center band once
+    }
+  }
+}
 function renderHome() {
   const shadow = 'rgba(0,0,0,0.35)';
   topBar('');
   const bob = Math.sin(tick*.04)*2;
   txt('SKYSTACK', W/2+1, 27+bob, 3, shadow, 'center');
   txt('SKYSTACK', W/2, 26+bob, 3, '#FFF6E8', 'center');
-  const ttw = 146, ttx = Math.round(W/2 - ttw/2);   // shine sweeps the TITLE, not the screen
-  ctx.save(); ctx.beginPath(); ctx.rect(ttx, 24+bob, ttw, 22); ctx.clip();
-  const sx = ttx + ((tick*2) % (ttw+60)) - 30;
-  const grd = ctx.createLinearGradient(sx-10,0,sx+10,0);
-  grd.addColorStop(0,'rgba(255,255,255,0)'); grd.addColorStop(.5,'rgba(255,255,255,0.45)'); grd.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle = grd; ctx.fillRect(sx-12, 24+bob, 24, 22); ctx.restore();
+  titleShine('SKYSTACK', 26+bob, 3);
   const tag = EV ? (Math.floor(tick/180)%2 ? '+25% COINS ALL WEEK' : EV.name) : 'STACK TO THE STARS';
   if (EV) {   // dark ribbon so the event title reads on any sky
     const tw = tag.length * 6 - 1;
@@ -1428,6 +1486,9 @@ function renderHome() {
   ctx.fillStyle = uiA(0.6); ctx.fillRect(MODE_BTN.x, MODE_BTN.y, MODE_BTN.w, 1);
   txt('MODE: ' + curMode().name, MODE_BTN.x + MODE_BTN.w/2 - 5, MODE_BTN.y + 7, 1, UI_HEX(), 'center');
   txt('>', MODE_BTN.x + MODE_BTN.w - 10, MODE_BTN.y + 7, 1, 'rgba(255,246,232,0.7)', 'left');
+  ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(MAP_BTN.x, MAP_BTN.y, MAP_BTN.w, MAP_BTN.h);
+  ctx.fillStyle = uiA(0.6); ctx.fillRect(MAP_BTN.x, MAP_BTN.y, MAP_BTN.w, 1);
+  txt('MAP', MAP_BTN.x + MAP_BTN.w/2, MAP_BTN.y + 7, 1, UI_HEX(), 'center');
   txt(curMode().blurb, W/2, 96, 1, 'rgba(255,246,232,0.75)', 'center');
   if (mode === 'daily' && daily.streak > 0) txt('STREAK ' + daily.streak + ' - TODAY ' + daily.best*METERS_PER + 'M', W/2, 106, 1, '#FF9E5E', 'center');
   else if (bestBlocksFor(mode) > 0) txt('BEST ' + bestBlocksFor(mode)*METERS_PER + 'M' + (bestScoreFor(mode) > 0 ? ' - ' + fmtPts(bestScoreFor(mode)) + ' PTS' : ''), W/2, 106, 1, 'rgba(255,246,232,0.55)', 'center');
@@ -1472,12 +1533,13 @@ function renderSplash() {
   const acc = EV ? EV.acc : '#FFD75E';
   txt('SKYSTACK', W/2+1, titleY+1, 3, 'rgba(0,0,0,0.35)', 'center');
   txt('SKYSTACK', W/2, titleY, 3, '#FFF6E8', 'center');
+  if (settled) titleShine('SKYSTACK', titleY, 3);
   const subA = Math.max(0, Math.min(1, (t-30)/18));
-  if (subA > 0) {
+  if (subA > 0) {   // sits clear below the scale-3 glyphs (21px tall)
     ctx.globalAlpha = subA;
     const uw = 70 + Math.round(Math.sin(tick*.06)*8);
-    ctx.fillStyle = acc; ctx.fillRect(Math.round(W/2-uw/2), titleY+20, uw, 1);
-    txt('STACK TO THE STARS', W/2, titleY+26, 1, acc, 'center');
+    ctx.fillStyle = acc; ctx.fillRect(Math.round(W/2-uw/2), titleY+26, uw, 1);
+    txt('STACK TO THE STARS', W/2, titleY+32, 1, acc, 'center');
     ctx.globalAlpha = 1;
   }
   // looping pixel tower builds itself while you decide; mascot rides the top
@@ -1526,6 +1588,62 @@ function renderPause() {
     txt(labels[rw.id], W/2, rw.y + 6, 1, main ? '#08301F' : '#FFF6E8', 'center');
   }
   txt('YOUR RUN IS WAITING', W/2, PAUSE_ROWS[PAUSE_ROWS.length-1].y + 28, 1, 'rgba(255,246,232,0.45)', 'center');
+}
+
+// ---------- sky map overlay (climb hierarchy: cleared / next / locked stages) ----------
+function renderSkyMap() {
+  ctx.fillStyle = 'rgba(11,14,26,0.88)'; ctx.fillRect(0, 0, W, H);
+  txt('SKY MAP', W/2+1, 23, 2, 'rgba(0,0,0,0.4)', 'center');
+  txt('SKY MAP', W/2, 22, 2, '#FFF6E8', 'center');
+  txt('BEST ' + bestHeight*METERS_PER + 'M', W/2, 40, 1, '#FFD75E', 'center');
+  const n = TIERS.length;
+  const topY = 78, botY = H - 62, step = (botY - topY) / n;
+  const nodePos = i => ({ x: Math.round(W/2 + (i % 2 === 0 ? -34 : 34)), y: Math.round(botY - i * step) });
+  let nextIdx = TIERS.findIndex(t => bestHeight < t.n);
+  // dotted winding path (start point below the first node)
+  let prev = { x: W/2, y: botY + Math.round(step*0.7) };
+  ctx.fillStyle = 'rgba(255,246,232,0.25)';
+  for (let i = 0; i <= n; i++) {
+    const np = i === n ? { x: W/2, y: Math.round(topY - step*0.5) } : nodePos(i);
+    for (let s2 = 1; s2 < 7; s2++)
+      ctx.fillRect(Math.round(prev.x + (np.x-prev.x)*s2/7), Math.round(prev.y + (np.y-prev.y)*s2/7), 2, 2);
+    prev = np;
+  }
+  // stage nodes
+  for (let i = 0; i < n; i++) {
+    const t = TIERS[i], np = nodePos(i);
+    const cleared = bestHeight >= t.n, isNext = i === nextIdx;
+    if (isNext && !reduceMotion) {   // the next goal breathes
+      const pl = .5 + .5*Math.sin(tick*.1);
+      pixDisc(np.x, np.y, 9, uiA(.14 + pl*.22));
+    }
+    pixDisc(np.x, np.y, 6, cleared ? '#FFD75E' : isNext ? UI_HEX() : 'rgba(255,246,232,0.16)');
+    pixDisc(np.x, np.y, 4, cleared ? '#4A3A0C' : '#141022');
+    if (cleared) { ctx.fillStyle = '#FFD75E'; ctx.fillRect(np.x-2, np.y, 1, 2); ctx.fillRect(np.x-1, np.y+1, 1, 1); ctx.fillRect(np.x, np.y-1, 1, 1); ctx.fillRect(np.x+1, np.y-2, 1, 1); }
+    const side2 = np.x < W/2 ? 1 : -1;   // label toward screen center
+    const lc = cleared ? '#FFF6E8' : isNext ? UI_HEX() : 'rgba(255,246,232,0.4)';
+    txt(t.name, np.x + side2*11, np.y - 6, 1, lc, side2 > 0 ? 'left' : 'right');
+    txt(t.n*METERS_PER + 'M', np.x + side2*11, np.y + 3, 1, 'rgba(255,246,232,0.45)', side2 > 0 ? 'left' : 'right');
+  }
+  // sealed gate above the last stage — future content
+  const gp = { x: W/2, y: Math.round(topY - step*0.5) };
+  pixDisc(gp.x, gp.y, 6, 'rgba(255,246,232,0.16)'); pixDisc(gp.x, gp.y, 4, '#141022');
+  txt('?', gp.x, gp.y - 3, 1, 'rgba(255,246,232,0.55)', 'center');
+  // mascot marker climbs the path to your best height
+  if (bestHeight > 0) {
+    let mp;
+    if (nextIdx === -1) mp = gp;
+    else {
+      const prevN = nextIdx === 0 ? 0 : TIERS[nextIdx-1].n;
+      const frac = clamp((bestHeight - prevN) / (TIERS[nextIdx].n - prevN), 0, 1);
+      const a2 = nextIdx === 0 ? { x: W/2, y: botY + Math.round(step*0.7) } : nodePos(nextIdx-1);
+      const b2 = nodePos(nextIdx);
+      mp = { x: Math.round(a2.x + (b2.x-a2.x)*frac), y: Math.round(a2.y + (b2.y-a2.y)*frac) };
+    }
+    drawMascot(mp.x, mp.y - 4);
+  }
+  txt('CLIMB HIGHER TO UNLOCK', W/2, H - 38, 1, 'rgba(255,246,232,0.45)', 'center');
+  txt('TAP TO CLOSE', W/2, H - 27, 1, 'rgba(255,246,232,0.3)', 'center');
 }
 
 // ---------- mode picker overlay ----------
