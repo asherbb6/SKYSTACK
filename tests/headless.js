@@ -89,8 +89,10 @@ check('extras picker excludes the campaign mode', () => fresh.run(
   `EXTRAS.length === 4 && !EXTRAS.some(m => m.id === 'level')`));
 check('skyMapNodes: 9 pts + start + gate', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.pts.length === 9 && L.start && L.gate; })()'));
-check('skyMapNodes: rows evenly spaced on the straight trail', () => fresh.run(
-  '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => p.x === L.trailX && (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.pts[8].y - L.gate.y === MAP_ROW; })()'));
+check('skyMapNodes: badge rows evenly spaced in altitude', () => fresh.run(
+  '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.gate.y === L.pts[8].y - MAP_ROW; })()'));
+check('skyMapNodes: trail weaves left/right but stays inside the column', () => fresh.run(
+  '(() => { const L = skyMapNodes(); const xs = L.pts.map(p=>p.x); return xs.every(x => x >= L.colX && x <= L.colX + L.colW) && new Set(xs).size > 1; })()'));
 check('skyMapNodes: column centered and inside canvas', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.colX >= 0 && L.colX + L.colW <= W && Math.abs((L.colX) - (W - L.colX - L.colW)) <= 1; })()'));
 check('openSkyMap clamps scroll and selects the next level', () => fresh.run(
@@ -196,25 +198,35 @@ tap.run('mode = "endless"; state = "home"; openSkyMap();');
 // pos() is a top-level function declaration -> reassignable on the sandbox global
 tap.run('var __p = {x:0,y:0}; pos = () => __p;');
 tap.run('var __T = (x, y) => { __p = {x:x, y:y}; pressDown({}); pressUp({}); };');
+// center a badge row in the viewport before tapping it (as dragging would)
+tap.run('var __C = (i) => { let L = skyMapNodes(); mapScroll = clamp(mapScroll + ((L.viewTop+L.viewBot)/2 - L.pts[i].y), 0, mapScrollMax); return skyMapNodes(); };');
 check('openSkyMap pre-selects the next level (3)', () => tap.run('selLevel === 3'));
-check('map tap: first tap on a cleared row selects it', () => tap.run(
-  '(() => { const L = skyMapNodes(); __T(L.plateX + 20, L.pts[1].y); return selLevel === 1 && skyMap === true && state === "home"; })()'));
-check('map tap: second tap on the selected row launches it', () => tap.run(
-  '(() => { const L = skyMapNodes(); __T(L.plateX + 20, L.pts[1].y); return state === "playing" && runLevel === 1 && runLaunch === 10 && skyMap === false; })()'));
+check('map tap: first tap on a cleared badge selects it', () => tap.run(
+  '(() => { const L = __C(1); __T(L.pts[1].x, L.pts[1].y); return selLevel === 1 && skyMap === true && state === "home"; })()'));
+check('map tap: second tap on the selected badge launches it', () => tap.run(
+  '(() => { const L = __C(1); __T(L.pts[1].x, L.pts[1].y); return state === "playing" && runLevel === 1 && runLaunch === 10 && skyMap === false; })()'));
 tap.run('gameOver("fall"); failT = 60; state = "home"; openSkyMap();');
-check('map tap: locked row refuses', () => tap.run(
-  '(() => { const L = skyMapNodes(); __T(L.plateX + 20, L.pts[6].y); return selLevel === 3 && skyMap === true; })()'));
-check('map tap: footer PLAY launches the selection', () => tap.run(
-  '(() => { __T(Math.round(W/2), H - 10); return state === "playing" && runLevel === 3 && runLaunch === 50; })()'));
+check('map tap: locked badge refuses', () => tap.run(
+  '(() => { const L = __C(6); __T(L.pts[6].x, L.pts[6].y); return selLevel === 3 && skyMap === true; })()'));
+check('map tap: tapping the pre-selected next badge plays it', () => tap.run(
+  '(() => { const L = __C(3); __T(L.pts[3].x, L.pts[3].y); return state === "playing" && runLevel === 3 && runLaunch === 50; })()'));
 tap.run('gameOver("fall"); failT = 60; state = "home"; openSkyMap();');
 check('map tap: sealed gate refuses, map stays open', () => tap.run(
-  '(() => { mapScroll = mapScrollMax; const L = skyMapNodes(); __T(L.plateX + 10, L.gate.y); return skyMap === true && state === "home"; })()'));
+  '(() => { mapScroll = mapScrollMax; const L = skyMapNodes(); __T(L.gate.x, L.gate.y); return skyMap === true && state === "home"; })()'));
+check('map tap: empty space does not close or select', () => tap.run(
+  '(() => { openSkyMap(); const sel0 = selLevel; const L = skyMapNodes(); __T(L.colX + 2, Math.round((L.viewTop + L.viewBot)/2)); return skyMap === true && selLevel === sel0; })()'));
 check('map tap: header tap closes the map', () => tap.run(
   '(() => { __T(Math.round(W/2), 20); return skyMap === false; })()'));
 check('map drag: scrolls without selecting or launching', () => tap.run(
-  '(() => { openSkyMap(); const s0 = mapScroll; const L = skyMapNodes(); __p = {x:100, y:L.pts[1].y}; pressDown({}); __p = {x:100, y:L.pts[1].y + 40}; pressMove({}); pressUp({}); return mapScroll !== s0 && selLevel === 3 && state === "home" && skyMap === true; })()'));
-check('map helpers exist (mapNode3D, dkHex, openSkyMap, mapTapAt, plate3D, drawStarPix)', () => tap.run(
-  '["mapNode3D","dkHex","openSkyMap","mapTapAt","plate3D","drawStarPix"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function")'));
+  '(() => { openSkyMap(); const s0 = mapScroll; const L = skyMapNodes(); __p = {x:L.colX+3, y:L.pts[1].y}; pressDown({}); __p = {x:L.colX+3, y:L.pts[1].y + 40}; pressMove({}); pressUp({}); return mapScroll !== s0 && selLevel === 3 && state === "home" && skyMap === true; })()'));
+check('map renders the redesigned winding trail at every scroll', () => {
+  const r = makeGame({ 'skystack-height': '900', 'skystack-tiers': '9' });   // champion: gate open
+  r.run('state = "home"; openSkyMap();');
+  r.run('for (let s = 0; s <= mapScrollMax; s += 40) { mapScroll = s; renderSkyMap(); }');
+  return true;
+});
+check('map helpers exist (mapNode3D, dkHex, openSkyMap, mapTapAt, drawIsland, mapBadge)', () => tap.run(
+  '["mapNode3D","dkHex","openSkyMap","mapTapAt","drawIsland","mapBadge"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function")'));
 check('dkHex darkens a hex color', () => tap.run('dkHex("#FFD75E", .5) === "rgb(128,108,47)"'));
 
 // ---------- revive: one paid second chance per run ----------
@@ -308,7 +320,7 @@ check('home PLAY starts the next level', () => home.run(
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v28', () => /const CACHE = 'skystack-v28'/.test(sw));
+check('sw.js cache bumped to v29', () => /const CACHE = 'skystack-v29'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));

@@ -1756,22 +1756,38 @@ function renderPause() {
 // ---------- sky map (level select: one row per level, drag-scrolls, footer launches) ----------
 // list layout: one generous row per level on a straight climbing trail down a
 // centered column; the list drag-scrolls whenever it is taller than the screen
-const MAP_ROW = 30, MAP_HEAD = 40, MAP_FOOT = 34;
+const MAP_ROW = 60, MAP_HEAD = 34, MAP_FOOT = 10;
+// per-stage floating-island palette (grass, cloud, rock, ice, space-rock, metal, gold)
+const ISLES = [
+  { top:'#57AC50', s:'#2F6B30', e:'#1B481D' },              // 0 rooftops  — grass
+  { top:'#41A04E', s:'#26602E', e:'#164019' },              // 1 treetops  — grass
+  { cloud:true },                                           // 2 cloud nine
+  { cloud:true },                                           // 3 jet stream
+  { top:'#6A5A90', s:'#3E3459', e:'#28203C' },              // 4 stratosphere — rock
+  { top:'#8FE6F0', s:'#3E8AA6', e:'#276A84' },              // 5 aurora — ice
+  { top:'#4C4670', s:'#2C2846', e:'#1A1730' },              // 6 space — dark rock
+  { top:'#9090AC', s:'#4E4E6C', e:'#333350' },              // 7 orbit — metal
+  { top:'#FFD75E', s:'#9A7420', e:'#5E4610' }               // 8 the stars — gold
+];
+// numbered badges weave left/right down an S-curve; only x winds, y stays evenly
+// spaced by altitude so scroll + progress math is unchanged
 function skyMapNodes() {
   const viewTop = MAP_HEAD + 4, viewBot = H - MAP_FOOT - 4;
-  const colW = Math.min(W - 12, 288), colX = Math.round((W - colW) / 2);
-  const n = TIERS.length;
+  const colW = Math.min(W - 8, 300), colX = Math.round((W - colW) / 2);
+  const n = TIERS.length, midX = Math.round(W / 2);
+  const islandW = Math.min(W - 24, 104);
+  const amp = clamp(Math.round(W * 0.16), 8, Math.max(6, Math.round((W - islandW) / 2) - 2));
+  const wv = i => midX + Math.round(amp * Math.sin(i * 1.25 + 0.7));
   const contentH = (n + 2) * MAP_ROW;                       // ground + levels + gate
   mapScrollMax = Math.max(0, contentH - (viewBot - viewTop));
   mapScroll = clamp(mapScroll, 0, mapScrollMax);
   const base = mapScrollMax > 0
-    ? viewBot - 15 + Math.round(mapScroll)
-    : Math.round((viewTop + viewBot) / 2 + contentH / 2) - 15;
-  const trailX = colX + 12, plateX = colX + 26;
+    ? viewBot - 16 + Math.round(mapScroll)
+    : Math.round((viewTop + viewBot) / 2 + contentH / 2) - 16;
   const pts = [];
-  for (let i = 0; i < n; i++) pts.push({ x: trailX, y: base - (i + 1) * MAP_ROW });
-  return { pts, start: { x: trailX, y: base }, gate: { x: trailX, y: base - (n + 1) * MAP_ROW },
-           colX, colW, trailX, plateX, viewTop, viewBot };
+  for (let i = 0; i < n; i++) pts.push({ x: wv(i), y: base - (i + 1) * MAP_ROW });
+  return { pts, start: { x: midX, y: base }, gate: { x: midX, y: base - (n + 1) * MAP_ROW },
+           colX, colW, midX, amp, islandW, viewTop, viewBot };
 }
 function openSkyMap() {   // focus the view on the next goal
   skyMap = true; mapDrag = null; mapScroll = 0;
@@ -1780,26 +1796,25 @@ function openSkyMap() {   // focus the view on the next goal
   const k = Math.min(prog, TIERS.length) + 1;               // row index of the next goal / gate
   mapScroll = clamp(k * MAP_ROW - (L.viewBot - L.viewTop) / 2 + MAP_ROW, 0, mapScrollMax);
 }
-// a tap (pointerup without drag) on the open map
+// a tap (pointerup without drag) on the open map: header/X closes; a badge selects,
+// then a second tap on the same badge launches it. Empty taps are ignored (use the X).
 function mapTapAt(p) {
   const L = skyMapNodes();
-  if (p.y <= MAP_HEAD) { skyMap = false; sfx.tap(); return; }               // header closes
-  if (p.y >= H - MAP_FOOT) {                                                // footer launches the selection
-    if (selLevel >= 0 && selLevel <= Math.min(prog, TIERS.length - 1)) { skyMap = false; startLevel(selLevel); }
-    return;
-  }
-  if (p.x >= L.colX && p.x <= L.colX + L.colW) {
-    const inView = y2 => y2 > L.viewTop - 2 && y2 < L.viewBot + 2;
-    for (let i = 0; i < TIERS.length; i++) if (inView(L.pts[i].y) && Math.abs(p.y - L.pts[i].y) <= 14) {
+  if (p.y <= MAP_HEAD) { skyMap = false; sfx.tap(); return; }               // header / X closes
+  const HITX = 26, HITY = 24;
+  const inView = y2 => y2 > L.viewTop - 6 && y2 < L.viewBot + 6;
+  for (let i = 0; i < TIERS.length; i++) {
+    const pt = L.pts[i];
+    if (!inView(pt.y)) continue;
+    if (Math.abs(p.x - pt.x) <= HITX && Math.abs(p.y - pt.y) <= HITY) {
       if (i <= prog) {
         if (selLevel === i) { skyMap = false; startLevel(i); }              // second tap plays it
         else { selLevel = i; sfx.tap(); }
       } else sfx.deny();                                                    // locked level
       return;
     }
-    if (inView(L.gate.y) && Math.abs(p.y - L.gate.y) <= 14) { sfx.deny(); return; }   // sealed gate
   }
-  skyMap = false; sfx.tap();
+  if (inView(L.gate.y) && Math.abs(p.x - L.gate.x) <= HITX && Math.abs(p.y - L.gate.y) <= HITY) { sfx.deny(); return; }
 }
 function dkHex(hex, f) {
   const v = parseInt(hex.slice(1), 16);
@@ -1856,6 +1871,53 @@ function drawStageDeco(i, x, y) {
     if (!reduceMotion && Math.floor(tick/14)%2===0) { ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-4, 1, 1); ctx.fillRect(x-5, y+3, 1, 1); }
   }
 }
+// a floating stage island centered at (cx) with its surface at topY
+function drawIsland(i, cx, topY) {
+  const w = Math.min(W - 24, 104), half = Math.round(w / 2);
+  const P = ISLES[i] || ISLES[0];
+  cx = Math.round(cx); topY = Math.round(topY);
+  if (P.cloud) {   // puffy cloud platform (no dirt underside)
+    const cs = 'rgba(236,244,255,0.96)', csd = 'rgba(198,214,236,0.9)';
+    pixDisc(cx, topY + 4, 12, csd);
+    pixDisc(cx - Math.round(half*0.5), topY + 5, 9, csd); pixDisc(cx + Math.round(half*0.5), topY + 5, 9, csd);
+    pixDisc(cx, topY + 1, 12, cs);
+    pixDisc(cx - Math.round(half*0.45), topY + 3, 8, cs); pixDisc(cx + Math.round(half*0.5), topY + 3, 8, cs);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillRect(cx - 9, topY - 4, 11, 2);
+    return;
+  }
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(cx - half + 3, topY + 16, w - 6, 3);   // ground shadow
+  ctx.fillStyle = P.e;                                                                     // tapering underside
+  for (let r = 0; r < 12; r++) { const ww = half - 3 - Math.round(r * half / 16); if (ww > 0) ctx.fillRect(cx - ww, topY + 6 + r, ww*2, 1); }
+  ctx.fillStyle = P.s; ctx.fillRect(cx - half, topY + 2, w, 6);                            // rock band
+  ctx.fillStyle = P.top; ctx.fillRect(cx - half, topY - 1, w, 4);                          // surface (grass/ice/metal/gold)
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(cx - half, topY - 1, w, 1);       // top highlight
+  ctx.fillStyle = P.s; ctx.fillRect(cx - half + 6, topY + 21, 3, 2); ctx.fillRect(cx + half - 10, topY + 24, 4, 2);   // drifting crumbs
+}
+// a numbered level badge (purple unlocked / gold cleared / gray locked) centered on (x, y)
+function mapBadge(num, x, y, cleared, isNext, unlocked, sel) {
+  const face = cleared ? '#FFD75E' : unlocked ? '#7B54D6' : '#3A3550';
+  const side = cleared ? '#9A7420' : unlocked ? '#4A2E96' : '#22203A';
+  const lite = cleared ? '#FFF0B0' : unlocked ? '#B79AF2' : '#565074';
+  const bw = 20, bh = 22, bx = Math.round(x - bw/2), by = Math.round(y - bh/2) - 1;
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx+1, by+bh, bw, 3);        // drop shadow
+  ctx.fillStyle = side; ctx.fillRect(bx, by+2, bw, bh);                        // extruded side
+  ctx.fillStyle = face; ctx.fillRect(bx, by, bw, bh-2);                        // lit face
+  ctx.fillStyle = side; ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx+bw-1, by, 1, 1);        // clipped corners
+  ctx.fillStyle = lite; ctx.fillRect(bx+1, by+1, bw-2, 1); ctx.fillRect(bx+1, by+1, 1, bh-4);   // bevel
+  if (sel || (isNext && !reduceMotion)) {   // bright frame on the selected stage / next goal
+    ctx.globalAlpha = sel ? .95 : (.3 + .35*(.5 + .5*Math.sin(tick*.1)));
+    ctx.fillStyle = sel ? '#FFFFFF' : '#FFF6E8';
+    ctx.fillRect(bx-2, by-2, bw+4, 1); ctx.fillRect(bx-2, by+bh, bw+4, 1);
+    ctx.fillRect(bx-2, by-2, 1, bh+3); ctx.fillRect(bx+bw+1, by-2, 1, bh+3);
+    ctx.globalAlpha = 1;
+  }
+  if (unlocked) txt(num, x, y - 4, 1, cleared ? '#4A3A0C' : '#FFFFFF', 'center');
+  else {   // padlock
+    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-3, y-1, 7, 5);
+    ctx.fillRect(x-2, y-4, 1, 3); ctx.fillRect(x+2, y-4, 1, 3); ctx.fillRect(x-1, y-5, 3, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y+1, 1, 2);
+  }
+}
 function renderSkyMap() {
   const L = skyMapNodes();
   const ph = reduceMotion ? 0 : tick;
@@ -1893,160 +1955,100 @@ function renderSkyMap() {
       ctx.globalAlpha = 1;
     }
   }
-  const onScreen = y2 => y2 > -24 && y2 < H + 24;
-  // band decor rides along with its stage row, behind the list
-  if (onScreen(L.pts[7].y)) {   // shaded moon by ORBIT
-    const mnX = W - 18, mnY = L.pts[7].y - 10;
-    pixDisc(mnX, mnY, 7, 'rgba(150,146,180,0.85)');
-    pixDisc(mnX - 1, mnY - 1, 6, 'rgba(216,212,232,0.9)');
-    ctx.fillStyle = 'rgba(150,146,180,0.8)'; ctx.fillRect(mnX+1, mnY+1, 2, 2); ctx.fillRect(mnX-3, mnY+3, 1, 1); ctx.fillRect(mnX-1, mnY-3, 1, 1);
-  }
-  if (onScreen(L.pts[5].y)) for (let k = 0; k < 6; k++) {   // aurora curtains by AURORA
-    const ax = Math.round(W*(k+.5)/6 + Math.sin(ph*.02 + k*1.7)*6), ay = L.pts[5].y;
-    ctx.globalAlpha = .09 + .05*Math.sin(ph*.04 + k);
-    ctx.fillStyle = k % 2 ? '#7EF2C5' : '#C77EFF';
-    for (let s2 = -10; s2 <= 10; s2 += 2) ctx.fillRect(ax + Math.round(Math.sin((ay+s2)*.2 + ph*.03)*2), ay + s2, 2, 2);
-  }
-  ctx.globalAlpha = 1;
-  if (onScreen(L.pts[2].y)) {   // clouds drift by CLOUD NINE
-    ctx.fillStyle = 'rgba(255,246,232,0.16)';
-    for (let k = 0; k < 4; k++) {
-      const span = W + 44;
-      const cx2 = Math.round(((k*83 + ph*(.12 + k*.03)) % span + span) % span) - 22;
-      const cy2 = L.pts[2].y + [-18, -6, 8, 20][k];
-      ctx.fillRect(cx2-6, cy2, 12, 2); ctx.fillRect(cx2-3, cy2-2, 7, 2); ctx.fillRect(cx2+2, cy2+2, 6, 1);
-    }
-  }
-  if (onScreen(L.pts[1].y)) {   // birds flap by TREETOPS
-    ctx.fillStyle = 'rgba(20,16,34,0.7)';
-    for (let k = 0; k < 2; k++) {
-      const span = W + 30;
-      const bx = Math.round(((k*140 + 40 + ph*.2) % span + span) % span - 15);
-      const by = L.pts[1].y - 6 + k*12;
-      const up = Math.floor(ph*.15 + k*3) % 2;
-      ctx.fillRect(bx-2, by + (up?-1:0), 2, 1); ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx+1, by + (up?-1:0), 2, 1);
-    }
-  }
-  const gy = L.start.y + 21;    // city skyline sits on the ground under START
-  if (gy > 0 && gy - 17 < H) for (let x2 = 0; x2 < W; x2 += 13) {
-    const bh2 = 6 + (x2*7 + 5) % 11;
-    ctx.fillStyle = 'rgba(11,14,26,0.85)'; ctx.fillRect(x2, gy - bh2, 11, bh2);
-    if (bh2 > 9) { ctx.fillStyle = 'rgba(255,215,94,0.35)'; ctx.fillRect(x2+2, gy-bh2+2, 1, 1); ctx.fillRect(x2+7, gy-bh2+4, 1, 1); }
-  }
-  // straight dotted trail up the gutter; walked part glows gold, mascot marks your best
+  // best-height marker point along the winding trail (mascot rides it, walked dots glow)
   let mp = null;
   if (bestHeight > 0) {
     const nextIdx = TIERS.findIndex(t => bestHeight < t.n);
-    if (nextIdx === -1) mp = L.gate;
+    if (nextIdx === -1) mp = { x: L.gate.x, y: L.gate.y };
     else {
       const prevN = nextIdx === 0 ? 0 : TIERS[nextIdx-1].n;
       const frac = clamp((bestHeight - prevN) / (TIERS[nextIdx].n - prevN), 0, 1);
-      const a2 = nextIdx === 0 ? L.start : L.pts[nextIdx-1];
-      mp = { x: L.trailX, y: Math.round(a2.y - frac * MAP_ROW) };
+      const a2 = nextIdx === 0 ? L.start : L.pts[nextIdx-1], b2 = L.pts[nextIdx];
+      mp = { x: Math.round(a2.x + (b2.x - a2.x) * frac), y: Math.round(a2.y - frac * MAP_ROW) };
     }
   }
-  for (let yy = L.gate.y; yy <= L.start.y; yy += 6) {
-    if (yy < L.viewTop - 4 || yy > L.viewBot + 4) continue;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(L.trailX - 1, yy + 1, 2, 2);
-    ctx.fillStyle = mp && yy >= mp.y ? 'rgba(255,215,94,0.6)' : 'rgba(255,246,232,0.28)';
-    ctx.fillRect(L.trailX - 1, yy, 2, 2);
+  // winding dotted trail: ground -> each stage -> the gate. walked part glows gold
+  const chain = [L.start, ...L.pts, L.gate];
+  for (let j = 0; j < chain.length - 1; j++) {
+    const a2 = chain[j], b2 = chain[j+1];
+    const seg = Math.hypot(b2.x - a2.x, b2.y - a2.y), steps = Math.max(2, Math.round(seg / 5));
+    for (let s2 = 1; s2 < steps; s2++) {
+      const tt = s2 / steps, dx = Math.round(a2.x + (b2.x - a2.x) * tt), dy = Math.round(a2.y + (b2.y - a2.y) * tt);
+      if (dy < L.viewTop - 3 || dy > L.viewBot + 3) continue;
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(dx - 1, dy + 1, 3, 2);
+      ctx.fillStyle = (mp && dy >= mp.y) ? 'rgba(255,215,94,0.85)' : 'rgba(255,246,232,0.5)';
+      ctx.fillRect(dx - 1, dy, 3, 2);
+    }
   }
-  if (mp && mp.y > L.viewTop - 6 && mp.y < L.viewBot + 6) drawMascot(L.trailX, mp.y + 4);
-  // ground marker where the trail meets the earth (not a tappable row)
-  if (L.start.y > L.viewTop && L.start.y < L.viewBot + 15) {
-    pixDisc(L.trailX, L.start.y, 4, 'rgba(255,246,232,0.3)');
-    pixDisc(L.trailX, L.start.y, 2, '#141022');
-    txt('GROUND 0M', L.plateX + 4, L.start.y - 3, 1, 'rgba(255,246,232,0.4)', 'left');
+  // ground marker where the trail meets the earth
+  if (L.start.y > L.viewTop - 6 && L.start.y < L.viewBot + 12) {
+    pixDisc(L.start.x, L.start.y, 4, 'rgba(255,246,232,0.3)');
+    pixDisc(L.start.x, L.start.y, 2, '#141022');
+    txt('GROUND', L.start.x, L.start.y + 6, 1, 'rgba(255,246,232,0.4)', 'center');
   }
-  // one row per level: plate + numbered badge on the trail + name/goal/stars + vignette
-  const pw = L.colX + L.colW - L.plateX;
-  for (let k = 0; k <= TIERS.length; k++) {
+  // stages, drawn top (farthest) down so nearer islands overlap the ones above
+  const champ = prog >= TIERS.length;
+  for (let k = TIERS.length; k >= 0; k--) {
     const isGate = k === TIERS.length;
-    const y = isGate ? L.gate.y : L.pts[k].y;
-    if (y < L.viewTop - 15 || y > L.viewBot + 15) continue;
-    const t = isGate ? null : TIERS[k];
-    const cleared = !isGate && k < prog, isNext = k === prog && !isGate;
-    const unlocked = !isGate && k <= prog;
-    const champ = prog >= TIERS.length;
-    const sel = !isGate && selLevel === k && unlocked;
-    // plate
-    ctx.fillStyle = 'rgba(11,14,26,' + (sel ? '0.8' : '0.55') + ')'; ctx.fillRect(L.plateX, y-12, pw, 24);
-    ctx.fillStyle = 'rgba(255,246,232,0.09)'; ctx.fillRect(L.plateX, y-12, pw, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(L.plateX+1, y+12, pw, 1);
-    const accent = isGate ? (champ ? '#FFD75E' : 'rgba(255,246,232,0.18)')
-      : cleared ? '#FFD75E' : isNext ? t.c : 'rgba(255,246,232,0.18)';
-    ctx.fillStyle = accent; ctx.fillRect(L.plateX, y-12, 3, 24);
-    if (sel) {   // selected level: white frame
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillRect(L.plateX-1, y-13, pw+2, 1); ctx.fillRect(L.plateX-1, y+12, pw+2, 1);
-      ctx.fillRect(L.plateX-1, y-13, 1, 26); ctx.fillRect(L.plateX+pw, y-13, 1, 26);
-    } else if (isNext && !reduceMotion) {   // next goal: soft pulsing frame in its color
-      ctx.globalAlpha = .25 + .3*(.5 + .5*Math.sin(tick*.1));
-      ctx.fillStyle = t.c;
-      ctx.fillRect(L.plateX-1, y-13, pw+2, 1); ctx.fillRect(L.plateX-1, y+12, pw+2, 1);
-      ctx.fillRect(L.plateX-1, y-13, 1, 26); ctx.fillRect(L.plateX+pw, y-13, 1, 26);
-      ctx.globalAlpha = 1;
-    }
-    // numbered 3D badge on the trail (padlock when locked, crown gate at the top)
+    const pt = isGate ? L.gate : L.pts[k];
+    if (pt.y < L.viewTop - 26 || pt.y > L.viewBot + 28) continue;
     if (isGate) {
       if (champ) {
-        mapNode3D(L.trailX, y, 6, '#FFD75E', '#7A5A14'); pixDisc(L.trailX, y, 4, '#4A3A0C');
-        ctx.fillStyle = '#FFD75E'; ctx.fillRect(L.trailX-2, y-1, 5, 2);
-        ctx.fillRect(L.trailX-2, y-2, 1, 1); ctx.fillRect(L.trailX, y-2, 1, 1); ctx.fillRect(L.trailX+2, y-2, 1, 1);
-      } else {
-        pixDisc(L.trailX, y, 6, 'rgba(0,0,0,0.3)'); pixDisc(L.trailX, y, 5, 'rgba(255,246,232,0.14)'); pixDisc(L.trailX, y, 4, '#141022');
-        txt('?', L.trailX, y - 3, 1, 'rgba(255,246,232,0.55)', 'center');
+        drawIsland(8, pt.x, pt.y + 6);
+        mapNode3D(pt.x, pt.y, 7, '#FFD75E', '#7A5A14'); pixDisc(pt.x, pt.y, 4, '#4A3A0C');
+        ctx.fillStyle = '#FFD75E'; ctx.fillRect(pt.x-2, pt.y-1, 5, 2);
+        ctx.fillRect(pt.x-2, pt.y-2, 1, 1); ctx.fillRect(pt.x, pt.y-2, 1, 1); ctx.fillRect(pt.x+2, pt.y-2, 1, 1);
+        txt('SKY CHAMPION', pt.x, pt.y - 24, 1, '#FFD75E', 'center');
+        txt('THE GATE IS OPEN', pt.x, pt.y + 18, 1, 'rgba(255,246,232,0.6)', 'center');
+      } else {   // sealed golden gate at the summit
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(pt.x-11, pt.y+9, 22, 3);
+        ctx.fillStyle = '#9A7420'; ctx.fillRect(pt.x-10, pt.y-9, 20, 19);
+        ctx.fillStyle = '#FFD75E'; ctx.fillRect(pt.x-8, pt.y-7, 16, 17);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(pt.x-8, pt.y-7, 16, 1);
+        ctx.fillStyle = '#5E4610'; ctx.fillRect(pt.x-4, pt.y-1, 8, 11);
+        txt('?', pt.x, pt.y + 1, 1, '#FFD75E', 'center');
+        txt('? ? ?', pt.x, pt.y - 24, 1, 'rgba(255,246,232,0.5)', 'center');
+        txt('SEALED - ' + TIERS[TIERS.length-1].n*METERS_PER + 'M', pt.x, pt.y + 16, 1, 'rgba(255,246,232,0.45)', 'center');
       }
-    } else {
-      const bx = L.trailX - 8, by = y - 8;
-      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(bx+1, by+16, 16, 2);            // drop shadow
-      ctx.fillStyle = cleared ? '#7A5A14' : isNext ? dkHex(t.c, .4) : 'rgba(0,0,0,0.5)';
-      ctx.fillRect(bx, by+2, 16, 16);                                                  // extruded side
-      ctx.fillStyle = cleared ? '#FFD75E' : isNext ? t.c : 'rgba(46,40,66,0.95)';
-      ctx.fillRect(bx, by, 16, 16);                                                    // face
-      ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(bx, by, 16, 1); ctx.fillRect(bx, by, 1, 16);
-      if (isNext && !reduceMotion) { ctx.globalAlpha = .2 + .25*(.5+.5*Math.sin(tick*.1)); ctx.fillStyle = '#FFF6E8'; ctx.fillRect(bx-2, by-2, 20, 20); ctx.globalAlpha = 1; }
-      if (unlocked) txt(k+1, L.trailX, y - 3, 1, cleared ? '#4A3A0C' : '#141022', 'center');
-      else { ctx.fillStyle = 'rgba(255,246,232,0.5)'; ctx.fillRect(L.trailX-2, y-1, 5, 4); ctx.fillRect(L.trailX-1, y-3, 1, 2); ctx.fillRect(L.trailX+1, y-3, 1, 2); }
+      continue;
     }
-    // labels: name + stars on top, goal/status below
-    const name = isGate ? (champ ? 'SKY CHAMPION' : '? ? ?') : t.name;
-    const meters = isGate ? (champ ? 'THE GATE IS OPEN' : 'SEALED')
-      : 'GOAL ' + t.n*METERS_PER + 'M' + (cleared ? '' : isNext ? ' - NEXT' : ' - LOCKED');
-    const nameCol = isGate ? (champ ? '#FFD75E' : 'rgba(255,246,232,0.4)')
-      : cleared ? '#FFF6E8' : isNext ? t.c : 'rgba(255,246,232,0.4)';
-    txt(name, L.plateX + 10, y - 9, 1, nameCol, 'left');
-    txt(meters, L.plateX + 10, y + 2, 1, 'rgba(255,246,232,0.5)', 'left');
-    if (!isGate) {
-      if (unlocked) for (let s2 = 0; s2 < 3; s2++) drawStarPix(L.plateX + pw - 46 + s2*10, y, 1, s2 < (levelStars[k] || 0));
-      drawStageDeco(k, L.colX + L.colW - 16, y);
+    const t = TIERS[k];
+    const cleared = k < prog, isNext = k === prog, unlocked = k <= prog, sel = selLevel === k && unlocked;
+    // floating island + its themed stage art
+    drawIsland(k, pt.x, pt.y + 5);
+    const decoSide = pt.x <= L.midX ? 1 : -1;
+    drawStageDecoScaled(k, pt.x + decoSide*24, pt.y + 2, 2);
+    // stage label stacked above the badge (clear of the badge top)
+    txt((k+1) + '. ' + t.name, pt.x, pt.y - 30, 1, unlocked ? t.c : 'rgba(255,246,232,0.45)', 'center');
+    txt(t.n*METERS_PER + 'M' + (cleared ? '' : isNext ? ' - NEXT' : ' - LOCKED'), pt.x, pt.y - 21, 1, 'rgba(255,246,232,0.55)', 'center');
+    // numbered badge on the trail
+    mapBadge(k+1, pt.x, pt.y, cleared, isNext, unlocked, sel);
+    // stars under the badge
+    if (unlocked) for (let s2 = 0; s2 < 3; s2++) drawStarPix(pt.x - 8 + s2*8, pt.y + 15, 1, s2 < (levelStars[k] || 0));
+    // selected stage: a PLAY pill (a second tap on the badge launches it)
+    if (sel) {
+      const pw2 = 34, px2 = Math.round(pt.x - pw2/2);
+      plate3D(px2, pt.y + 20, pw2, 9, playA(.8 + .12*Math.sin(tick*.1)));
+      txt('PLAY', pt.x, pt.y + 22, 1, '#08301F', 'center');
     }
   }
-  // header plate
+  // mascot marks your best height on the winding trail
+  if (mp && mp.y > L.viewTop - 6 && mp.y < L.viewBot + 6) drawMascot(mp.x, mp.y + 2);
+  // header
   ctx.fillStyle = 'rgba(11,14,26,0.72)'; ctx.fillRect(0, 0, W, MAP_HEAD);
   ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, MAP_HEAD, W, 1);
-  txt('SKY MAP', W/2+1, 8, 2, 'rgba(0,0,0,0.5)', 'center');
-  txt('SKY MAP', W/2, 7, 2, '#FFF6E8', 'center');
-  txt('CHOOSE YOUR PATH', W/2, 26, 1, '#FFD75E', 'center');
-  txt('X', W - 12, 8, 1, 'rgba(255,246,232,0.6)', 'center');   // header tap closes
-  // footer: PLAY button for the selected level
-  ctx.fillStyle = 'rgba(11,14,26,0.72)'; ctx.fillRect(0, H - MAP_FOOT, W, MAP_FOOT);
-  ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, H - MAP_FOOT, W, 1);
-  if (selLevel >= 0 && selLevel <= Math.min(prog, TIERS.length - 1)) {
-    const st = TIERS[selLevel];
-    const bw = Math.min(W - 24, 220), bx = Math.round(W/2 - bw/2);
-    plate3D(bx, H - MAP_FOOT + 6, bw, 20, playA(.8 + .15*Math.sin(tick*.08)));
-    txt('PLAY LEVEL ' + (selLevel+1) + ' - ' + st.n*METERS_PER + 'M', W/2, H - MAP_FOOT + 13, 1, '#08301F', 'center');
-  } else {
-    txt('REACH HIGHER TO UNLOCK', W/2, H - 21, 1, 'rgba(255,246,232,0.5)', 'center');
-  }
+  txt('SKY MAP', W/2+1, 6, 2, 'rgba(0,0,0,0.5)', 'center');
+  txt('SKY MAP', W/2, 5, 2, '#FFF6E8', 'center');
+  txt('CHOOSE YOUR PATH', W/2, 22, 1, '#FFD75E', 'center');
+  ctx.fillStyle = 'rgba(255,246,232,0.14)'; ctx.fillRect(W-18, 6, 13, 13);   // close box
+  txt('X', W-12, 8, 1, 'rgba(255,246,232,0.85)', 'center');
   // slim scrollbar on the right edge
   if (mapScrollMax > 0) {
     const trackH = L.viewBot - L.viewTop;
     const thumbH = Math.max(14, Math.round(trackH * trackH / (trackH + mapScrollMax)));
     const thumbY = Math.round(L.viewTop + (1 - mapScroll / mapScrollMax) * (trackH - thumbH));
-    ctx.fillStyle = 'rgba(255,246,232,0.1)'; ctx.fillRect(W - 4, L.viewTop, 2, trackH);
-    ctx.fillStyle = 'rgba(255,246,232,0.4)'; ctx.fillRect(W - 4, thumbY, 2, thumbH);
+    ctx.fillStyle = 'rgba(255,246,232,0.1)'; ctx.fillRect(W - 3, L.viewTop, 2, trackH);
+    ctx.fillStyle = 'rgba(255,246,232,0.4)'; ctx.fillRect(W - 3, thumbY, 2, thumbH);
   }
 }
 
