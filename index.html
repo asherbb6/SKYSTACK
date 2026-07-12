@@ -483,17 +483,35 @@ function skyColor(h) {
 }
 const lum = c => (c[0]*.299 + c[1]*.587 + c[2]*.114) / 255;
 const TIERS = [
-  { n:10,  name:'ROOFTOPS',     c:'#FF9E5E' },
-  { n:25,  name:'TREETOPS',     c:'#62E8B5' },
-  { n:50,  name:'CLOUD NINE',   c:'#BFE8FF' },
-  { n:75,  name:'JET STREAM',   c:'#5EC8F2' },
-  { n:100, name:'STRATOSPHERE', c:'#C77EFF' },
-  { n:150, name:'AURORA',       c:'#7EF2C5' },
-  { n:200, name:'SPACE',        c:'#8FA8FF' },
-  { n:300, name:'ORBIT',        c:'#FFD75E' },
-  { n:500, name:'THE STARS',    c:'#FFF6E8' }
+  { n:33,  name:'CAVES',        c:'#7A8595' },   // ~100m deep underground climb
+  { n:44,  name:'SURFACE',      c:'#8FD46A' },
+  { n:60,  name:'TREETOPS',     c:'#62E8B5' },
+  { n:80,  name:'ROOFTOPS',     c:'#FF9E5E' },
+  { n:106, name:'CLOUD NINE',   c:'#BFE8FF' },
+  { n:136, name:'JET STREAM',   c:'#5EC8F2' },
+  { n:168, name:'STRATOSPHERE', c:'#C77EFF' },
+  { n:205, name:'AURORA',       c:'#7EF2C5' },
+  { n:260, name:'SPACE',        c:'#8FA8FF' },
+  { n:360, name:'ORBIT',        c:'#FFD75E' },
+  { n:540, name:'THE STARS',    c:'#FFF6E8' }
 ];
 prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed unlocks from lifetime best
+// per-region block material — affects FEEL (fair + subtle, tune freely):
+// spd = slider-speed multiplier, wob = drift-wobble amount, wind = local wind exposure.
+const MATERIALS = [
+  { name:'STONE',  spd:0.90, wob:0,    wind:0.3 },   // 0 CAVES        — heavy, steady, sheltered
+  { name:'WOOD',   spd:1.00, wob:0,    wind:0.8 },   // 1 SURFACE
+  { name:'WOOD',   spd:1.00, wob:0,    wind:0.9 },   // 2 TREETOPS
+  { name:'BRICK',  spd:1.02, wob:0,    wind:1.0 },   // 3 ROOFTOPS
+  { name:'CLOUD',  spd:1.00, wob:0.18, wind:1.1 },   // 4 CLOUD NINE   — wobbly footing
+  { name:'STEEL',  spd:1.06, wob:0,    wind:1.6 },   // 5 JET STREAM   — fast, windy corridor
+  { name:'GLASS',  spd:1.05, wob:0,    wind:1.3 },   // 6 STRATOSPHERE
+  { name:'ICE',    spd:1.10, wob:0,    wind:1.0 },   // 7 AURORA       — quick, slick
+  { name:'COSMIC', spd:0.86, wob:0.22, wind:0.4 },   // 8 SPACE        — floaty, low-gravity
+  { name:'COSMIC', spd:0.86, wob:0.22, wind:0.4 },   // 9 ORBIT
+  { name:'STAR',   spd:0.92, wob:0.15, wind:0.5 }    // 10 THE STARS
+];
+const matAt = t => MATERIALS[clamp(t | 0, 0, MATERIALS.length - 1)];
 const levelStartN = i => i <= 0 ? 0 : TIERS[i-1].n;                   // level i climbs levelStartN(i) -> TIERS[i].n
 function startLevel(i) { pendingLevel = i; mode = 'level'; startRun(); }
 
@@ -538,6 +556,7 @@ let squash = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
 let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, coinPop = 0, tick = 0;
 let score = 0;
 let bannerText = '', bannerT = 0;
+let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
 let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false;
 let wind = null, windTimer = 260;
 let nextPickupRow = 8;
@@ -564,7 +583,10 @@ let tutStep = 0;
 
 const stars = []; for (let i = 0; i < 80; i++) stars.push({ x: Math.random()*W, y: Math.random()*5000-4600, tw: Math.random()*6.28, sz: Math.random()<.2?2:1 });
 const clouds = []; for (let i = 0; i < 6; i++) clouds.push({ x: Math.random()*W, y: Math.random()*1100-850, s:.05+Math.random()*.1, w:20+Math.random()*24 });
-const birds = []; for (let i = 0; i < 3; i++) birds.push({ x: Math.random()*W, y: 120+Math.random()*80, s:.3+Math.random()*.3, ph: Math.random()*6.28 });
+const birds = []; for (let i = 0; i < 5; i++) birds.push({ x: Math.random()*W, y: 90+Math.random()*120, s:.7+Math.random()*.6, ph: Math.random()*6.28, sp:.25+Math.random()*.35 });
+// cave wildlife: bats + glow-worms live at absolute cave altitudes (a) so they stay underground as you climb
+const bats = []; for (let i = 0; i < 5; i++) bats.push({ a: 4+Math.random()*26, x: Math.random()*W, vx:(Math.random()<.5?-1:1)*(.4+Math.random()*.5), ph: Math.random()*6.28, wob: Math.random()*6.28 });
+const glowworms = []; for (let i = 0; i < 12; i++) glowworms.push({ a: 2+Math.random()*30, x: Math.random()*W, ph: Math.random()*6.28, dx: Math.random()*6.28 });
 let shooter = null, shooterTimer = 240;
 let demo = { n: 1, t: 0 };
 
@@ -606,6 +628,7 @@ function resetRun() {
   }
   loadout = { shield:false, aura:false, slow:false };
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY;
+  if (runLevel >= 0 && !reduceMotion) cameraY = cameraTarget + 120;   // pan-to-landmark: reveal the themed base, then settle up into play
   schedulePickups(); spawnSlider();
 }
 // wide screens: blocks travel a centered corridor (phone-width feel) instead of the
@@ -628,10 +651,11 @@ function spawnSlider() {
   let speed = Math.min(1.1 + blocks.length * 0.020, 2.8);                    // gentler climb than before
   if (runLevel >= 0) speed = Math.min(speed * (1 + runLevel * 0.03), 3.1);   // each level is a notch meaner
   speed *= (1 - assist * 0.30);                                              // dynamic difficulty eases the pace
+  const mat = matAt(tier); speed *= mat.spd;                                 // region material: heavy stone slower, ice/steel quicker
   if (slowBlocks > 0) { speed *= 0.55; slowBlocks--; }
   if (auraBlocks > 0) auraBlocks--;
   const SR = slideRange();
-  slider = { w: top.w, x: fromLeft ? SR.l - top.w : SR.r, dir: fromLeft ? 1 : -1, speed, y: towerTopY() - BH - 24, golden: goldenNext };
+  slider = { w: top.w, x: fromLeft ? SR.l - top.w : SR.r, dir: fromLeft ? 1 : -1, speed, y: towerTopY() - BH - 24, golden: goldenNext, wob: mat.wob };
   goldenNext = false;
 }
 function drop() {
@@ -842,7 +866,7 @@ function afterPlace(f, updateBalance, placedCenter) {
     addCoins(reward, W/2, 40);
     floaters.push({ text:'+'+reward, x:W/2, y:towerTopY()-BH-18, vy:-.35, life:1.4, color:'#FFD75E' });
     burst(W/2, towerTopY()-BH, 24, f.col, true); shake = Math.max(shake, reduceMotion?2:4);
-    sfx.milestone(); tier++;
+    sfx.milestone(); tier++; startRegionIntro(tier);   // entering the next region — play its intro
   }
   const bh2 = bestBlocksFor(mode);
   if (!runLaunch && runLevel < 0 && h > bh2 && !newHeight && bh2 > 0) {
@@ -1078,7 +1102,7 @@ function adaptToScreen() {
 // ---------- input ----------
 function pos(e) { if (!canvasRect) canvasRect = canvas.getBoundingClientRect(); const r = canvasRect; return { x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H }; }
 function inR(p, r, pad) { pad = pad||0; return p.x>=r.x-pad && p.x<=r.x+r.w+pad && p.y>=r.y-pad && p.y<=r.y+r.h+pad; }
-function startRun() { resetRun(); state = 'playing'; sfx.start(); }
+function startRun() { resetRun(); startRegionIntro(tier); state = 'playing'; sfx.start(); }
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
@@ -1236,6 +1260,7 @@ function update(dt) {
   if (squash > 0) squash = Math.max(0, squash - .07*dt);
   if (flashT > 0) flashT = Math.max(0, flashT - .05*dt);
   if (bannerT > 0) bannerT = Math.max(0, bannerT - .006*dt);
+  if (regionIntro) { regionIntro.t += dt; if (regionIntro.t >= regionIntro.dur) regionIntro = null; }
   if (coinPop > 0) coinPop = Math.max(0, coinPop - .05*dt);
   if (fadeT > 0) fadeT = Math.max(0, fadeT - .06*dt);
   if (overLock > 0) overLock -= dt;
@@ -1262,9 +1287,10 @@ function update(dt) {
   swayX += (leanTarget - swayX) * 0.12 * dt;
 
   if (playing && m.wind) {
+    const wf = matAt(tier).wind;                                            // region wind exposure: sheltered caves, howling jet stream
     windTimer -= dt;
-    if (!wind && windTimer <= 0 && blocks.length > 25) { wind = { dir: Math.random()<.5?-1:1, str:.18+Math.random()*.34, dur:100+Math.random()*80, t:0 }; sfx.wind(); }
-    if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = 280 + Math.random()*320; } }
+    if (!wind && windTimer <= 0 && blocks.length > 25 && wf > 0) { wind = { dir: Math.random()<.5?-1:1, str:(.16+Math.random()*.30)*wf, dur:100+Math.random()*80, t:0 }; sfx.wind(); }
+    if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (280 + Math.random()*320) / Math.max(0.5, wf); } }
   } else wind = null;
 
   if (balloon && (state === 'playing' || state === 'dropping')) {
@@ -1281,7 +1307,8 @@ function update(dt) {
   }
   if (slider && state === 'playing') {
     const feverSlow = fever ? 0.78 : 1;
-    slider.x += slider.dir * slider.speed * feverSlow * dt;
+    const wobF = slider.wob ? (1 + Math.sin(tick * 0.22) * slider.wob) : 1;   // cloud/cosmic footing wobbles the drift speed
+    slider.x += slider.dir * slider.speed * wobF * feverSlow * dt;
     if (wind) { const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI); slider.x += wind.dir * wind.str * env * dt; }
     const SR = slideRange();
     const min = SR.l - slider.w*.55, max = SR.r - slider.w*.45;
@@ -1311,7 +1338,9 @@ function update(dt) {
   // clouds drift; active wind visibly blows them along
   const wEnv = wind ? Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI) : 0;
   for (const c of clouds) { c.x += (c.s + (wind ? wind.dir * wEnv * 0.5 : 0))*dt; if (c.x > W+30) c.x = -30; if (c.x < -30) c.x = W+30; }
-  for (const b of birds) { b.x += b.s*dt; if (b.x > W+16) b.x = -16; }
+  for (const b of birds) { b.x += b.sp*dt; if (b.x > W+16) b.x = -16; }
+  for (const b of bats) { b.x += b.vx*dt; b.ph += 0.32*dt; b.wob += 0.05*dt; if (b.x > W+14) b.x = -14; if (b.x < -14) b.x = W+14; }
+  for (const g of glowworms) { g.ph += 0.05*dt; g.dx += 0.03*dt; }
   shooterTimer -= dt;
   if (!shooter && shooterTimer <= 0) { shooter = { x:Math.random()*W, y:Math.random()*80, vx:1.6+Math.random(), vy:1.1+Math.random(), life:1 }; shooterTimer = 300+Math.random()*400; }
   if (shooter) { shooter.x += shooter.vx*dt; shooter.y += shooter.vy*dt; shooter.life -= .012*dt; if (shooter.life<=0) shooter = null; }
@@ -1492,22 +1521,24 @@ const mixCol = (a, b, t) => 'rgb(' + Math.round(lerp(a[0],b[0],t)) + ',' + Math.
 // bright cloud, thinning blue, a sunset, then night, then out into black space. Each tier's
 // sky is a full-height gradient (top = higher/darker, bottom = lower/lighter horizon).
 const SKY_STOPS = [
-  [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 0 ROOFTOPS   — clear sunny day
-  [[0,'#4A93D6'],[0.5,'#84C2E8'],[1,'#DCEFDE']],                                    // 1 TREETOPS   — warm afternoon
-  [[0,'#6FB0E8'],[0.5,'#A6D2F2'],[1,'#EBF7FF']],                                    // 2 CLOUD NINE — bright, sunlit high
-  [[0,'#1C56AA'],[0.55,'#3E86D0'],[1,'#93C4EC']],                                   // 3 JET STREAM — deep thin-air blue
-  [[0,'#141A4E'],[0.42,'#5A3A86'],[0.7,'#C85E7A'],[0.87,'#F0904E'],[1,'#FFC46A']],  // 4 STRATOSPHERE — sunset / golden hour
-  [[0,'#04081C'],[0.6,'#08152A'],[1,'#0E2740']],                                    // 5 AURORA     — polar night
-  [[0,'#03050F'],[1,'#080E26']],                                                    // 6 SPACE      — deep cosmos
-  [[0,'#02040C'],[1,'#060B20']],                                                    // 7 ORBIT      — black, Earth below
-  [[0,'#0A0620'],[1,'#150B2E']]                                                     // 8 THE STARS  — cosmic summit
+  [[0,'#241C22'],[0.5,'#3A2E33'],[1,'#5A4A48']],                                    // 0 CAVES        — dark earth (walls overpaint in P3)
+  [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 1 SURFACE      — clear sunny day
+  [[0,'#4A93D6'],[0.5,'#84C2E8'],[1,'#DCEFDE']],                                    // 2 TREETOPS     — green-horizon afternoon
+  [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 3 ROOFTOPS     — bright day over the city
+  [[0,'#6FB0E8'],[0.5,'#A6D2F2'],[1,'#EBF7FF']],                                    // 4 CLOUD NINE   — bright, sunlit high
+  [[0,'#1C56AA'],[0.55,'#3E86D0'],[1,'#93C4EC']],                                   // 5 JET STREAM   — deep thin-air blue
+  [[0,'#141A4E'],[0.42,'#5A3A86'],[0.7,'#C85E7A'],[0.87,'#F0904E'],[1,'#FFC46A']],  // 6 STRATOSPHERE — sunset / golden hour
+  [[0,'#04081C'],[0.6,'#08152A'],[1,'#0E2740']],                                    // 7 AURORA       — polar night
+  [[0,'#03050F'],[1,'#080E26']],                                                    // 8 SPACE        — deep cosmos
+  [[0,'#02040C'],[1,'#060B20']],                                                    // 9 ORBIT        — black, Earth below
+  [[0,'#0A0620'],[1,'#150B2E']]                                                     // 10 THE STARS   — cosmic summit
 ];
 // how dark the sky reads at a given height (drives stars/moon/HUD) — night arrives with altitude
 function atmoDark(h) {
-  if (h < 50)  return 0.10;
-  if (h < 75)  return 0.10 + (h - 50) / 25 * 0.13;
-  if (h < 100) return 0.23 + (h - 75) / 25 * 0.42;
-  if (h < 150) return 0.65 + (h - 100) / 50 * 0.28;
+  if (h < 80)  return 0.10;                       // caves..rooftops: bright day (cave dark is drawn, not atmospheric)
+  if (h < 106) return 0.10 + (h - 80) / 26 * 0.13;
+  if (h < 168) return 0.23 + (h - 106) / 62 * 0.42;
+  if (h < 205) return 0.65 + (h - 168) / 37 * 0.28;
   return 0.95;
 }
 // which tier fills the screen + how strongly the neighbour stage bleeds in near a boundary
@@ -1518,12 +1549,25 @@ function currentBiome(cy) {
     wUp: ti < TIERS.length-1 ? clamp((BLEND - (upN - centerA)) / BLEND, 0, 1) : 0,
     wDn: ti > 0             ? clamp((BLEND - (centerA - dnN)) / BLEND, 0, 1) : 0 };
 }
-// the atmospheric backdrop gradient (+ sun), painted early so stars/clouds/structures sit on top
+// altitude (in blocks) -> fractional stage index in [0, TIERS.length-1]. Unlike the old
+// boundary-band blend, this ramps 0->1 across an ENTIRE stage span, so the sky is always in
+// gentle transition and never hard-swaps between stages.
+function stageFloat(A) {
+  for (let i = 0; i < TIERS.length - 1; i++) {
+    const up = TIERS[i].n, dn = i ? TIERS[i - 1].n : 0;
+    if (A < up) return i + (A - dn) / (up - dn);
+  }
+  return TIERS.length - 1;
+}
+// the atmospheric backdrop gradient (+ sun): the base stage sky, with the next stage's sky
+// washing in continuously as you climb through the stage — painted early so stars/clouds/
+// structures sit on top
 function drawBiomeSky(cy, h) {
-  const b = currentBiome(cy);
-  skyWash(SKY_STOPS[b.ti], 1);
-  if (b.wUp > 0) skyWash(SKY_STOPS[b.ti + 1], b.wUp);
-  if (b.wDn > 0) skyWash(SKY_STOPS[b.ti - 1], b.wDn);
+  const centerA = (GROUND_Y - cy - (H - 100)) / BH;
+  const sf = clamp(stageFloat(centerA), 0, TIERS.length - 1);
+  const i = Math.min(sf | 0, TIERS.length - 2), f = sf - i;
+  skyWash(SKY_STOPS[i], 1);
+  if (f > 0) skyWash(SKY_STOPS[i + 1], f);
   drawSun(h);
 }
 // the sun: high & white on the ground, sinking huge and orange into the sunset, gone by night
@@ -1581,65 +1625,19 @@ function biomeSprite(tier, x, y, s, ph) {
   }
 }
 
-// ---- large per-tier parallax structures ----
+// ---- celestial sky bands (tiers 4..10). Ground tiers 0..3 (caves/surface/trees/buildings)
+// are the rooted, anchored world drawn by drawGroundWorld — never routed through here.
 function biomeBackdrop(tier, cy, a) {
-  if (a <= 0.01) return;
+  if (a <= 0.01 || tier < 4) return;
   const ph = reduceMotion ? 0 : tick;
-  if      (tier === 0) drawRooftopsBg(cy, a, ph);
-  else if (tier === 1) drawTreetopsBg(cy, a, ph);
-  else if (tier === 2) drawCloudNineBg(cy, a, ph);
-  else if (tier === 3) drawJetStreamBg(cy, a, ph);
-  else if (tier === 4) drawStratosphereBg(cy, a, ph);
-  else if (tier === 5) drawAuroraBg(cy, a, ph);
-  else if (tier === 6) drawSpaceBg(cy, a, ph);
-  else if (tier === 7) drawOrbitBg(cy, a, ph);
-  else                 drawStarsBg(cy, a, ph);
+  if      (tier === 4)  drawCloudNineBg(cy, a, ph);
+  else if (tier === 5)  drawJetStreamBg(cy, a, ph);
+  else if (tier === 6)  drawStratosphereBg(cy, a, ph);
+  else if (tier === 7)  drawAuroraBg(cy, a, ph);
+  else if (tier === 8)  drawSpaceBg(cy, a, ph);
+  else if (tier === 9)  drawOrbitBg(cy, a, ph);
+  else                  drawStarsBg(cy, a, ph);
   ctx.globalAlpha = 1;
-}
-// one solid city tower, tiled vertically so its detailed roof scrolls past as you climb
-function cityBuilding(x, w, f, P, body, roofC, dark, warm, cool, baseA, ph, aFade, far) {
-  x = Math.round(x); w = Math.round(w);
-  const s = cy_ * f, off = ((s % P) + P) % P;
-  for (let roofY = -off - P; roofY < H + P; roofY += P) {
-    const rY = Math.round(roofY), seg = Math.round((roofY + s) / P), rh = bhash(seg*7 + x*13);
-    ctx.globalAlpha = baseA * aFade; ctx.fillStyle = body; ctx.fillRect(x, rY + 2, w, P);           // solid body
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';       ctx.fillRect(x, rY + 2, 2, P);                        // shadow (left)
-    ctx.fillStyle = 'rgba(255,232,176,0.14)'; ctx.fillRect(x + w - 2, rY + 2, 2, P);                // sun-lit (right)
-    ctx.fillStyle = roofC; ctx.fillRect(x - 2, rY, w + 4, 3);                                       // roof parapet
-    ctx.fillStyle = 'rgba(255,232,176,0.16)'; ctx.fillRect(x - 2, rY, w + 4, 1);
-    if (!far) {                                                                                     // rooftop clutter
-      if (rh > 0.55) { ctx.fillStyle = dark; ctx.fillRect(x + (w*0.45|0), rY - 6, 7, 6); ctx.fillRect(x + (w*0.45|0)+1, rY - 8, 5, 2); ctx.fillStyle = roofC; ctx.fillRect(x + (w*0.45|0), rY - 6, 7, 1); }  // water tank
-      else { const ax = x + (w*0.5|0); ctx.fillStyle = 'rgba(190,200,220,0.7)'; ctx.fillRect(ax, rY - 9, 1, 9); ctx.fillRect(ax-2, rY-5, 5, 1);
-             const blink = reduceMotion ? 1 : Math.sin(ph*.12 + seg)*.5 + .5; ctx.globalAlpha = (.3 + .6*blink)*aFade; ctx.fillStyle = '#FF5E5E'; ctx.fillRect(ax, rY - 10, 1, 1); }   // antenna + beacon
-      if (rh > 0.8 && w > 26) { ctx.globalAlpha = baseA*aFade; ctx.fillStyle = dark; ctx.fillRect(x + 3, rY - 5, w - 8, 4); ctx.fillStyle = seg&1 ? '#FF8A5E' : '#5EC8F2'; ctx.fillRect(x + 4, rY - 4, w - 10, 2); }  // rooftop billboard
-    }
-    const WP = far ? 10 : 13;                                                                        // daytime glass — panes reflect the sky, a few dark, a rare lit room
-    for (let wy = rY + 7; wy < rY + P - 3; wy += WP) for (let wx = x + 3; wx < x + w - 3; wx += far ? 5 : 6) {
-      const r = bhash(Math.round(wx*17 + wy*3 + seg*101));
-      if (far) { ctx.globalAlpha = (.16 + .2*r)*aFade; ctx.fillStyle = 'rgb('+cool+')'; ctx.fillRect(wx, wy, 2, 2); continue; }
-      if (r < 0.30) { ctx.globalAlpha = baseA*aFade*.85; ctx.fillStyle = dark; ctx.fillRect(wx, wy, 4, WP-4); continue; }        // dark / shadowed pane
-      if (r > 0.95 && !reduceMotion) { const fl = Math.sin(ph*.09 + wx + wy) > -.3 ? 1 : .35; ctx.globalAlpha = .8*aFade*fl; ctx.fillStyle = 'rgb('+warm+')'; ctx.fillRect(wx, wy, 4, WP-5); continue; }   // rare lit room
-      ctx.globalAlpha = (.4 + .4*r)*aFade; ctx.fillStyle = 'rgb('+cool+')'; ctx.fillRect(wx, wy, 4, WP-5);                       // sky-reflecting glass
-      ctx.globalAlpha = (.25 + .25*r)*aFade; ctx.fillStyle = '#EAF4FF'; ctx.fillRect(wx, wy, 4, 1);                              // reflection highlight
-    }
-  }
-  ctx.globalAlpha = 1;
-}
-function drawRooftopsBg(cy, a, ph) {   // climbing a sunlit city by day — hazy far skyline + solid, asymmetric daylit towers
-  cy_ = cy;
-  // far skyline: thin, hazy, sky-tinted towers of varied height + width (asymmetric), slow parallax
-  const farBody = '#8CA0BE', farRoof = '#A4B6D0';
-  const fx = [0.02, 0.15, 0.31, 0.47, 0.64, 0.79, 0.91];
-  for (let i = 0; i < fx.length; i++) { const w = W*(0.05 + bhash(i*5+1)*0.06), P = 120 + bhash(i*3)*70;
-    cityBuilding(W*fx[i] - w/2, w, 0.28, P, farBody, farRoof, '#6E82A2', '255,238,190', '186,214,240', 0.42*a, ph, a, true); }
-  // foreground towers: solid (opaque), asymmetric spacing/width/colour, daylit concrete + glass
-  const near = [
-    { x:0.00, w:0.20, body:'#68768E', roof:'#8E9CB2', P:210 },
-    { x:0.235,w:0.13, body:'#5A6B86', roof:'#82909E', P:168 },
-    { x:0.60, w:0.155,body:'#6E7A92', roof:'#94A0B4', P:194 },
-    { x:0.795,w:0.205,body:'#5E6C86', roof:'#8894AA', P:150 }
-  ];
-  for (const b of near) cityBuilding(W*b.x, W*b.w, 0.55, b.P, b.body, b.roof, '#39445E', '255,224,150', '176,206,238', 0.98*a, ph, a, false);
 }
 // a solid, rounded, 3-D-shaded clump of leaves (dark base → mid → sun-lit top-left)
 function foliageBlob(cx, cy2, r, a) {
@@ -1648,42 +1646,6 @@ function foliageBlob(cx, cy2, r, a) {
   pixDisc(cx-1, cy2, (r*.86)|0, '#1A4C22'); pixDisc(cx+((r*.4)|0), cy2+((r*.3)|0), (r*.5)|0, '#153F1C');
   pixDisc(cx-2, cy2-2, (r*.62)|0, '#2A7034');
   ctx.globalAlpha = .85*a; pixDisc(cx-((r*.4)|0), cy2-((r*.45)|0), (r*.34)|0, '#49A048');   // sun-lit crown
-  ctx.globalAlpha = 1;
-}
-// one whole tree: solid tapering trunk (bark-textured) + branches, each carrying a connected leaf mass
-function forestTree(x, w, f, P, ph, a, scale) {
-  const sway = reduceMotion ? 0 : Math.sin(ph*.018 + x)*2;
-  x = Math.round(x + sway);
-  const s = cy_ * f, off = ((s % P) + P) % P;
-  ctx.globalAlpha = .96*a; ctx.fillStyle = '#3A2616'; ctx.fillRect(x, 0, w, H);                 // solid trunk
-  ctx.fillStyle = 'rgba(96,66,36,0.55)'; ctx.fillRect(x + w - 2, 0, 2, H);                      // lit right edge
-  ctx.fillStyle = 'rgba(0,0,0,0.32)';    ctx.fillRect(x, 0, 2, H);                              // shadow left edge
-  ctx.fillStyle = 'rgba(22,14,7,0.5)';                                                          // bark texture
-  for (let ty = ((s % 16) + 16) % 16 - 16; ty < H; ty += 16) { ctx.fillRect(x + 2, Math.round(ty), w - 4, 1); ctx.fillRect(x + (w>>1), Math.round(ty)+5, 1, 4); }
-  for (let ny = -off - P; ny < H + P; ny += P) {                                                // branch nodes + connected foliage
-    const nd = Math.round((ny + s) / P), side = (nd & 1) ? 1 : -1, by = Math.round(ny), br = Math.round(18*scale);
-    ctx.globalAlpha = .96*a; ctx.fillStyle = '#3A2616';
-    ctx.fillRect(side > 0 ? x + w : x - br, by, br, 3);                                          // branch
-    ctx.fillRect(side > 0 ? x + w + br - 3 : x - br, by - 7, 3, 9);                              // upward fork
-    foliageBlob(side > 0 ? x + w + br : x - br, by - 4, 17*scale, a);                            // leaf mass at the tip
-    foliageBlob(x + (w>>1), by - 9*scale, 14*scale, a);                                          // mass hugging the trunk → one connected tree
-  }
-  ctx.globalAlpha = 1;
-}
-function drawTreetopsBg(cy, a, ph) {   // climbing through a forest — distant tree wall, solid layered trees, edge foliage
-  cy_ = cy;
-  const s0 = cy*.3, P0 = 104, o0 = ((s0 % P0) + P0) % P0;                                        // distant hazy forest wall (depth)
-  for (let y = -o0 - P0; y < H + P0; y += P0) { const rowOdd = ((y/P0)|0) & 1;
-    for (let dx = -4; dx < W + 30; dx += 34) { ctx.globalAlpha = .3*a; pixDisc(dx + (rowOdd?17:0), Math.round(y), 16, '#22482A'); ctx.globalAlpha = .22*a; pixDisc(dx + (rowOdd?17:0) - 3, Math.round(y)-4, 10, '#2E5E34'); } }
-  ctx.globalAlpha = 1;
-  forestTree(W*0.14, 14, .5,  158, ph, a, 1.05);                                                 // solid trees, asymmetric, off the centre corridor
-  forestTree(W*0.33, 11, .64, 176, ph, a, 0.85);
-  forestTree(W*0.82, 15, .5,  150, ph, a, 1.15);
-  const se = cy*.82, Pe = 116, oe = ((se % Pe) + Pe) % Pe;                                        // foreground foliage framing the very edges (keeps the tower corridor clear)
-  for (let ey = -oe - Pe; ey < H + Pe; ey += Pe) { foliageBlob(-6, ey, 22, a); foliageBlob(W + 6, ey + 58, 24, a); }
-  ctx.fillStyle = '#1E5228';                                                                     // a couple of hanging vines
-  for (let k = 0; k < 3; k++) { const P = 240, off = ((se % P) + P) % P, vy = -off + (k*150)%P, vx = Math.round((k*61+40) % (W-20) + 10 + (reduceMotion?0:Math.sin(ph*.03+k)*3));
-    ctx.globalAlpha = .5*a; ctx.fillRect(vx, Math.round(vy), 1, 46); foliageBlob(vx, Math.round(vy)+48, 4, a); }
   ctx.globalAlpha = 1;
 }
 function drawCloudNineBg(cy, a, ph) {   // fluffy animated cloud banks at two depths + soft sun shafts
@@ -1835,27 +1797,323 @@ function biomeWeather(tier, cy, a, ph) {
   ctx.globalAlpha = 1;
 }
 
+// ================= continuous anchored world (Phase 2) =================
+// The low world (caves, surface, trees, buildings) lives at ABSOLUTE world altitude and is
+// simply climbed PAST — never cross-faded. A=0 is the tower base / cave floor.
+const SURF_A = 33;                                           // surface line (blocks): cave ceiling / where trees+buildings root (~100m deep cave below)
+const SHAFT_W_F = 0.52;                                      // central open shaft (the corridor the tower climbs) as a fraction of W
+function worldY(A, cy) { return Math.round(GROUND_Y - A * BH - (cy === undefined ? cameraY : cy)); }   // screen-y of world altitude A
+
+// distant, topless skyline on the horizon — parallax depth only (you never climb past it)
+function drawSkylineHaze(ph, yCeil) {
+  const horizon = Math.min(H, yCeil);
+  const cols = [0.06, 0.19, 0.33, 0.5, 0.66, 0.8, 0.93];
+  for (let i = 0; i < cols.length; i++) {
+    const w = Math.round(W * (0.05 + bhash(i*5+1)*0.05)), hgt = Math.round(22 + bhash(i*7)*40);
+    const x = Math.round(W*cols[i] - w/2), topY = horizon - hgt;
+    if (topY > H) continue;
+    ctx.globalAlpha = 0.32; ctx.fillStyle = '#8CA0BE'; ctx.fillRect(x, topY, w, horizon - topY);
+    ctx.globalAlpha = 0.45; ctx.fillStyle = '#A4B6D0'; ctx.fillRect(x, topY, w, 2);
+    ctx.globalAlpha = 0.20; ctx.fillStyle = '#EAF4FF';
+    for (let wy = topY+4; wy < horizon-2; wy += 6) for (let wx = x+2; wx < x+w-2; wx += 5) if (bhash(wx*13+wy) > 0.62) ctx.fillRect(wx, wy, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// the underground: rock walls framing a dark central shaft, glinting crystals, a dripstone
+// ceiling with the escape hole in the middle. `top` = screen-y rock starts; `ceilY` = the
+// ceiling line (or <0 when the ceiling is off-screen and we're deep below).
+// Terraria-style underground: a TEXTURED BACKGROUND WALL (behind the tower, so the blocks keep
+// full room to breathe) — dirt->stone->deep-stone strata, ore/gem specks, cave pockets receding
+// into darkness for depth, crystals, and the dripstone ceiling + escape hole up top.
+function drawCaveWalls(ph, top, ceilY, cy) {
+  const under = H - top; if (under <= 0) return;
+  const T = 18, aOf = y => (GROUND_Y - cy - y) / BH;                                          // screen-y -> world altitude
+  // 1) background wall: dim, receding into black the deeper you are
+  const g = ctx.createLinearGradient(0, top, 0, H);
+  g.addColorStop(0, '#3A2A20'); g.addColorStop(0.4, '#241C20'); g.addColorStop(1, '#09070E');
+  ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.fillRect(0, top, W, under);
+  // 2) world-anchored rock tiles + strata + sparse ore/gem
+  const phase = ((GROUND_Y - cy) % T + T) % T;
+  for (let y = top - ((top - (top - phase)) % T) - T; y < H; y += T) {
+    const A = aOf(y + T/2), row = Math.round((GROUND_Y - cy - y) / T);
+    const dirt = A > SURF_A - 8, deep = A < 8;
+    for (let x = 0; x < W; x += T) {
+      const s = bhash(row*131 + x*7), base = dirt ? 54 : deep ? 24 : 38, v = base + Math.round((s - 0.5) * 14);
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = dirt ? 'rgb(' + (v+24) + ',' + (v+2) + ',' + (v-18) + ')' : 'rgb(' + (v-2) + ',' + v + ',' + (v+7) + ')';
+      ctx.fillRect(x + 1, y + 1, T - 2, T - 2);                                               // rock block (mortar gaps read as the dark base)
+      if (s > 0.87) { ctx.globalAlpha = 0.32; ctx.fillStyle = '#000'; ctx.fillRect(x + 4, y + 2, 1, T - 5); }   // crack
+      if (s < 0.05) { ctx.globalAlpha = 0.85; const gem = bhash(row*3 + x);                    // ore / gem speck
+        ctx.fillStyle = gem > 0.66 ? '#D8A83C' : gem > 0.33 ? '#7EE8C5' : '#8FB8FF'; ctx.fillRect(x + (T>>1), y + (T>>1), 2, 2); }
+    }
+  }
+  ctx.globalAlpha = 1;
+  // 3) open cave pockets / distant tunnels — dark blobs receding into black (depth cue)
+  for (let k = 0; k < 8; k++) {
+    const band = 92, py = top - (top % band) + k * band; if (py > H + 40) break; if (py < top - 40) continue;
+    const seed = bhash(Math.round((GROUND_Y - cy - py) / band) * 17 + k * 5);
+    const px = Math.round(seed * W), r = Math.round(20 + bhash(k*7 + 3) * 22);
+    ctx.globalAlpha = 0.5; pixDisc(px, Math.round(py), r + 5, '#0C0912');
+    ctx.globalAlpha = 0.6; pixDisc(px, Math.round(py), r, '#060409');
+    ctx.globalAlpha = 0.6; ctx.fillStyle = '#181220';                                          // stalactites/stalagmites framing it
+    for (let sx = px - r; sx < px + r; sx += 6) { const st = Math.round(bhash(sx*5 + (py|0)) * 8);
+      ctx.fillRect(sx, Math.round(py) - r, 2, st); const sg = Math.round(bhash(sx*3) * 7); ctx.fillRect(sx + 3, Math.round(py) + r - sg, 2, sg); }
+  }
+  ctx.globalAlpha = 1;
+  // 4) glinting crystals (ambient life, on the walls not the play column)
+  for (let k = 0; k < 7; k++) {
+    const gy = top + 26 + k * 68; if (gy > H) break;
+    const gx = (k & 1) ? W - 18 - (k * 5) : 12 + (k * 5), gl = reduceMotion ? 0.6 : (0.4 + 0.4 * Math.sin(ph * 0.08 + k * 2));
+    ctx.globalAlpha = gl; ctx.fillStyle = k % 2 ? '#7EE8C5' : '#B58CF0'; ctx.fillRect(Math.round(gx), Math.round(gy), 2, 4);
+    ctx.globalAlpha = gl * 0.35; ctx.fillRect(Math.round(gx) - 1, Math.round(gy) + 1, 4, 2);
+  }
+  ctx.globalAlpha = 1;
+  // 5) dripstone ceiling + escape hole + daylight shaft
+  if (ceilY > -6 && ceilY < H) {
+    const shaftW = Math.round(W * SHAFT_W_F), cxL = Math.round((W - shaftW) / 2), cxR = cxL + shaftW;
+    for (let yy = ceilY; yy < Math.min(H, ceilY + 220); yy += 5) {                             // sunbeam spilling through the hole
+      const t = (yy - ceilY) / 220, w2 = shaftW * (0.66 + t * 0.5);
+      ctx.globalAlpha = 0.09 * (1 - t); ctx.fillStyle = 'rgba(255,240,200,0.9)'; ctx.fillRect(Math.round(W/2 - w2/2), yy, Math.round(w2), 5);
+    }
+    ctx.globalAlpha = 1; ctx.fillStyle = '#2E2230';
+    for (let x = 0; x < W; x += 8) {
+      if (x > cxL - 10 && x < cxR + 10) continue;                                              // leave the escape hole open
+      const sl = Math.round(6 + bhash(x*5) * 15);
+      ctx.fillRect(x, ceilY - 3, 8, 4);
+      for (let t = 0; t < sl; t++) { const ww = Math.max(1, Math.round((1 - t/sl) * 5)); ctx.fillRect(Math.round(x+4 - ww/2), ceilY + t, ww, 1); }
+    }
+    for (let k = 0; k < 7; k++) { const rx = Math.round(bhash(k*23) * W); if (rx > cxL - 6 && rx < cxR + 6) continue;   // hanging roots on the dirt rim
+      ctx.globalAlpha = 0.6; ctx.fillStyle = '#3A2A18'; ctx.fillRect(rx, ceilY + 2, 1, 6 + Math.round(bhash(k*5) * 10)); }
+    ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(255,236,180,0.7)';
+    ctx.fillRect(cxL - 10, ceilY - 1, 10, 2); ctx.fillRect(cxR, ceilY - 1, 10, 2);
+    ctx.globalAlpha = 1;
+    if (!reduceMotion) { const dp = (ph*2) % 130, dx = Math.round(W/2 + Math.sin(ph*0.7) * shaftW * 0.3);
+      ctx.globalAlpha = 0.5; ctx.fillStyle = '#9FD8E8'; ctx.fillRect(dx, ceilY + dp, 1, 3); ctx.globalAlpha = 1; }
+  }
+}
+
+// the grass+dirt surface lip on either side of the escape hole, where trees & buildings root
+function drawSurfaceGround(ph, yCeil) {
+  const shaftW = Math.round(W * SHAFT_W_F), cxL = Math.round((W - shaftW) / 2), cxR = cxL + shaftW;
+  for (const seg of [[0, cxL], [cxR, W]]) {
+    const x0 = seg[0], x1 = seg[1];
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#5A3F2A'; ctx.fillRect(x0, yCeil, x1 - x0, 7);                            // dirt lip
+    ctx.fillStyle = '#3A2818'; ctx.fillRect(x0, yCeil + 5, x1 - x0, 2);
+    ctx.fillStyle = '#3E8A32'; ctx.fillRect(x0, yCeil - 2, x1 - x0, 3);                        // grass base
+    ctx.fillStyle = '#6ECB54';
+    for (let gx = x0; gx < x1; gx += 3) { const gh = 2 + Math.round(bhash(gx*7)*3), sw = reduceMotion ? 0 : Math.round(Math.sin(ph*0.05 + gx)*0.6);
+      ctx.fillRect(gx + sw, yCeil - 2 - gh, 1, gh); }                                          // grass blades
+  }
+  ctx.globalAlpha = 1;
+}
+
+// deterministic instances rooted at the surface. Trees top out ~TREETOPS(22); most roofs
+// ~ROOFTOPS(34); a couple towers reach toward the clouds. Fixed screen-X (the world never pans X).
+const BUILDINGS = [
+  { x:0.015, w:0.15, topA:66,  body:'#68768E', roof:'#8E9CB2' },
+  { x:0.175, w:0.11, topA:101, body:'#5A6B86', roof:'#82909E' },   // tower reaching the clouds
+  { x:0.31,  w:0.10, topA:58,  body:'#6E7A92', roof:'#94A0B4' },
+  { x:0.585, w:0.12, topA:78,  body:'#5E6C86', roof:'#8894AA' },
+  { x:0.735, w:0.105,topA:104, body:'#66748C', roof:'#8A97AD' },   // tower reaching the clouds
+  { x:0.86,  w:0.135,topA:62,  body:'#5A6880', roof:'#828FA6' }
+];
+const TREES = [
+  { x:0.085, topA:57, s:1.05 }, { x:0.245, topA:47, s:0.82 },
+  { x:0.66,  topA:60, s:1.15 }, { x:0.93,  topA:50, s:0.95 }
+];
+// one solid city tower rooted at the surface (base SURF_A) with a real roof at topA — climbed past.
+function rootedBuilding(b, seed) {
+  const baseY = worldY(SURF_A), topY = worldY(b.topA);
+  if (topY > H || baseY < 0) return;
+  const x = Math.round(W * b.x), w = Math.round(W * b.w);
+  const y0 = Math.max(topY, -2), y1 = Math.min(baseY, H + 2);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = b.body; ctx.fillRect(x, y0, w, y1 - y0);                                     // body
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';       ctx.fillRect(x, y0, 2, y1 - y0);                   // shadow (left)
+  ctx.fillStyle = 'rgba(255,232,176,0.14)'; ctx.fillRect(x + w - 2, y0, 2, y1 - y0);           // sun-lit (right)
+  if (topY > -6) {                                                                             // roof clutter (only when the top is near/on screen)
+    ctx.fillStyle = b.roof; ctx.fillRect(x - 2, topY, w + 4, 3);
+    ctx.fillStyle = 'rgba(255,232,176,0.16)'; ctx.fillRect(x - 2, topY, w + 4, 1);
+    if (bhash(seed*7) > 0.5) { ctx.fillStyle = '#39445E'; ctx.fillRect(x + (w*0.45|0), topY - 6, 7, 6); ctx.fillStyle = b.roof; ctx.fillRect(x + (w*0.45|0), topY - 6, 7, 1); }
+    else { const ax = x + (w*0.5|0); ctx.fillStyle = 'rgba(190,200,220,0.7)'; ctx.fillRect(ax, topY - 9, 1, 9); ctx.fillRect(ax - 2, topY - 5, 5, 1);
+      const blink = reduceMotion ? 1 : Math.sin(tick*.12 + seed)*.5 + .5; ctx.globalAlpha = .3 + .6*blink; ctx.fillStyle = '#FF5E5E'; ctx.fillRect(ax, topY - 10, 1, 1); ctx.globalAlpha = 1; }
+  }
+  for (let wy = y0 + 6; wy < y1 - 3; wy += 13) for (let wx = x + 3; wx < x + w - 3; wx += 6) {  // windows, pattern anchored to the base so it doesn't swim
+    const r = bhash(Math.round(wx*17 + (baseY - wy)*3 + seed*101));
+    if (r < 0.30) { ctx.globalAlpha = .85; ctx.fillStyle = '#39445E'; ctx.fillRect(wx, wy, 4, 9); continue; }
+    if (r > 0.95 && !reduceMotion) { const fl = Math.sin(tick*.09 + wx + wy) > -.3 ? 1 : .35; ctx.globalAlpha = .8*fl; ctx.fillStyle = 'rgb(255,224,150)'; ctx.fillRect(wx, wy, 4, 8); continue; }
+    ctx.globalAlpha = .4 + .4*r; ctx.fillStyle = 'rgb(176,206,238)'; ctx.fillRect(wx, wy, 4, 8);
+    ctx.globalAlpha = .25 + .25*r; ctx.fillStyle = '#EAF4FF'; ctx.fillRect(wx, wy, 4, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+// one whole tree rooted at the surface: tapering trunk + branches carrying connected canopy, top at topA
+function rootedTree(t, seed) {
+  const baseY = worldY(SURF_A), topY = worldY(t.topA);
+  if (topY > H || baseY < 0) return;
+  const sway = reduceMotion ? 0 : Math.sin(tick*.018 + seed)*2, x = Math.round(W * t.x + sway);
+  const w = Math.max(6, Math.round(9 * t.s)), trunkTop = Math.max(topY + 6, -20), y1 = Math.min(baseY, H + 2);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#3A2616';            ctx.fillRect(x, trunkTop, w, y1 - trunkTop);           // solid trunk
+  ctx.fillStyle = 'rgba(96,66,36,0.55)';ctx.fillRect(x + w - 2, trunkTop, 2, y1 - trunkTop);   // lit right edge
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';   ctx.fillRect(x, trunkTop, 2, y1 - trunkTop);           // shadow left edge
+  const P = Math.max(20, Math.round(34 * t.s));
+  for (let by = topY + 10; by < y1; by += P) {                                                 // branch nodes + connected foliage
+    if (by < -20 || by > H + 20) continue;
+    const nd = Math.round((baseY - by) / P), side = (nd & 1) ? 1 : -1, br = Math.round(16 * t.s);
+    ctx.fillStyle = '#3A2616'; ctx.fillRect(side > 0 ? x + w : x - br, by, br, 3); ctx.fillRect(side > 0 ? x + w + br - 3 : x - br, by - 6, 3, 8);
+    foliageBlob(side > 0 ? x + w + br : x - br, by - 3, 15 * t.s, 1);
+    foliageBlob(x + (w >> 1), by - 8 * t.s, 12 * t.s, 1);
+  }
+  if (topY < H + 20) { foliageBlob(x + (w >> 1), topY + 4, 18 * t.s, 1);                        // canopy crown at the top
+    foliageBlob(x + (w >> 1) - 6, topY + 2, 12 * t.s, 1); foliageBlob(x + (w >> 1) + 6, topY + 7, 12 * t.s, 1); }
+  ctx.globalAlpha = 1;
+}
+
+// a small flapping bird (multi-frame wing beat): body + head + two bent wings
+function drawBird(x, y, s, ph, col) {
+  x = Math.round(x); y = Math.round(y);
+  ctx.fillStyle = col;
+  const tip = Math.round(Math.sin(ph) * 3 * s), wl = Math.max(3, Math.round(5 * s)), bw = Math.max(2, Math.round(3 * s));
+  ctx.fillRect(x - 1, y, bw, Math.max(1, Math.round(2 * s)));               // body
+  ctx.fillRect(x + bw - 1, y - 1, 1, 1);                                    // head
+  ctx.fillRect(x - wl, y - tip, wl, 1);                                     // left wing (shoulder)
+  ctx.fillRect(x - wl, Math.min(y, y - tip), 1, Math.max(1, Math.abs(tip)));// left wing tip
+  const rx = x + bw - 1;
+  ctx.fillRect(rx, y - tip, wl, 1);                                         // right wing
+  ctx.fillRect(rx + wl - 1, Math.min(y, y - tip), 1, Math.max(1, Math.abs(tip)));
+}
+// a little bat with angular flapping wings (cave life)
+function drawBat(x, y, ph) {
+  x = Math.round(x); y = Math.round(y);
+  ctx.fillStyle = '#140E1E';
+  const up = Math.round((Math.sin(ph) * 0.5 + 0.5) * 4);
+  ctx.fillRect(x, y, 2, 2);                                                 // body
+  ctx.fillRect(x, y - 1, 1, 1); ctx.fillRect(x + 1, y - 1, 1, 1);          // ears
+  ctx.fillRect(x - 4, y - up, 4, 1); ctx.fillRect(x - 5, y - up + 1, 1, 2); ctx.fillRect(x - 2, y + 1, 2, 1);   // left wing
+  ctx.fillRect(x + 2, y - up, 4, 1); ctx.fillRect(x + 5, y - up + 1, 1, 2); ctx.fillRect(x + 2, y + 1, 2, 1);   // right wing
+}
+// bats flitting + glow-worms pulsing in the cave; each anchored to its world altitude, self-culls off-screen
+function drawCaveLife(cy, ph) {
+  for (const g of glowworms) {
+    const gy = worldY(g.a, cy) + Math.round(Math.sin(g.dx) * 6); if (gy < -6 || gy > H + 6) continue;
+    const gx = Math.round(g.x + Math.sin(g.dx * 0.7) * 10), pulse = 0.3 + 0.5 * (Math.sin(g.ph) * 0.5 + 0.5);
+    ctx.globalAlpha = pulse * 0.45; pixDisc(gx, gy, 3, 'rgba(150,240,180,0.6)');
+    ctx.globalAlpha = pulse;        ctx.fillStyle = '#D6FCB4'; ctx.fillRect(gx, gy, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+  for (const b of bats) {
+    const by = worldY(b.a, cy) + Math.round(Math.sin(b.wob) * 12); if (by < -8 || by > H + 8) continue;
+    drawBat(b.x, by, b.ph);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// draw the rooted low world for the current camera; each layer self-clips by altitude (no fade)
+function drawGroundWorld(cy, ph) {
+  const yCeil = worldY(SURF_A, cy);
+  if (yCeil < H) drawSkylineHaze(ph, yCeil);                                                   // daylight horizon behind everything
+  for (let i = 0; i < BUILDINGS.length; i++) rootedBuilding(BUILDINGS[i], i + 3);              // rooted city towers (behind)
+  for (let i = 0; i < TREES.length; i++) rootedTree(TREES[i], i + 17);                         // rooted trees (in front of the towers)
+  if (yCeil > 0) drawCaveWalls(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil, cy);         // underground below the ceiling
+  else if (worldY(0, cy) > 0) drawCaveWalls(ph, 0, -999, cy);                                  // (transition safety) rock still below
+  drawCaveLife(cy, ph);                                                                        // bats + glow-worms (self-cull to the cave band)
+  if (yCeil > -8 && yCeil < H + 8) drawSurfaceGround(ph, yCeil);
+}
+
 function drawBiomeDecor(cy) {
   const ph = reduceMotion ? 0 : tick;
-  const { ti, wUp, wDn } = currentBiome(cy);   // structures + weather (the sky itself is painted earlier)
-  biomeBackdrop(ti, cy, 1);
-  if (wUp > 0) biomeBackdrop(ti+1, cy, wUp);
-  if (wDn > 0) biomeBackdrop(ti-1, cy, wDn);
+  drawGroundWorld(cy, ph);                                      // rooted caves/surface/(trees+buildings) — anchored, no fade
 
-  // sparse drifting mid-ground sprites anchored to world altitude (extra depth between backdrop + tower)
+  const { ti, wUp, wDn } = currentBiome(cy);                   // celestial sky bands only sit ABOVE the ground world
+  if (ti >= 4) {
+    biomeBackdrop(ti, cy, 1);
+    if (wUp > 0 && ti+1 >= 4) biomeBackdrop(ti+1, cy, wUp);
+    if (wDn > 0 && ti-1 >= 4) biomeBackdrop(ti-1, cy, wDn);
+  }
+
+  // sparse drifting mid-ground sprites for the celestial bands (ti>=4 → old sprite index ti-2)
   const lowA = (GROUND_Y - cy - H - 30) / BH, highA = (GROUND_Y - cy + 30) / BH, STEP = 6;
   for (let s = Math.floor(lowA / STEP); s <= Math.ceil(highA / STEP); s++) {
     const A = s * STEP; if (A < 3) continue;
+    const tiA = biomeTierAt(A); if (tiA < 4) continue;
     const sy = Math.round(GROUND_Y - A*BH - cy);
     if (sy < -30 || sy > H + 30) continue;
     const seed = (s * 2654435761) >>> 0, x = (seed % (W + 40)) - 20;
-    biomeSprite(biomeTierAt(A), x, sy, s, ph);
+    biomeSprite(tiA - 2, x, sy, s, ph);
   }
 
-  // animated weather for the on-screen tier(s)
-  biomeWeather(ti, cy, 1, ph);
-  if (wUp > 0) biomeWeather(ti+1, cy, wUp, ph);
-  if (wDn > 0) biomeWeather(ti-1, cy, wDn, ph);
+  // animated weather for the on-screen celestial tier(s)
+  if (ti >= 4) {
+    biomeWeather(ti - 2, cy, 1, ph);
+    if (wUp > 0 && ti+1 >= 4) biomeWeather(ti+1 - 2, cy, wUp, ph);
+    if (wDn > 0 && ti-1 >= 4) biomeWeather(ti-1 - 2, cy, wDn, ph);
+  }
+}
+
+// ---------- region entry cinematics ----------
+// A short, non-blocking overlay that fires when you ENTER a region (run start + each crossing).
+// The board keeps playing underneath. reduceMotion -> a plain static title card.
+function startRegionIntro(ti) {
+  if (ti < 0 || ti >= TIERS.length) return;
+  regionIntro = { ti, t: 0, dur: reduceMotion ? 55 : 100 };
+}
+const INTRO_TAGS = ['ESCAPE THE DEEP','INTO THE LIGHT','OVER THE CANOPY','ABOVE THE CITY','INTO THE CLOUDS','RIDE THE WIND','GOLDEN HOUR','POLAR LIGHTS','LEAVE THE SKY','ABOVE THE WORLD','THE SUMMIT'];
+// the per-region signature flourish (screen-space, procedural — no persistent particle arrays)
+function drawIntroFx(ti, p, env, ph) {
+  if (ti === 0) {                                                                    // CAVES — dark receding, crystals igniting
+    ctx.globalAlpha = env * (1 - p) * 0.55; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    for (let k = 0; k < 16; k++) { const gx = (k*53) % W, gy = (k*89) % H, tw = Math.max(0, Math.sin(p*6 + k));
+      ctx.globalAlpha = env * tw * 0.9; ctx.fillStyle = k % 2 ? '#7EE8C5' : '#B58CF0'; ctx.fillRect(gx, gy, 2, 2); }
+  } else if (ti === 1) {                                                              // SURFACE — ceiling shatters, light floods, debris rains
+    const g = ctx.createLinearGradient(0, 0, 0, H*0.6); g.addColorStop(0, 'rgba(255,244,200,0.9)'); g.addColorStop(1, 'rgba(255,244,200,0)');
+    ctx.globalAlpha = env * (1 - p) * 0.8; ctx.fillStyle = g; ctx.fillRect(0, 0, W, Math.round(H*0.6));
+    ctx.fillStyle = '#4A382A'; for (let k = 0; k < 16; k++) { const dx = (k*61) % W, dy = ((p*H*1.3 + k*40) % (H + 40)) - 20;
+      ctx.globalAlpha = env * 0.85; ctx.fillRect(dx, Math.round(dy), 2 + (k % 3), 2 + (k % 3)); }
+  } else if (ti === 2) {                                                              // TREETOPS — leaves burst up through sunbeams
+    for (let k = 0; k < 22; k++) { const a2 = k*0.63, lx = W/2 + Math.cos(a2)*p*W*0.6, ly = H*0.62 - p*H*0.5 + Math.sin(a2)*18;
+      ctx.globalAlpha = env * (1 - p) * 0.9; ctx.fillStyle = k % 2 ? '#3E8A32' : '#6ECB54'; ctx.fillRect(Math.round(lx), Math.round(ly), 3, 3); }
+  } else if (ti === 3) {                                                              // ROOFTOPS — window lights flicker on, a plane crosses
+    for (let k = 0; k < 26; k++) { const wx = (k*37) % W, wy = Math.round(H*0.28) + (k*53) % Math.round(H*0.5);
+      ctx.globalAlpha = env * (Math.sin(p*9 + k) > 0 ? 0.9 : 0.12); ctx.fillStyle = '#FFE08A'; ctx.fillRect(wx, wy, 3, 3); }
+    const px = W + 40 - p*(W + 80); ctx.globalAlpha = env; ctx.fillStyle = '#C7D2E6'; ctx.fillRect(Math.round(px), Math.round(H*0.2), 8, 3); ctx.fillRect(Math.round(px)+8, Math.round(H*0.2)+1, 3, 1);
+  } else if (ti === 4) {                                                              // CLOUD NINE — punch through a cloud floor, it parts
+    const gap = p*W*0.7; ctx.globalAlpha = env * (1 - p);
+    pixDisc(Math.round(W/2 - gap - 34), Math.round(H*0.5), 42, '#FFFFFF'); pixDisc(Math.round(W/2 + gap + 34), Math.round(H*0.5), 42, '#FFFFFF');
+  } else if (ti === 5) {                                                              // JET STREAM — speed lines whip past
+    ctx.fillStyle = '#EAF6FF'; for (let k = 0; k < 18; k++) { const sy = (k*47) % H, sx = -100 + ((p*3 + k*0.11) % 1) * (W + 200);
+      ctx.globalAlpha = env * 0.7; ctx.fillRect(Math.round(sx), sy, 60, 2); }
+  } else if (ti === 6) {                                                              // STRATOSPHERE — the sunset ignites in a golden bloom
+    ctx.globalAlpha = env * (1 - p) * 0.6; pixDisc(Math.round(W*0.7), Math.round(H*0.4), Math.round(20 + p*130), '#FFC46A');
+  } else if (ti === 7) {                                                              // AURORA — ribbons ripple across
+    for (let k = 0; k < 3; k++) { ctx.fillStyle = k === 1 ? 'hsl(285,80%,60%)' : 'hsl(150,85%,55%)';
+      for (let ax = 0; ax < W; ax += 4) { const ay = H*0.3 + k*20 + Math.sin(ph*0.06 + ax*0.04 + k)*26*env; ctx.globalAlpha = env*0.15; ctx.fillRect(ax, Math.round(ay), 4, 42); } }
+  } else if (ti === 8) {                                                              // SPACE — the atmosphere falls away, stars pop into silence
+    const bandY = p*H; const g = ctx.createLinearGradient(0, bandY - 70, 0, bandY); g.addColorStop(0, 'rgba(60,130,220,0)'); g.addColorStop(1, 'rgba(30,60,140,0.7)');
+    ctx.globalAlpha = env * (1 - p); ctx.fillStyle = g; ctx.fillRect(0, Math.round(bandY - 70), W, 70);
+    for (let k = 0; k < 30; k++) { const sx = (k*61) % W, sy = (k*47) % H, tw = Math.max(0, Math.sin(p*5 + k)); ctx.globalAlpha = env * tw; ctx.fillStyle = '#FFF6E8'; ctx.fillRect(sx, sy, 1, 1); }
+  } else if (ti === 9) {                                                              // ORBIT — Earth's limb curves below, a satellite drifts
+    const hy = H - p*H*0.42; ctx.fillStyle = '#183566';
+    for (let x = 0; x < W; x += 2) { const tt = (x - W/2)/W, top = hy + Math.round(tt*tt*90); ctx.globalAlpha = env*0.6; ctx.fillRect(x, Math.round(top), 2, H - top); }
+    const sx = p*(W + 60) - 30; ctx.globalAlpha = env; ctx.fillStyle = '#C7CFE6'; ctx.fillRect(Math.round(sx), Math.round(H*0.25), 3, 3); ctx.fillStyle = '#8FB8FF'; ctx.fillRect(Math.round(sx)-4, Math.round(H*0.25)+1, 3, 1); ctx.fillRect(Math.round(sx)+3, Math.round(H*0.25)+1, 3, 1);
+  } else {                                                                            // THE STARS — a finale constellation burst
+    for (let k = 0; k < 26; k++) { const a2 = k*0.52, r2 = p*W*0.55, sx = W/2 + Math.cos(a2)*r2, sy = H*0.4 + Math.sin(a2)*r2*0.8;
+      ctx.globalAlpha = env * (1 - p); ctx.fillStyle = k % 2 ? '#FFE28A' : '#FFF6E8'; ctx.fillRect(Math.round(sx), Math.round(sy), 2, 2); }
+  }
+  ctx.globalAlpha = 1;
+}
+function renderRegionIntro() {
+  const R = regionIntro, T = TIERS[R.ti], p = clamp(R.t / R.dur, 0, 1);
+  const env = Math.min(clamp(R.t / (R.dur*0.18), 0, 1), clamp((R.dur - R.t) / (R.dur*0.3), 0, 1));
+  if (!reduceMotion) drawIntroFx(R.ti, p, env, tick);
+  const cx = Math.round(W/2), ty = Math.round(H*0.32), nameW = T.name.length*12 + 24;
+  ctx.globalAlpha = env * 0.4; ctx.fillStyle = '#000'; ctx.fillRect(cx - nameW/2, ty - 14, nameW, 30);
+  ctx.globalAlpha = env; ctx.fillStyle = T.c; ctx.fillRect(cx - nameW/2, ty - 14, nameW, 2); ctx.fillRect(cx - nameW/2, ty + 14, nameW, 2);
+  txt(T.name, cx, ty - 8, 2, T.c, 'center');
+  ctx.globalAlpha = env * 0.85; txt(INTRO_TAGS[R.ti], cx, ty + 20, 1, 'rgba(255,246,232,0.9)', 'center');
+  ctx.globalAlpha = 1;
 }
 
 // ---------- background & world render ----------
@@ -1891,7 +2149,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
   // aurora curtains — ribbon across the sky through the AURORA tier band only (~285-450M)
-  if (!menu && h >= 92 && h < 150 && dark > 0.3 && !reduceMotion) {
+  if (!menu && h >= 160 && h < 208 && dark > 0.3 && !reduceMotion) {
     for (let k = 0; k < 3; k++) {
       ctx.fillStyle = k === 1 ? 'hsl(285,80%,60%)' : 'hsl(150,85%,55%)';
       ctx.globalAlpha = 0.05 + 0.02*Math.sin(tick*.03 + k*2);
@@ -1908,7 +2166,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
   if (dark > .45 && !menu) {
-    const mA = Math.min(1,(dark-.45)*3) * clamp((175 - h)/25, 0, 1);   // a round glowing moon; fades out as SPACE's own bodies take over
+    const mA = Math.min(1,(dark-.45)*3) * clamp((252 - h)/30, 0, 1);   // a round glowing moon; fades out as SPACE's own bodies take over
     if (mA > 0.02) {
       const mx = W - 34, my = Math.round(48 - Math.min(h,120)*.12);
       ctx.globalAlpha = mA*.4; pixDisc(mx, my, 12, 'rgba(255,246,216,0.6)');       // soft halo
@@ -1918,16 +2176,17 @@ function render() {
       ctx.globalAlpha = 1;
     }
   }
-  if (dark < .58 && (menu || h < 140)) {   // clouds/birds belong to the lower sky — gone once SPACE begins
+  if (dark < .58 && (menu || h < 200)) {   // clouds/birds belong to the lower sky — gone once SPACE begins
     ctx.globalAlpha = (.58-dark)*.95; ctx.fillStyle = '#FFF6E8';
     for (const c of clouds) { const cyy = Math.floor(c.y - (menu?tick*.3:cy*.4)); if (cyy<-20||cyy>H+20) continue; const cx=Math.floor(c.x); ctx.fillRect(cx,cyy,Math.floor(c.w),5); ctx.fillRect(cx+4,cyy-3,Math.floor(c.w*.6),3); ctx.fillRect(cx+2,cyy+5,Math.floor(c.w*.75),3); }
     ctx.globalAlpha = 1;
-    if (dark < .35 && !menu) { ctx.fillStyle = 'rgba(40,30,60,0.7)'; for (const b of birds) { const flap = Math.sin(tick*.2+b.ph)*2; ctx.fillRect(Math.floor(b.x),Math.floor(b.y),2,1); ctx.fillRect(Math.floor(b.x-2),Math.floor(b.y-flap),2,1); ctx.fillRect(Math.floor(b.x+2),Math.floor(b.y-flap),2,1); } }
+    if (dark < .4 && (menu || h > SURF_A)) { for (const b of birds) drawBird(b.x, b.y, b.s, tick*.22 + b.ph, 'rgba(38,28,54,0.78)'); }   // birds ride the daytime sky, never underground
   }
   if (!menu) drawBiomeDecor(cy);   // per-tier biome sprites you climb past (matches the map)
   drawEventFx(menu);
 
   if (!menu) renderWorld(cy, shX);
+  if (!menu && regionIntro) renderRegionIntro();   // cinematic region-entry overlay, on top of the world
 
   if (state === 'splash') renderSplash();
   else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (skyMap) renderSkyMap(); }
@@ -1954,6 +2213,29 @@ function render() {
   if (fadeT > 0) { ctx.globalAlpha = fadeT; ctx.fillStyle = '#0B0E1A'; ctx.fillRect(0,0,W,H); ctx.globalAlpha = 1; }
 }
 
+// a campaign level's pre-stacked foundation renders as a themed base (stone/dirt/bark/concrete/
+// cloud/metal per region) instead of bright player blocks — so you start ON a landmark platform.
+const BASE_THEMES = [
+  { b:'#3A2E36', t:'#6A5A64' },   // 0 CAVES        — stone ledge
+  { b:'#5A3F2A', t:'#4E9E3E' },   // 1 SURFACE      — dirt + grass cap
+  { b:'#3A2616', t:'#2E6E3A' },   // 2 TREETOPS     — bark + leaf cap
+  { b:'#4A5568', t:'#9AA8BE' },   // 3 ROOFTOPS     — concrete slab
+  { b:'#A8C2DE', t:'#FFFFFF' },   // 4 CLOUD NINE   — cloud
+  { b:'#6E7A9A', t:'#BFE8FF' },   // 5 JET STREAM   — pale metal
+  { b:'#5A4A6E', t:'#C77EFF' },   // 6 STRATOSPHERE
+  { b:'#2A3A5A', t:'#7EF2C5' },   // 7 AURORA       — ice
+  { b:'#33313E', t:'#8FA8FF' },   // 8 SPACE        — satellite deck
+  { b:'#463F52', t:'#FFD75E' },   // 9 ORBIT
+  { b:'#3A3450', t:'#FFF6E8' }    // 10 THE STARS
+];
+function drawBaseBlock(x, y, w, h, lvl, cap) {
+  const th = BASE_THEMES[clamp(lvl, 0, BASE_THEMES.length - 1)];
+  ctx.fillStyle = th.b; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';       ctx.fillRect(x, y, 2, h);        // shadow (left)
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(x + w - 2, y, 2, h);// lit (right)
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';       for (let bx2 = x + 4; bx2 < x + w - 3; bx2 += 8) ctx.fillRect(bx2, y + (h>>1), 1, 1);  // speckle
+  if (cap) { ctx.fillStyle = th.t; ctx.fillRect(x, y, w, 3); ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(x, y, w, 1); }   // themed platform surface
+}
 function renderWorld(cy, shX) {
   ctx.save(); ctx.translate(Math.round(shX), 0);
   const groundScreen = Math.round(GROUND_Y - cy);
@@ -1979,7 +2261,8 @@ function renderWorld(cy, shX) {
     if (isTop && squash>0 && !reduceMotion) { const sq=Math.sin(squash*Math.PI)*.35; bh=Math.round(BH*(1-sq*.4)); bw=Math.round(b.w*(1+sq*.25)); bx=b.x-(bw-b.w)/2; y+=BH-bh; }
     if (isTop) { topScreenX = b.x + b.w/2; topScreenY = Math.round(GROUND_Y-(i+1)*BH-cy); }
     if (y>H || y+bh<0) continue;
-    drawBlock(Math.round(bx),y,Math.round(bw),bh,b.col,isTop, isTop?comboGlow:0, sstyle);
+    if (runLevel >= 0 && i < runLaunch) drawBaseBlock(Math.round(bx), y, Math.round(bw), bh, runLevel, i === runLaunch - 1);   // campaign foundation = themed base
+    else drawBlock(Math.round(bx),y,Math.round(bw),bh,b.col,isTop, isTop?comboGlow:0, sstyle);
   }
   if (slider) {
     const y = Math.round(slider.y-cy);
