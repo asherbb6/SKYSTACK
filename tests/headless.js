@@ -426,6 +426,13 @@ check('a fresh run arms the starting region intro', () => {
   ri.run('mode = "endless"; startRun();');
   return ri.run('regionIntro !== null && regionIntro.ti === 0');
 });
+// ---- Phase 6: themed campaign bases ----
+check('themed-base helper exists, one theme per stage', () => bio.run(
+  'typeof drawBaseBlock === "function" && BASE_THEMES.length === TIERS.length'));
+check('drawBaseBlock renders every region base (cap + body) without throwing', () => {
+  bio.run('for (let i = 0; i < TIERS.length; i++) { drawBaseBlock(10, 10, 96, 14, i, true); drawBaseBlock(10, 30, 96, 14, i, false); }');
+  return true;
+});
 check('drawBlock renders every skin style without throwing', () => {
   bio.run('for (const st of ["gloss","stripe","ember","facet","sparkle","shimmer","glow"]) { drawBlock(10, 10, 96, 14, {h:200,s:80,l:56}, true, 0.4, st); drawBlock(10, 10, 6, 5, {h:40,s:90,l:60}, false, 0, st); }');
   return true;
@@ -440,7 +447,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v40', () => /const CACHE = 'skystack-v40'/.test(sw));
+check('sw.js cache bumped to v41', () => /const CACHE = 'skystack-v41'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));

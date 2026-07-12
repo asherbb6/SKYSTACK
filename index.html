@@ -612,6 +612,7 @@ function resetRun() {
   }
   loadout = { shield:false, aura:false, slow:false };
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY;
+  if (runLevel >= 0 && !reduceMotion) cameraY = cameraTarget + 120;   // pan-to-landmark: reveal the themed base, then settle up into play
   schedulePickups(); spawnSlider();
 }
 // wide screens: blocks travel a centered corridor (phone-width feel) instead of the
@@ -2193,6 +2194,29 @@ function render() {
   if (fadeT > 0) { ctx.globalAlpha = fadeT; ctx.fillStyle = '#0B0E1A'; ctx.fillRect(0,0,W,H); ctx.globalAlpha = 1; }
 }
 
+// a campaign level's pre-stacked foundation renders as a themed base (stone/dirt/bark/concrete/
+// cloud/metal per region) instead of bright player blocks — so you start ON a landmark platform.
+const BASE_THEMES = [
+  { b:'#3A2E36', t:'#6A5A64' },   // 0 CAVES        — stone ledge
+  { b:'#5A3F2A', t:'#4E9E3E' },   // 1 SURFACE      — dirt + grass cap
+  { b:'#3A2616', t:'#2E6E3A' },   // 2 TREETOPS     — bark + leaf cap
+  { b:'#4A5568', t:'#9AA8BE' },   // 3 ROOFTOPS     — concrete slab
+  { b:'#A8C2DE', t:'#FFFFFF' },   // 4 CLOUD NINE   — cloud
+  { b:'#6E7A9A', t:'#BFE8FF' },   // 5 JET STREAM   — pale metal
+  { b:'#5A4A6E', t:'#C77EFF' },   // 6 STRATOSPHERE
+  { b:'#2A3A5A', t:'#7EF2C5' },   // 7 AURORA       — ice
+  { b:'#33313E', t:'#8FA8FF' },   // 8 SPACE        — satellite deck
+  { b:'#463F52', t:'#FFD75E' },   // 9 ORBIT
+  { b:'#3A3450', t:'#FFF6E8' }    // 10 THE STARS
+];
+function drawBaseBlock(x, y, w, h, lvl, cap) {
+  const th = BASE_THEMES[clamp(lvl, 0, BASE_THEMES.length - 1)];
+  ctx.fillStyle = th.b; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';       ctx.fillRect(x, y, 2, h);        // shadow (left)
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(x + w - 2, y, 2, h);// lit (right)
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';       for (let bx2 = x + 4; bx2 < x + w - 3; bx2 += 8) ctx.fillRect(bx2, y + (h>>1), 1, 1);  // speckle
+  if (cap) { ctx.fillStyle = th.t; ctx.fillRect(x, y, w, 3); ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(x, y, w, 1); }   // themed platform surface
+}
 function renderWorld(cy, shX) {
   ctx.save(); ctx.translate(Math.round(shX), 0);
   const groundScreen = Math.round(GROUND_Y - cy);
@@ -2218,7 +2242,8 @@ function renderWorld(cy, shX) {
     if (isTop && squash>0 && !reduceMotion) { const sq=Math.sin(squash*Math.PI)*.35; bh=Math.round(BH*(1-sq*.4)); bw=Math.round(b.w*(1+sq*.25)); bx=b.x-(bw-b.w)/2; y+=BH-bh; }
     if (isTop) { topScreenX = b.x + b.w/2; topScreenY = Math.round(GROUND_Y-(i+1)*BH-cy); }
     if (y>H || y+bh<0) continue;
-    drawBlock(Math.round(bx),y,Math.round(bw),bh,b.col,isTop, isTop?comboGlow:0, sstyle);
+    if (runLevel >= 0 && i < runLaunch) drawBaseBlock(Math.round(bx), y, Math.round(bw), bh, runLevel, i === runLaunch - 1);   // campaign foundation = themed base
+    else drawBlock(Math.round(bx),y,Math.round(bw),bh,b.col,isTop, isTop?comboGlow:0, sstyle);
   }
   if (slider) {
     const y = Math.round(slider.y-cy);
