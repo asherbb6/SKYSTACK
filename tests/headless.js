@@ -402,6 +402,16 @@ check('drawGroundWorld renders across the whole climb without throwing', () => {
   bio.run('for (let a = 0; a < 520; a += 20) { cameraY = GROUND_Y - a*BH - (H-100); drawGroundWorld(cameraY, 40); }');
   return true;
 });
+// ---- Phase 4: wildlife ----
+check('wildlife helpers + herds exist', () => bio.run(
+  '["drawBird","drawBat","drawCaveLife"].every(f => eval("typeof "+f) === "function") && birds.length > 0 && bats.length > 0 && glowworms.length > 0'));
+check('cave wildlife is anchored to cave altitudes (below the surface line)', () => bio.run(
+  'bats.every(b => b.a < SURF_A) && glowworms.every(g => g.a < SURF_A)'));
+check('drawBird/drawBat/drawCaveLife render across the climb without throwing', () => {
+  bio.run('for (let p = 0; p < 6.3; p += 1.2) { drawBird(50, 80, 1, p, "#000"); drawBat(60, 90, p); }');
+  bio.run('for (let a = 0; a < 60; a += 8) { cameraY = GROUND_Y - a*BH - (H-100); drawCaveLife(cameraY, 30); }');
+  return true;
+});
 check('drawBlock renders every skin style without throwing', () => {
   bio.run('for (const st of ["gloss","stripe","ember","facet","sparkle","shimmer","glow"]) { drawBlock(10, 10, 96, 14, {h:200,s:80,l:56}, true, 0.4, st); drawBlock(10, 10, 6, 5, {h:40,s:90,l:60}, false, 0, st); }');
   return true;
@@ -416,7 +426,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v38', () => /const CACHE = 'skystack-v38'/.test(sw));
+check('sw.js cache bumped to v39', () => /const CACHE = 'skystack-v39'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));

@@ -566,7 +566,10 @@ let tutStep = 0;
 
 const stars = []; for (let i = 0; i < 80; i++) stars.push({ x: Math.random()*W, y: Math.random()*5000-4600, tw: Math.random()*6.28, sz: Math.random()<.2?2:1 });
 const clouds = []; for (let i = 0; i < 6; i++) clouds.push({ x: Math.random()*W, y: Math.random()*1100-850, s:.05+Math.random()*.1, w:20+Math.random()*24 });
-const birds = []; for (let i = 0; i < 3; i++) birds.push({ x: Math.random()*W, y: 120+Math.random()*80, s:.3+Math.random()*.3, ph: Math.random()*6.28 });
+const birds = []; for (let i = 0; i < 5; i++) birds.push({ x: Math.random()*W, y: 90+Math.random()*120, s:.7+Math.random()*.6, ph: Math.random()*6.28, sp:.25+Math.random()*.35 });
+// cave wildlife: bats + glow-worms live at absolute cave altitudes (a) so they stay underground as you climb
+const bats = []; for (let i = 0; i < 5; i++) bats.push({ a: 4+Math.random()*26, x: Math.random()*W, vx:(Math.random()<.5?-1:1)*(.4+Math.random()*.5), ph: Math.random()*6.28, wob: Math.random()*6.28 });
+const glowworms = []; for (let i = 0; i < 12; i++) glowworms.push({ a: 2+Math.random()*30, x: Math.random()*W, ph: Math.random()*6.28, dx: Math.random()*6.28 });
 let shooter = null, shooterTimer = 240;
 let demo = { n: 1, t: 0 };
 
@@ -1313,7 +1316,9 @@ function update(dt) {
   // clouds drift; active wind visibly blows them along
   const wEnv = wind ? Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI) : 0;
   for (const c of clouds) { c.x += (c.s + (wind ? wind.dir * wEnv * 0.5 : 0))*dt; if (c.x > W+30) c.x = -30; if (c.x < -30) c.x = W+30; }
-  for (const b of birds) { b.x += b.s*dt; if (b.x > W+16) b.x = -16; }
+  for (const b of birds) { b.x += b.sp*dt; if (b.x > W+16) b.x = -16; }
+  for (const b of bats) { b.x += b.vx*dt; b.ph += 0.32*dt; b.wob += 0.05*dt; if (b.x > W+14) b.x = -14; if (b.x < -14) b.x = W+14; }
+  for (const g of glowworms) { g.ph += 0.05*dt; g.dx += 0.03*dt; }
   shooterTimer -= dt;
   if (!shooter && shooterTimer <= 0) { shooter = { x:Math.random()*W, y:Math.random()*80, vx:1.6+Math.random(), vy:1.1+Math.random(), life:1 }; shooterTimer = 300+Math.random()*400; }
   if (shooter) { shooter.x += shooter.vx*dt; shooter.y += shooter.vy*dt; shooter.life -= .012*dt; if (shooter.life<=0) shooter = null; }
@@ -1945,6 +1950,45 @@ function rootedTree(t, seed) {
   ctx.globalAlpha = 1;
 }
 
+// a small flapping bird (multi-frame wing beat): body + head + two bent wings
+function drawBird(x, y, s, ph, col) {
+  x = Math.round(x); y = Math.round(y);
+  ctx.fillStyle = col;
+  const tip = Math.round(Math.sin(ph) * 3 * s), wl = Math.max(3, Math.round(5 * s)), bw = Math.max(2, Math.round(3 * s));
+  ctx.fillRect(x - 1, y, bw, Math.max(1, Math.round(2 * s)));               // body
+  ctx.fillRect(x + bw - 1, y - 1, 1, 1);                                    // head
+  ctx.fillRect(x - wl, y - tip, wl, 1);                                     // left wing (shoulder)
+  ctx.fillRect(x - wl, Math.min(y, y - tip), 1, Math.max(1, Math.abs(tip)));// left wing tip
+  const rx = x + bw - 1;
+  ctx.fillRect(rx, y - tip, wl, 1);                                         // right wing
+  ctx.fillRect(rx + wl - 1, Math.min(y, y - tip), 1, Math.max(1, Math.abs(tip)));
+}
+// a little bat with angular flapping wings (cave life)
+function drawBat(x, y, ph) {
+  x = Math.round(x); y = Math.round(y);
+  ctx.fillStyle = '#140E1E';
+  const up = Math.round((Math.sin(ph) * 0.5 + 0.5) * 4);
+  ctx.fillRect(x, y, 2, 2);                                                 // body
+  ctx.fillRect(x, y - 1, 1, 1); ctx.fillRect(x + 1, y - 1, 1, 1);          // ears
+  ctx.fillRect(x - 4, y - up, 4, 1); ctx.fillRect(x - 5, y - up + 1, 1, 2); ctx.fillRect(x - 2, y + 1, 2, 1);   // left wing
+  ctx.fillRect(x + 2, y - up, 4, 1); ctx.fillRect(x + 5, y - up + 1, 1, 2); ctx.fillRect(x + 2, y + 1, 2, 1);   // right wing
+}
+// bats flitting + glow-worms pulsing in the cave; each anchored to its world altitude, self-culls off-screen
+function drawCaveLife(cy, ph) {
+  for (const g of glowworms) {
+    const gy = worldY(g.a, cy) + Math.round(Math.sin(g.dx) * 6); if (gy < -6 || gy > H + 6) continue;
+    const gx = Math.round(g.x + Math.sin(g.dx * 0.7) * 10), pulse = 0.3 + 0.5 * (Math.sin(g.ph) * 0.5 + 0.5);
+    ctx.globalAlpha = pulse * 0.45; pixDisc(gx, gy, 3, 'rgba(150,240,180,0.6)');
+    ctx.globalAlpha = pulse;        ctx.fillStyle = '#D6FCB4'; ctx.fillRect(gx, gy, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+  for (const b of bats) {
+    const by = worldY(b.a, cy) + Math.round(Math.sin(b.wob) * 12); if (by < -8 || by > H + 8) continue;
+    drawBat(b.x, by, b.ph);
+  }
+  ctx.globalAlpha = 1;
+}
+
 // draw the rooted low world for the current camera; each layer self-clips by altitude (no fade)
 function drawGroundWorld(cy, ph) {
   const yCeil = worldY(SURF_A, cy);
@@ -1953,6 +1997,7 @@ function drawGroundWorld(cy, ph) {
   for (let i = 0; i < TREES.length; i++) rootedTree(TREES[i], i + 17);                         // rooted trees (in front of the towers)
   if (yCeil > 0) drawCaveWalls(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil, cy);         // underground below the ceiling
   else if (worldY(0, cy) > 0) drawCaveWalls(ph, 0, -999, cy);                                  // (transition safety) rock still below
+  drawCaveLife(cy, ph);                                                                        // bats + glow-worms (self-cull to the cave band)
   if (yCeil > -8 && yCeil < H + 8) drawSurfaceGround(ph, yCeil);
 }
 
@@ -2050,7 +2095,7 @@ function render() {
     ctx.globalAlpha = (.58-dark)*.95; ctx.fillStyle = '#FFF6E8';
     for (const c of clouds) { const cyy = Math.floor(c.y - (menu?tick*.3:cy*.4)); if (cyy<-20||cyy>H+20) continue; const cx=Math.floor(c.x); ctx.fillRect(cx,cyy,Math.floor(c.w),5); ctx.fillRect(cx+4,cyy-3,Math.floor(c.w*.6),3); ctx.fillRect(cx+2,cyy+5,Math.floor(c.w*.75),3); }
     ctx.globalAlpha = 1;
-    if (dark < .35 && !menu) { ctx.fillStyle = 'rgba(40,30,60,0.7)'; for (const b of birds) { const flap = Math.sin(tick*.2+b.ph)*2; ctx.fillRect(Math.floor(b.x),Math.floor(b.y),2,1); ctx.fillRect(Math.floor(b.x-2),Math.floor(b.y-flap),2,1); ctx.fillRect(Math.floor(b.x+2),Math.floor(b.y-flap),2,1); } }
+    if (dark < .4 && (menu || h > SURF_A)) { for (const b of birds) drawBird(b.x, b.y, b.s, tick*.22 + b.ph, 'rgba(38,28,54,0.78)'); }   // birds ride the daytime sky, never underground
   }
   if (!menu) drawBiomeDecor(cy);   // per-tier biome sprites you climb past (matches the map)
   drawEventFx(menu);
