@@ -587,6 +587,8 @@ const birds = []; for (let i = 0; i < 5; i++) birds.push({ x: Math.random()*W, y
 // cave wildlife: bats + glow-worms live at absolute cave altitudes (a) so they stay underground as you climb
 const bats = []; for (let i = 0; i < 5; i++) bats.push({ a: 4+Math.random()*26, x: Math.random()*W, vx:(Math.random()<.5?-1:1)*(.4+Math.random()*.5), ph: Math.random()*6.28, wob: Math.random()*6.28 });
 const glowworms = []; for (let i = 0; i < 12; i++) glowworms.push({ a: 2+Math.random()*30, x: Math.random()*W, ph: Math.random()*6.28, dx: Math.random()*6.28 });
+// AI-generated pixel-art sprites (loaded async; guarded so the headless VM without Image() is fine)
+const caveBgImg = (typeof Image !== 'undefined') ? Object.assign(new Image(), { src: './assets/cave-bg.png' }) : null;
 let shooter = null, shooterTimer = 240;
 let demo = { n: 1, t: 0 };
 
@@ -1828,6 +1830,16 @@ function drawSkylineHaze(ph, yCeil) {
 // into darkness for depth, crystals, and the dripstone ceiling + escape hole up top.
 function drawCaveWalls(ph, top, ceilY, cy) {
   const under = H - top; if (under <= 0) return;
+  // AI pixel-art cave backdrop (tiled + parallax) when the sprite has loaded — replaces the procedural wall
+  if (caveBgImg && caveBgImg.complete && caveBgImg.naturalWidth) {
+    ctx.imageSmoothingEnabled = false;
+    const ih = Math.round(W * caveBgImg.naturalHeight / caveBgImg.naturalWidth);
+    const off = ((Math.round(cy * 0.5) % ih) + ih) % ih;
+    for (let y = top - off; y < H; y += ih) ctx.drawImage(caveBgImg, 0, y, W, ih);
+    ctx.imageSmoothingEnabled = true;
+    if (ceilY > -6 && ceilY < H) drawCaveCeiling(ph, ceilY);
+    return;
+  }
   const T = 18, aOf = y => (GROUND_Y - cy - y) / BH;                                          // screen-y -> world altitude
   // 1) background wall: dim, receding into black the deeper you are
   const g = ctx.createLinearGradient(0, top, 0, H);
@@ -1870,27 +1882,29 @@ function drawCaveWalls(ph, top, ceilY, cy) {
   }
   ctx.globalAlpha = 1;
   // 5) dripstone ceiling + escape hole + daylight shaft
-  if (ceilY > -6 && ceilY < H) {
-    const shaftW = Math.round(W * SHAFT_W_F), cxL = Math.round((W - shaftW) / 2), cxR = cxL + shaftW;
-    for (let yy = ceilY; yy < Math.min(H, ceilY + 220); yy += 5) {                             // sunbeam spilling through the hole
-      const t = (yy - ceilY) / 220, w2 = shaftW * (0.66 + t * 0.5);
-      ctx.globalAlpha = 0.09 * (1 - t); ctx.fillStyle = 'rgba(255,240,200,0.9)'; ctx.fillRect(Math.round(W/2 - w2/2), yy, Math.round(w2), 5);
-    }
-    ctx.globalAlpha = 1; ctx.fillStyle = '#2E2230';
-    for (let x = 0; x < W; x += 8) {
-      if (x > cxL - 10 && x < cxR + 10) continue;                                              // leave the escape hole open
-      const sl = Math.round(6 + bhash(x*5) * 15);
-      ctx.fillRect(x, ceilY - 3, 8, 4);
-      for (let t = 0; t < sl; t++) { const ww = Math.max(1, Math.round((1 - t/sl) * 5)); ctx.fillRect(Math.round(x+4 - ww/2), ceilY + t, ww, 1); }
-    }
-    for (let k = 0; k < 7; k++) { const rx = Math.round(bhash(k*23) * W); if (rx > cxL - 6 && rx < cxR + 6) continue;   // hanging roots on the dirt rim
-      ctx.globalAlpha = 0.6; ctx.fillStyle = '#3A2A18'; ctx.fillRect(rx, ceilY + 2, 1, 6 + Math.round(bhash(k*5) * 10)); }
-    ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(255,236,180,0.7)';
-    ctx.fillRect(cxL - 10, ceilY - 1, 10, 2); ctx.fillRect(cxR, ceilY - 1, 10, 2);
-    ctx.globalAlpha = 1;
-    if (!reduceMotion) { const dp = (ph*2) % 130, dx = Math.round(W/2 + Math.sin(ph*0.7) * shaftW * 0.3);
-      ctx.globalAlpha = 0.5; ctx.fillStyle = '#9FD8E8'; ctx.fillRect(dx, ceilY + dp, 1, 3); ctx.globalAlpha = 1; }
+  if (ceilY > -6 && ceilY < H) drawCaveCeiling(ph, ceilY);
+}
+// dripstone ceiling + escape hole + daylight shaft + roots + drip (shared by the procedural + AI cave paths)
+function drawCaveCeiling(ph, ceilY) {
+  const shaftW = Math.round(W * SHAFT_W_F), cxL = Math.round((W - shaftW) / 2), cxR = cxL + shaftW;
+  for (let yy = ceilY; yy < Math.min(H, ceilY + 220); yy += 5) {                             // sunbeam spilling through the hole
+    const t = (yy - ceilY) / 220, w2 = shaftW * (0.66 + t * 0.5);
+    ctx.globalAlpha = 0.09 * (1 - t); ctx.fillStyle = 'rgba(255,240,200,0.9)'; ctx.fillRect(Math.round(W/2 - w2/2), yy, Math.round(w2), 5);
   }
+  ctx.globalAlpha = 1; ctx.fillStyle = '#2E2230';
+  for (let x = 0; x < W; x += 8) {
+    if (x > cxL - 10 && x < cxR + 10) continue;                                              // leave the escape hole open
+    const sl = Math.round(6 + bhash(x*5) * 15);
+    ctx.fillRect(x, ceilY - 3, 8, 4);
+    for (let t = 0; t < sl; t++) { const ww = Math.max(1, Math.round((1 - t/sl) * 5)); ctx.fillRect(Math.round(x+4 - ww/2), ceilY + t, ww, 1); }
+  }
+  for (let k = 0; k < 7; k++) { const rx = Math.round(bhash(k*23) * W); if (rx > cxL - 6 && rx < cxR + 6) continue;   // hanging roots on the dirt rim
+    ctx.globalAlpha = 0.6; ctx.fillStyle = '#3A2A18'; ctx.fillRect(rx, ceilY + 2, 1, 6 + Math.round(bhash(k*5) * 10)); }
+  ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(255,236,180,0.7)';
+  ctx.fillRect(cxL - 10, ceilY - 1, 10, 2); ctx.fillRect(cxR, ceilY - 1, 10, 2);
+  ctx.globalAlpha = 1;
+  if (!reduceMotion) { const dp = (ph*2) % 130, dx = Math.round(W/2 + Math.sin(ph*0.7) * shaftW * 0.3);
+    ctx.globalAlpha = 0.5; ctx.fillStyle = '#9FD8E8'; ctx.fillRect(dx, ceilY + dp, 1, 3); ctx.globalAlpha = 1; }
 }
 
 // the grass+dirt surface lip on either side of the escape hole, where trees & buildings root
