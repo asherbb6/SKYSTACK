@@ -433,6 +433,14 @@ check('drawBaseBlock renders every region base (cap + body) without throwing', (
   bio.run('for (let i = 0; i < TIERS.length; i++) { drawBaseBlock(10, 10, 96, 14, i, true); drawBaseBlock(10, 30, 96, 14, i, false); }');
   return true;
 });
+// ---- Phase 7: region materials + wind ----
+check('materials: one per stage with tunable fields', () => bio.run(
+  'MATERIALS.length === TIERS.length && MATERIALS.every(m => typeof m.spd === "number" && typeof m.wob === "number" && typeof m.wind === "number" && typeof m.name === "string")'));
+check('matAt clamps to a valid material', () => bio.run(
+  'matAt(0) === MATERIALS[0] && matAt(-5) === MATERIALS[0] && matAt(999) === MATERIALS[MATERIALS.length-1]'));
+check('slick ice slider is quicker than heavy stone at the same height', () => bio.run(
+  '(() => { while (blocks.length < 40) blocks.push({x:0,w:96,col:"#fff"}); runLevel = -1; assist = 0; slowBlocks = 0; auraBlocks = 0; tier = 0; spawnSlider(); const stone = slider.speed; tier = 7; spawnSlider(); const ice = slider.speed; return stone > 0 && ice > stone; })()'));
+check('caves are more sheltered from wind than the jet stream', () => bio.run('matAt(0).wind < matAt(5).wind'));
 check('drawBlock renders every skin style without throwing', () => {
   bio.run('for (const st of ["gloss","stripe","ember","facet","sparkle","shimmer","glow"]) { drawBlock(10, 10, 96, 14, {h:200,s:80,l:56}, true, 0.4, st); drawBlock(10, 10, 6, 5, {h:40,s:90,l:60}, false, 0, st); }');
   return true;
@@ -447,7 +455,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v41', () => /const CACHE = 'skystack-v41'/.test(sw));
+check('sw.js cache bumped to v42', () => /const CACHE = 'skystack-v42'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
