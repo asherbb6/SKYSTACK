@@ -540,6 +540,7 @@ let squash = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
 let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, coinPop = 0, tick = 0;
 let score = 0;
 let bannerText = '', bannerT = 0;
+let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
 let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false;
 let wind = null, windTimer = 260;
 let nextPickupRow = 8;
@@ -847,7 +848,7 @@ function afterPlace(f, updateBalance, placedCenter) {
     addCoins(reward, W/2, 40);
     floaters.push({ text:'+'+reward, x:W/2, y:towerTopY()-BH-18, vy:-.35, life:1.4, color:'#FFD75E' });
     burst(W/2, towerTopY()-BH, 24, f.col, true); shake = Math.max(shake, reduceMotion?2:4);
-    sfx.milestone(); tier++;
+    sfx.milestone(); tier++; startRegionIntro(tier);   // entering the next region — play its intro
   }
   const bh2 = bestBlocksFor(mode);
   if (!runLaunch && runLevel < 0 && h > bh2 && !newHeight && bh2 > 0) {
@@ -1083,7 +1084,7 @@ function adaptToScreen() {
 // ---------- input ----------
 function pos(e) { if (!canvasRect) canvasRect = canvas.getBoundingClientRect(); const r = canvasRect; return { x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H }; }
 function inR(p, r, pad) { pad = pad||0; return p.x>=r.x-pad && p.x<=r.x+r.w+pad && p.y>=r.y-pad && p.y<=r.y+r.h+pad; }
-function startRun() { resetRun(); state = 'playing'; sfx.start(); }
+function startRun() { resetRun(); startRegionIntro(tier); state = 'playing'; sfx.start(); }
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
@@ -1241,6 +1242,7 @@ function update(dt) {
   if (squash > 0) squash = Math.max(0, squash - .07*dt);
   if (flashT > 0) flashT = Math.max(0, flashT - .05*dt);
   if (bannerT > 0) bannerT = Math.max(0, bannerT - .006*dt);
+  if (regionIntro) { regionIntro.t += dt; if (regionIntro.t >= regionIntro.dur) regionIntro = null; }
   if (coinPop > 0) coinPop = Math.max(0, coinPop - .05*dt);
   if (fadeT > 0) fadeT = Math.max(0, fadeT - .06*dt);
   if (overLock > 0) overLock -= dt;
@@ -2031,6 +2033,69 @@ function drawBiomeDecor(cy) {
   }
 }
 
+// ---------- region entry cinematics ----------
+// A short, non-blocking overlay that fires when you ENTER a region (run start + each crossing).
+// The board keeps playing underneath. reduceMotion -> a plain static title card.
+function startRegionIntro(ti) {
+  if (ti < 0 || ti >= TIERS.length) return;
+  regionIntro = { ti, t: 0, dur: reduceMotion ? 55 : 100 };
+}
+const INTRO_TAGS = ['ESCAPE THE DEEP','INTO THE LIGHT','OVER THE CANOPY','ABOVE THE CITY','INTO THE CLOUDS','RIDE THE WIND','GOLDEN HOUR','POLAR LIGHTS','LEAVE THE SKY','ABOVE THE WORLD','THE SUMMIT'];
+// the per-region signature flourish (screen-space, procedural — no persistent particle arrays)
+function drawIntroFx(ti, p, env, ph) {
+  if (ti === 0) {                                                                    // CAVES — dark receding, crystals igniting
+    ctx.globalAlpha = env * (1 - p) * 0.55; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    for (let k = 0; k < 16; k++) { const gx = (k*53) % W, gy = (k*89) % H, tw = Math.max(0, Math.sin(p*6 + k));
+      ctx.globalAlpha = env * tw * 0.9; ctx.fillStyle = k % 2 ? '#7EE8C5' : '#B58CF0'; ctx.fillRect(gx, gy, 2, 2); }
+  } else if (ti === 1) {                                                              // SURFACE — ceiling shatters, light floods, debris rains
+    const g = ctx.createLinearGradient(0, 0, 0, H*0.6); g.addColorStop(0, 'rgba(255,244,200,0.9)'); g.addColorStop(1, 'rgba(255,244,200,0)');
+    ctx.globalAlpha = env * (1 - p) * 0.8; ctx.fillStyle = g; ctx.fillRect(0, 0, W, Math.round(H*0.6));
+    ctx.fillStyle = '#4A382A'; for (let k = 0; k < 16; k++) { const dx = (k*61) % W, dy = ((p*H*1.3 + k*40) % (H + 40)) - 20;
+      ctx.globalAlpha = env * 0.85; ctx.fillRect(dx, Math.round(dy), 2 + (k % 3), 2 + (k % 3)); }
+  } else if (ti === 2) {                                                              // TREETOPS — leaves burst up through sunbeams
+    for (let k = 0; k < 22; k++) { const a2 = k*0.63, lx = W/2 + Math.cos(a2)*p*W*0.6, ly = H*0.62 - p*H*0.5 + Math.sin(a2)*18;
+      ctx.globalAlpha = env * (1 - p) * 0.9; ctx.fillStyle = k % 2 ? '#3E8A32' : '#6ECB54'; ctx.fillRect(Math.round(lx), Math.round(ly), 3, 3); }
+  } else if (ti === 3) {                                                              // ROOFTOPS — window lights flicker on, a plane crosses
+    for (let k = 0; k < 26; k++) { const wx = (k*37) % W, wy = Math.round(H*0.28) + (k*53) % Math.round(H*0.5);
+      ctx.globalAlpha = env * (Math.sin(p*9 + k) > 0 ? 0.9 : 0.12); ctx.fillStyle = '#FFE08A'; ctx.fillRect(wx, wy, 3, 3); }
+    const px = W + 40 - p*(W + 80); ctx.globalAlpha = env; ctx.fillStyle = '#C7D2E6'; ctx.fillRect(Math.round(px), Math.round(H*0.2), 8, 3); ctx.fillRect(Math.round(px)+8, Math.round(H*0.2)+1, 3, 1);
+  } else if (ti === 4) {                                                              // CLOUD NINE — punch through a cloud floor, it parts
+    const gap = p*W*0.7; ctx.globalAlpha = env * (1 - p);
+    pixDisc(Math.round(W/2 - gap - 34), Math.round(H*0.5), 42, '#FFFFFF'); pixDisc(Math.round(W/2 + gap + 34), Math.round(H*0.5), 42, '#FFFFFF');
+  } else if (ti === 5) {                                                              // JET STREAM — speed lines whip past
+    ctx.fillStyle = '#EAF6FF'; for (let k = 0; k < 18; k++) { const sy = (k*47) % H, sx = -100 + ((p*3 + k*0.11) % 1) * (W + 200);
+      ctx.globalAlpha = env * 0.7; ctx.fillRect(Math.round(sx), sy, 60, 2); }
+  } else if (ti === 6) {                                                              // STRATOSPHERE — the sunset ignites in a golden bloom
+    ctx.globalAlpha = env * (1 - p) * 0.6; pixDisc(Math.round(W*0.7), Math.round(H*0.4), Math.round(20 + p*130), '#FFC46A');
+  } else if (ti === 7) {                                                              // AURORA — ribbons ripple across
+    for (let k = 0; k < 3; k++) { ctx.fillStyle = k === 1 ? 'hsl(285,80%,60%)' : 'hsl(150,85%,55%)';
+      for (let ax = 0; ax < W; ax += 4) { const ay = H*0.3 + k*20 + Math.sin(ph*0.06 + ax*0.04 + k)*26*env; ctx.globalAlpha = env*0.15; ctx.fillRect(ax, Math.round(ay), 4, 42); } }
+  } else if (ti === 8) {                                                              // SPACE — the atmosphere falls away, stars pop into silence
+    const bandY = p*H; const g = ctx.createLinearGradient(0, bandY - 70, 0, bandY); g.addColorStop(0, 'rgba(60,130,220,0)'); g.addColorStop(1, 'rgba(30,60,140,0.7)');
+    ctx.globalAlpha = env * (1 - p); ctx.fillStyle = g; ctx.fillRect(0, Math.round(bandY - 70), W, 70);
+    for (let k = 0; k < 30; k++) { const sx = (k*61) % W, sy = (k*47) % H, tw = Math.max(0, Math.sin(p*5 + k)); ctx.globalAlpha = env * tw; ctx.fillStyle = '#FFF6E8'; ctx.fillRect(sx, sy, 1, 1); }
+  } else if (ti === 9) {                                                              // ORBIT — Earth's limb curves below, a satellite drifts
+    const hy = H - p*H*0.42; ctx.fillStyle = '#183566';
+    for (let x = 0; x < W; x += 2) { const tt = (x - W/2)/W, top = hy + Math.round(tt*tt*90); ctx.globalAlpha = env*0.6; ctx.fillRect(x, Math.round(top), 2, H - top); }
+    const sx = p*(W + 60) - 30; ctx.globalAlpha = env; ctx.fillStyle = '#C7CFE6'; ctx.fillRect(Math.round(sx), Math.round(H*0.25), 3, 3); ctx.fillStyle = '#8FB8FF'; ctx.fillRect(Math.round(sx)-4, Math.round(H*0.25)+1, 3, 1); ctx.fillRect(Math.round(sx)+3, Math.round(H*0.25)+1, 3, 1);
+  } else {                                                                            // THE STARS — a finale constellation burst
+    for (let k = 0; k < 26; k++) { const a2 = k*0.52, r2 = p*W*0.55, sx = W/2 + Math.cos(a2)*r2, sy = H*0.4 + Math.sin(a2)*r2*0.8;
+      ctx.globalAlpha = env * (1 - p); ctx.fillStyle = k % 2 ? '#FFE28A' : '#FFF6E8'; ctx.fillRect(Math.round(sx), Math.round(sy), 2, 2); }
+  }
+  ctx.globalAlpha = 1;
+}
+function renderRegionIntro() {
+  const R = regionIntro, T = TIERS[R.ti], p = clamp(R.t / R.dur, 0, 1);
+  const env = Math.min(clamp(R.t / (R.dur*0.18), 0, 1), clamp((R.dur - R.t) / (R.dur*0.3), 0, 1));
+  if (!reduceMotion) drawIntroFx(R.ti, p, env, tick);
+  const cx = Math.round(W/2), ty = Math.round(H*0.32), nameW = T.name.length*12 + 24;
+  ctx.globalAlpha = env * 0.4; ctx.fillStyle = '#000'; ctx.fillRect(cx - nameW/2, ty - 14, nameW, 30);
+  ctx.globalAlpha = env; ctx.fillStyle = T.c; ctx.fillRect(cx - nameW/2, ty - 14, nameW, 2); ctx.fillRect(cx - nameW/2, ty + 14, nameW, 2);
+  txt(T.name, cx, ty - 8, 2, T.c, 'center');
+  ctx.globalAlpha = env * 0.85; txt(INTRO_TAGS[R.ti], cx, ty + 20, 1, 'rgba(255,246,232,0.9)', 'center');
+  ctx.globalAlpha = 1;
+}
+
 // ---------- background & world render ----------
 function render() {
   const h = blocks.length;
@@ -2101,6 +2166,7 @@ function render() {
   drawEventFx(menu);
 
   if (!menu) renderWorld(cy, shX);
+  if (!menu && regionIntro) renderRegionIntro();   // cinematic region-entry overlay, on top of the world
 
   if (state === 'splash') renderSplash();
   else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (skyMap) renderSkyMap(); }

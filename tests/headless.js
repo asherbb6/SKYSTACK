@@ -412,6 +412,20 @@ check('drawBird/drawBat/drawCaveLife render across the climb without throwing', 
   bio.run('for (let a = 0; a < 60; a += 8) { cameraY = GROUND_Y - a*BH - (H-100); drawCaveLife(cameraY, 30); }');
   return true;
 });
+// ---- Phase 5: region entry cinematics ----
+check('region intro system exists, one tag per stage, arms on entry', () => bio.run(
+  '(() => { regionIntro = null; return typeof startRegionIntro === "function" && typeof renderRegionIntro === "function" && INTRO_TAGS.length === TIERS.length && (startRegionIntro(0), regionIntro !== null && regionIntro.ti === 0 && regionIntro.dur > 0); })()'));
+check('startRegionIntro ignores out-of-range tiers', () => bio.run(
+  '(() => { regionIntro = null; startRegionIntro(-1); startRegionIntro(TIERS.length); return regionIntro === null; })()'));
+check('renderRegionIntro renders every region at every phase without throwing', () => {
+  bio.run('for (let i = 0; i < TIERS.length; i++) { for (const tt of [2, 45, 96]) { regionIntro = {ti:i, t:tt, dur:100}; renderRegionIntro(); } } regionIntro = null;');
+  return true;
+});
+check('a fresh run arms the starting region intro', () => {
+  const ri = makeGame();
+  ri.run('mode = "endless"; startRun();');
+  return ri.run('regionIntro !== null && regionIntro.ti === 0');
+});
 check('drawBlock renders every skin style without throwing', () => {
   bio.run('for (const st of ["gloss","stripe","ember","facet","sparkle","shimmer","glow"]) { drawBlock(10, 10, 96, 14, {h:200,s:80,l:56}, true, 0.4, st); drawBlock(10, 10, 6, 5, {h:40,s:90,l:60}, false, 0, st); }');
   return true;
@@ -426,7 +440,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v39', () => /const CACHE = 'skystack-v39'/.test(sw));
+check('sw.js cache bumped to v40', () => /const CACHE = 'skystack-v40'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
