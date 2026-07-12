@@ -433,6 +433,8 @@ check('drawBaseBlock renders every region base (cap + body) without throwing', (
   bio.run('for (let i = 0; i < TIERS.length; i++) { drawBaseBlock(10, 10, 96, 14, i, true); drawBaseBlock(10, 30, 96, 14, i, false); }');
   return true;
 });
+check('landmark-platform helper renders every region without throwing', () => bio.run(
+  '(() => { if (typeof drawLandmarkPlatform !== "function") return false; for (let i = 0; i < TIERS.length; i++) drawLandmarkPlatform(W/2, 100, 96, i); return true; })()'));
 // ---- Phase 7: region materials + wind ----
 check('materials: one per stage with tunable fields', () => bio.run(
   'MATERIALS.length === TIERS.length && MATERIALS.every(m => typeof m.spd === "number" && typeof m.wob === "number" && typeof m.wind === "number" && typeof m.name === "string")'));
@@ -455,7 +457,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v42', () => /const CACHE = 'skystack-v42'/.test(sw));
+check('sw.js cache bumped to v44', () => /const CACHE = 'skystack-v44'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
