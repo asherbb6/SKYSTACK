@@ -1831,6 +1831,57 @@ function drawSkylineHaze(ph, yCeil) {
 // ===== procedural CAVE (Level 1) — dark, earthy, animated, physical. No image backdrops:
 // every layer is drawn live, anchored to world altitude, and moves with the climb.
 // Palette: dark browns / tan dirt / charcoal stone / muted moss / warm torch orange. No blue.
+// Reference-density rock: hundreds of individually-shaded pebbles are GENERATED ONCE into an
+// offscreen texture at load, then stamped wherever rock is needed — illustration-level density
+// at zero per-frame cost. (This is how the walls get the packed, lumpy look.)
+const CAVETEX_W = 72, CAVETEX_H = 216;
+const caveTex = (() => {
+  try {
+    const c = document.createElement('canvas'); c.width = CAVETEX_W; c.height = CAVETEX_H;
+    const g = c.getContext('2d'); if (!g) return null;
+    const disc = (x, y, r, col) => { g.fillStyle = col;                                       // chunky pixel-art disc (3 stacked rects)
+      g.fillRect(Math.round(x - r), Math.round(y - r*0.5), r*2, r);
+      g.fillRect(Math.round(x - r*0.66), Math.round(y - r), Math.round(r*1.32), Math.round(r*0.55));
+      g.fillRect(Math.round(x - r*0.66), Math.round(y + r*0.5), Math.round(r*1.32), Math.round(r*0.5)); };
+    g.fillStyle = '#1C130C'; g.fillRect(0, 0, CAVETEX_W, CAVETEX_H);                           // packed-dirt base
+    for (let k = 0; k < 240; k++) {                                                            // pebble field, 3-tone shaded
+      const px = bhash(k*7 + 1) * CAVETEX_W, py = bhash(k*13 + 2) * CAVETEX_H, r = 2 + bhash(k*3 + 5) * 5;
+      const t = bhash(k*11), base = t > 0.6 ? '#3A2C1E' : t > 0.3 ? '#332619' : '#2A2018';    // varied brown/gray rocks
+      disc(px + 1, py + 1.5, r, '#0E0906');                                                    // drop shadow
+      disc(px, py, r, base);
+      disc(px - r*0.3, py - r*0.35, Math.max(1, r*0.45), t > 0.5 ? '#5A4630' : '#4A3A28');     // top-left light
+      if (bhash(k*17) > 0.9) { g.fillStyle = '#141310'; g.fillRect(Math.round(px), Math.round(py - r), 1, Math.round(r*1.6)); }   // crack
+    }
+    for (let k = 0; k < 26; k++) {                                                             // moss creeping over upper faces
+      const px = bhash(k*23 + 3) * CAVETEX_W, py = bhash(k*29 + 7) * CAVETEX_H;
+      g.fillStyle = k & 1 ? '#3C5424' : '#2C3C1A'; g.fillRect(Math.round(px), Math.round(py), 3 + (k % 3), 2);
+      g.fillStyle = '#4A6A2C'; g.fillRect(Math.round(px) + 1, Math.round(py) - 1, 2, 1);
+    }
+    for (let k = 0; k < 40; k++) { g.fillStyle = 'rgba(90,70,46,0.5)';                         // fine grit sparkle
+      g.fillRect(Math.round(bhash(k*31) * CAVETEX_W), Math.round(bhash(k*37 + 9) * CAVETEX_H), 1, 1); }
+    return c;
+  } catch (e) { return null; }
+})();
+// smooth organic wall width — coarse noise segments lerped so the walls bulge and recede
+// in big rounded masses instead of a straight jagged strip
+function caveWallW(row, side, baseW) {
+  const seg = Math.floor(row / 7), f = (row - seg * 7) / 7;
+  const a = bhash(seg*7 + side*131), b = bhash((seg + 1)*7 + side*131);
+  const n = a + (b - a) * (f*f*(3 - 2*f));                                                    // smoothstep
+  return baseW + Math.round(n * 30);
+}
+// stamp the cached rock texture across a horizontal span (world-anchored source row = stable while climbing)
+function blitCaveTex(x0, y, w, h, srcRow) {
+  if (!caveTex) { ctx.fillStyle = '#2A2018'; ctx.fillRect(x0, y, w, h); return; }
+  ctx.imageSmoothingEnabled = false;
+  const sy = ((srcRow % CAVETEX_H) + CAVETEX_H) % CAVETEX_H;
+  const sh = Math.min(h, CAVETEX_H - sy);
+  for (let cx = 0; cx < w; cx += CAVETEX_W) {
+    const sw = Math.min(CAVETEX_W, w - cx);
+    ctx.drawImage(caveTex, 0, sy, sw, sh, x0 + cx, y, sw, sh);
+    if (sh < h) ctx.drawImage(caveTex, 0, 0, sw, h - sh, x0 + cx, y + sh, sw, h - sh);        // wrap the tile seam
+  }
+}
 // deep background: warm-black earth gradient, far rock lumps (slow parallax), dark tunnel
 // mouths with occasional blinking eye glints.
 function drawCaveBackdrop(top, cy, ph) {
@@ -1838,6 +1889,15 @@ function drawCaveBackdrop(top, cy, ph) {
   const g = ctx.createLinearGradient(0, top, 0, H);
   g.addColorStop(0, '#241811'); g.addColorStop(0.45, '#150E0A'); g.addColorStop(1, '#080504');
   ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.fillRect(0, top, W, under);
+  // the whole back wall is packed rock too (dim, half-speed parallax) — then the centre is
+  // sunk back into darkness so the open cavern reads and the play lane stays clear
+  ctx.globalAlpha = 0.38;
+  for (let y = top; y < H; y += 12) blitCaveTex(0, y, W, Math.min(12, H - y), Math.round((GROUND_Y - cy * 0.5 - y)));
+  ctx.globalAlpha = 1;
+  const hg = ctx.createLinearGradient(0, 0, W, 0);
+  hg.addColorStop(0, 'rgba(6,4,3,0)'); hg.addColorStop(0.32, 'rgba(6,4,3,0.72)');
+  hg.addColorStop(0.68, 'rgba(6,4,3,0.72)'); hg.addColorStop(1, 'rgba(6,4,3,0)');
+  ctx.fillStyle = hg; ctx.fillRect(0, top, W, under);
   const P = 68, s = cy * 0.4, off = ((s % P) + P) % P;                                        // far rock lumps
   for (let y = top - off - P; y < H; y += P) { const row = Math.round((y + s) / P);
     for (let k = 0; k < 4; k++) { const ly = Math.round(y + bhash(row*3 + k) * P), lr = 8 + Math.round(bhash(row + k) * 9);
@@ -1863,24 +1923,35 @@ function drawCaveBackdrop(top, cy, ph) {
 // and altitude-anchored decor (mushrooms on ledges, hanging roots, corner cobwebs).
 function drawCaveWalls(top, cy, ph) {
   if (H - top <= 0) return;
-  const baseW = Math.round(W * 0.19);
+  const baseW = Math.round(W * 0.17);
   for (const side of [0, 1]) {
-    for (let y = top; y < H; y += 5) {
-      const row = Math.round((GROUND_Y - cy - y) / 5);
-      const w = baseW + Math.round(bhash(row*7 + side*131) * 20);
+    let prevW = -1;
+    for (let y = top; y < H; y += 4) {
+      const row = Math.round((GROUND_Y - cy - y) / 4);
+      const w = caveWallW(row, side, baseW);
       const x0 = side ? W - w : 0, inner = side ? x0 : x0 + w;
-      const sh = bhash(row*13 + side*29), v = 26 + Math.round(sh * 20);
-      ctx.globalAlpha = 1; ctx.fillStyle = 'rgb(' + (v + 10) + ',' + (v + 2) + ',' + (v - 6) + ')';
-      ctx.fillRect(x0, y, w, 5);
-      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(side ? inner : inner - 3, y, 3, 5);            // inner-edge shadow = depth
-      if (sh > 0.82) { ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x0 + (side ? 5 : w - 6), y, 1, 5); }   // crack
-      if (bhash(row*3 + side*7) < 0.14) { ctx.fillStyle = row & 1 ? '#3C5424' : '#2C3C1A';             // moss clumps
-        ctx.fillRect(x0 + (side ? 4 : w - 12) + Math.round(bhash(row) * 6), y + 1, 4, 3); }
+      ctx.globalAlpha = 1;
+      blitCaveTex(x0, y, w, 4, row * 4 + side * 97);                                           // dense pebbled rock skin
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(side ? inner : inner - 4, y, 4, 4);      // AO into the lane
+      ctx.fillStyle = 'rgba(0,0,0,0.24)'; ctx.fillRect(side ? inner + 4 : inner - 8, y, 4, 4); // soft falloff
+      ctx.fillStyle = 'rgba(122,96,62,0.45)'; ctx.fillRect(side ? inner - 1 : inner, y, 1, 4); // lit rock rim on the edge
+      if (prevW >= 0 && w < prevW - 3) {                                                       // overhang: teeth hang under the bulge
+        const ledge = side ? W - prevW : prevW;
+        ctx.fillStyle = '#241A10';
+        for (let t = 0; t < 3; t++) { const tx = side ? ledge + t*4 : ledge - 4 - t*4, tl = 3 + Math.round(bhash(row*5 + t) * 5);
+          ctx.fillRect(tx, y, 2, tl); }
+      }
+      if (prevW >= 0 && w > prevW + 3) {                                                       // ledge top: lit lip + a pebble
+        const lx = side ? W - w : prevW;
+        ctx.fillStyle = 'rgba(122,96,62,0.6)'; ctx.fillRect(lx, y, Math.abs(w - prevW), 1);
+        if (bhash(row*19) > 0.5) { ctx.fillStyle = '#3A2C1E'; ctx.fillRect(lx + 2, y - 2, 3, 2); }
+      }
+      prevW = w;
     }
-    const DP = 44, doff = ((cy % DP) + DP) % DP;                                                       // decor along the inner edge
+    const DP = 34, doff = ((cy % DP) + DP) % DP;                                               // decor along the inner edge (denser)
     for (let y = top - doff; y < H; y += DP) {
       const row = Math.round((GROUND_Y - cy - y) / DP), r2 = bhash(row*9 + side*53);
-      const w = baseW + Math.round(bhash(Math.round((GROUND_Y - cy - y) / 5)*7 + side*131) * 20);
+      const w = caveWallW(Math.round((GROUND_Y - cy - y) / 4), side, baseW);
       const inx = side ? W - w : w, my = Math.round(y);
       if (my < top - 10 || my > H + 10) continue;
       if (r2 < 0.3) {                                                                                  // mushrooms on a ledge
@@ -1894,7 +1965,14 @@ function drawCaveWalls(top, cy, ph) {
         ctx.globalAlpha = 0.9; ctx.fillStyle = '#3A2814';
         for (let t = 0; t < rl; t++) ctx.fillRect(Math.round(rx + sway * t / rl), my + t, 1, 1);
         ctx.fillStyle = '#2A1C0E'; ctx.fillRect(rx, my, 1, 3);                                         // thick anchor at the wall
-      } else if (r2 > 0.9) {                                                                           // corner cobweb, shimmering
+      } else if (r2 < 0.85) {                                                                          // stalactite cluster off the wall face
+        const sx0 = side ? inx - 1 : inx - 7;
+        ctx.globalAlpha = 1;
+        for (let t = 0; t < 3; t++) { const tl = 4 + Math.round(bhash(row*7 + t*3) * 9), tx = sx0 + t*3;
+          ctx.fillStyle = '#2E2216'; ctx.fillRect(tx, my, 2, tl);
+          ctx.fillStyle = '#1A120C'; ctx.fillRect(tx + 1, my, 1, tl);
+          ctx.fillStyle = 'rgba(122,96,62,0.5)'; ctx.fillRect(tx, my, 2, 1); }
+      } else {                                                                                         // corner cobweb, shimmering
         const cx2 = side ? W - 1 : 0, dir = side ? -1 : 1;
         ctx.globalAlpha = reduceMotion ? 0.25 : 0.16 + 0.1 * Math.sin(ph*0.04 + row);
         ctx.fillStyle = '#D6D6C8';
@@ -1908,11 +1986,11 @@ function drawCaveWalls(top, cy, ph) {
 function drawCaveGround(cy, ph) {
   const gy = worldY(0, cy); if (gy > H + 20) return;
   const y0 = Math.max(0, gy - 2);
-  const g = ctx.createLinearGradient(0, y0, 0, H); g.addColorStop(0, '#3A2A1A'); g.addColorStop(1, '#150E08');
-  ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.fillRect(0, y0, W, H - y0);
+  ctx.globalAlpha = 1;
+  blitCaveTex(0, y0, W, H - y0, 60);                                                             // same pebbled rock as the walls
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, Math.min(H, gy + 26), W, Math.max(0, H - gy - 26));   // darker with depth
   ctx.fillStyle = '#4A3622'; for (let x = 0; x < W; x += 6) { const h2 = Math.round(bhash(x*7) * 4); ctx.fillRect(x, gy - h2, 6, h2 + 3); }      // rough top edge
-  ctx.fillStyle = 'rgba(90,70,46,0.8)'; for (let x = 2; x < W; x += 9) ctx.fillRect(x, gy, 2, 1);                                                // lit lip
-  ctx.fillStyle = '#241810'; for (let x = 0; x < W; x += 11) ctx.fillRect(x + Math.round(bhash(x) * 6), gy + 5 + Math.round(bhash(x*3) * 10), 2, 2); // pebbles
+  ctx.fillStyle = 'rgba(122,96,62,0.8)'; for (let x = 2; x < W; x += 9) ctx.fillRect(x, gy, 2, 1);                                               // lit lip
   ctx.fillStyle = '#3A2C1C'; for (let x = 5; x < W; x += 23) { const st = 2 + Math.round(bhash(x*13) * 4); ctx.fillRect(x, gy - st, 3, st); }     // stone teeth
   ctx.globalAlpha = 1;
 }
