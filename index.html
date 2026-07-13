@@ -548,7 +548,7 @@ let state = 'splash';             // splash | home | shop | me | playing | dropp
 let blocks = [], slider = null, faller = null;
 let debris = [], particles = [], floaters = [], trails = [], coinFx = [], pickups = [];
 let balloon = null, lastBalloonRow = 0;
-let cameraY = 0, cameraTarget = 0, shake = 0, fadeT = 0;
+let cameraY = 0, cameraTarget = 0, camVel = 0, shake = 0, fadeT = 0;
 let paused = false;
 let dropPending = 0;   // tiny grace window between tap and release (people pre-tap expecting delay)
 let combo = 0, maxCombo = 0, hueBase = Math.random() * 360;
@@ -628,7 +628,7 @@ function resetRun() {
     if (loadout.slow) slowBlocks = 4;
   }
   loadout = { shield:false, aura:false, slow:false };
-  cameraY = towerTopY() - (H - 100); cameraTarget = cameraY;
+  cameraY = towerTopY() - (H - 100); cameraTarget = cameraY; camVel = 0;
   if (runLevel >= 0 && !reduceMotion) cameraY = cameraTarget + 120;   // pan-to-landmark: reveal the themed base, then settle up into play
   schedulePickups(); spawnSlider();
 }
@@ -1095,7 +1095,7 @@ function adaptToScreen() {
   for (const cl of clouds) cl.x *= kx;
   for (const bd of birds) bd.x *= kx;
   for (const fl of evFlakes) { fl.x *= kx; fl.y *= ky; }
-  cameraY = towerTopY() - (H - 100); cameraTarget = cameraY;
+  cameraY = towerTopY() - (H - 100); cameraTarget = cameraY; camVel = 0;
   canvasRect = null; fitCanvas();
   if (booted) render();
 }
@@ -1256,7 +1256,13 @@ function update(dt) {
   tick += dt;
   musicStep();
   updateEventFx(dt);
-  cameraY += (cameraTarget - cameraY) * 0.08 * dt;
+  // critically-damped smooth follow (SmoothDamp): the camera glides toward the tower with no lurch,
+  // so the world scrolls so gently it barely reads as moving — never a per-drop jerk.
+  { const dts = dt / 60, smoothTime = 0.5, omega = 2 / smoothTime;
+    const x = omega * dts, expc = 1 / (1 + x + 0.48*x*x + 0.235*x*x*x);
+    const change = cameraY - cameraTarget, temp = (camVel + omega * change) * dts;
+    camVel = (camVel - omega * temp) * expc;
+    cameraY = cameraTarget + (change + temp) * expc; }
   if (shake > 0) shake = Math.max(0, shake - .25*dt);
   if (squash > 0) squash = Math.max(0, squash - .07*dt);
   if (flashT > 0) flashT = Math.max(0, flashT - .05*dt);
@@ -3753,7 +3759,7 @@ function renderGameOver() {
 let last = performance.now();
 function frame(now) { rafId = 0; let dt=(now-last)/16.667; last=now; if (dt>3) dt=3; if (dt<0) dt=0; update(dt); render(); rafId = requestAnimationFrame(frame); }
 blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
-cameraY = towerTopY()-(H - 100); cameraTarget = cameraY; fadeT = 0;
+cameraY = towerTopY()-(H - 100); cameraTarget = cameraY; camVel = 0; fadeT = 0;
 previewIdx = Math.max(0, SKINS.findIndex(s => s.id === skinId));
 booted = true;
 render();
