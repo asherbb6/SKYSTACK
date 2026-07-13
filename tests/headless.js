@@ -451,25 +451,26 @@ check('reduced-motion: full cave + foreground still render without throwing', ()
   rm.run('mode = "endless"; for (let a = 0; a < SURF_A + 8; a += 4) { cameraY = GROUND_Y - a*BH - (H-100); const yc = GROUND_Y - SURF_A*BH - cameraY; drawCave(0, Math.max(0, Math.min(yc, H)), yc, cameraY); drawCaveForeground(cameraY, 0); }');
   return true;
 });
-// ---- classic-stacker deadzone camera: tower rises, cave holds still, pans only at the top band ----
-check('deadzone camera helpers exist + snap the tower low with room to climb', () => {
+// ---- camera follows the blocks; the environment is a FIXED backdrop that never scrolls ----
+check('camera follows the blocks: the tower top stays framed near the bottom band', () => {
   const cam = makeGame();
-  return cam.run('(() => { if (["panCamera","camReset","camHeadY"].some(f => eval("typeof "+f) !== "function")) return false; ' +
-    'mode="endless"; runLevel=-1; state="playing"; blocks=[{x:0,w:96,col:"#fff"}]; camReset(); ' +
-    'const hs = camHeadY() - cameraTarget; return cameraY === cameraTarget && hs > H*0.5; })()');   // head parked low in the deadzone
+  return cam.run('(() => { if (["panCamera","camReset"].some(f => eval("typeof "+f) !== "function")) return false; ' +
+    'mode="endless"; state="playing"; blocks=[{x:0,w:96,col:"#fff"}]; camReset(); ' +
+    'const a = Math.round(towerTopY() - cameraY); ' +                            // tower top screen-y at 1 block
+    'for (let n=0;n<12;n++){ blocks.push({x:0,w:96,col:"#fff"}); panCamera(); } ' +
+    'const b = Math.round(towerTopY() - cameraTarget); ' +                       // ...and after climbing: still pinned to the same band
+    'return a === H - 100 && b === H - 100; })()');
 });
-check('the tower rises up-screen while the cave holds still, and the view pans at the top band', () => {
+check('fixed backdrop: helpers exist, render across the whole climb, and frame each biome at a CONSTANT (non-scrolling) cy', () => {
   const cam = makeGame();
   return cam.run('(() => {' +
-    'mode="endless"; runLevel=-1; state="playing"; blocks=[{x:0,w:96,col:"#fff"}]; camReset();' +
-    'let pans=0, staticRun=0, maxStatic=0, rose=false, prevTgt=cameraTarget, prevHead=camHeadY()-cameraTarget;' +
-    'for (let n=2;n<=30;n++){ blocks.push({x:0,w:96,col:"#fff"}); panCamera();' +
-    '  const head=camHeadY()-cameraTarget;' +                                    // head screen-y under the (settled) target
-    '  if (cameraTarget===prevTgt){ staticRun++; if (head<prevHead-0.5) rose=true; }' +   // target fixed => cave still; head climbs => tower rises
-    '  else { pans++; maxStatic=Math.max(maxStatic,staticRun); staticRun=0; }' +
-    '  prevTgt=cameraTarget; prevHead=head; }' +
-    'maxStatic=Math.max(maxStatic,staticRun);' +
-    'return rose && pans>=2 && maxStatic>=4; })()');                             // rose on screen, panned >=2x, held still >=4 blocks at a stretch
+    'if (["drawBackdrop","drawSceneFull","bgCyFor","ensureSceneBuf"].some(f => eval("typeof "+f) !== "function")) return false;' +
+    'mode="endless"; state="playing";' +
+    'for (let a=0;a<560;a+=8){ cameraY = GROUND_Y - a*BH - (H-100); drawBackdrop(Math.round(a), 30); }' +   // whole climb, no throw
+    // the backdrop framing for a tier does NOT depend on the live camera (so it never scrolls up/down)
+    'const lowInCave = GROUND_Y - 4*BH - (H-100), highInCave = GROUND_Y - 24*BH - (H-100);' +
+    'cameraY = lowInCave; const c1 = bgCyFor(0); cameraY = highInCave; const c2 = bgCyFor(0);' +
+    'return c1 === c2 && [0,1,4,8].every(ti => Number.isFinite(bgCyFor(ti))); })()');
 });
 // ---- Phase 5: region entry cinematics ----
 check('region intro system exists, one tag per stage, arms on entry', () => bio.run(
@@ -516,7 +517,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v50', () => /const CACHE = 'skystack-v50'/.test(sw));
+check('sw.js cache bumped to v51', () => /const CACHE = 'skystack-v51'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));

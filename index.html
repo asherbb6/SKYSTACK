@@ -34,7 +34,7 @@
 // the screen never distorts pixels — tall screens get more H, wide screens get more W, and
 // every element repositions off W/H instead of stretching. Recomputed live on resize/rotate.
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d');   // reassignable: the backdrop compositor temporarily points it at an offscreen buffer
 let W = 0, H = 0;
 function computeSize() {
   const AR = Math.max(innerWidth, 1) / Math.max(innerHeight, 1);
@@ -592,17 +592,11 @@ let shooter = null, shooterTimer = 240;
 let demo = { n: 1, t: 0 };
 
 function towerTopY() { return GROUND_Y - blocks.length * BH; }
-// ---- classic-stacker deadzone camera ----
-// The tower RISES up the screen as you stack; the world only PANS when the tower's head climbs into
-// the top band. Between pans cameraTarget is fixed, so the cave holds perfectly still while you build.
-const CAM_TOP_F = 0.26, CAM_REST_F = 0.58, CAM_BOTTOM_F = 0.74;   // head screen-y as a fraction of H: pan-trigger / rest-after-pan / lowest
-function camHeadY() { return towerTopY() - BH; }                  // world-y just above the top block (where the incoming block sits)
-function panCamera() {
-  const head = camHeadY(), hs = head - cameraTarget;             // the head's screen-y under the current (settled) target
-  if (hs < H * CAM_TOP_F)         cameraTarget = head - H * CAM_REST_F;    // climbed into the top band -> pan up; head rests lower again
-  else if (hs > H * CAM_BOTTOM_F) cameraTarget = head - H * CAM_BOTTOM_F;  // short tower / post-resize -> keep the head on screen
-}
-function camReset() { cameraTarget = camHeadY() - H * CAM_BOTTOM_F; cameraY = cameraTarget; }   // snap on run start: tower low, all the room above to climb
+// The camera FOLLOWS the blocks — the tower's active top stays framed near the bottom band and the
+// blocks scroll with the climb. The environment behind them is a FIXED backdrop (see drawBackdrop),
+// so only the gameplay moves, never the biome.
+function panCamera() { cameraTarget = towerTopY() - (H - 100); }
+function camReset() { cameraTarget = towerTopY() - (H - 100); cameraY = cameraTarget; }
 function blockCol(i) { const s = skin(); return s.base(i, hueBase); }
 function setExpr(e, t) { mascot.expr = e; mascot.exprT = t; }
 function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assist); }
@@ -2448,6 +2442,43 @@ function drawBiomeDecor(cy) {
   }
 }
 
+// ===== FIXED BACKDROP =====
+// The environment is a STILL scene painted behind the gameplay: it never scrolls up/down with the
+// blocks. Each biome is drawn as a complete, opaque frame at a CONSTANT camera-y (so it holds still,
+// only its torches/creatures/weather animate), and as you climb the current frame cross-fades into
+// the next near a biome boundary. The blocks scroll over it via the real (live) camera in renderWorld.
+let sceneCv = null, sceneCx = null;
+function ensureSceneBuf() {
+  if (!sceneCv) { try { sceneCv = document.createElement('canvas'); sceneCx = sceneCv.getContext('2d'); } catch (e) { sceneCv = null; sceneCx = null; } }
+  if (sceneCv && (sceneCv.width !== W || sceneCv.height !== H)) { sceneCv.width = W; sceneCv.height = H; }
+}
+// a FIXED camera-y that frames each biome nicely on screen — constant, so the backdrop never moves
+function bgCyFor(ti) {
+  if (ti <= 0) return GROUND_Y - Math.round(SURF_A * 0.5) * BH - H * 0.5;   // mid-cave: walls fill, floor + ceiling sit off-screen
+  if (ti <= 3) return GROUND_Y - SURF_A * BH - H * 0.6;                     // surface line ~60% down: city above, ground + a little cave below
+  return GROUND_Y - 150 * BH;                                              // celestial: full-screen tiled skies — the value only sets the (static) phase
+}
+// one complete, OPAQUE, fixed backdrop frame for tier `ti`
+function drawSceneFull(ti, h, ph) {
+  ctx.globalAlpha = 1;
+  skyWash(SKY_STOPS[clamp(ti, 0, SKY_STOPS.length - 1)], 1);                // opaque sky base so scenes cross-fade cleanly
+  if (ti <= 3) { drawSun(h); drawGroundWorld(bgCyFor(ti), ph); }           // cave / surface / city — the still low world
+  else { const cy = bgCyFor(ti); biomeBackdrop(ti, cy, 1); biomeWeather(ti - 2, cy, 1, ph); }
+}
+// paint the still environment for the current altitude, cross-fading the next biome in near a boundary
+function drawBackdrop(h, ph) {
+  const { ti, wUp } = currentBiome(cameraY);
+  const nx = Math.min(ti + 1, TIERS.length - 1);
+  drawSceneFull(ti, h, ph);                                                 // current biome, opaque
+  if (wUp > 0.003 && nx !== ti) {                                           // fade the next biome frame in over it
+    ensureSceneBuf();
+    if (sceneCx) {
+      const real = ctx; ctx = sceneCx; ctx.clearRect(0, 0, W, H); drawSceneFull(nx, h, ph); ctx = real;
+      ctx.globalAlpha = wUp * wUp * (3 - 2*wUp); ctx.drawImage(sceneCv, 0, 0); ctx.globalAlpha = 1;
+    } else { drawSceneFull(nx, h, ph); }                                    // no buffer (headless) — just draw the incoming frame
+  }
+}
+
 // ---------- region entry cinematics ----------
 // A short, non-blocking overlay that fires when you ENTER a region (run start + each crossing).
 // The board keeps playing underneath. reduceMotion -> a plain static title card.
@@ -2523,20 +2554,21 @@ function render() {
   const shX = 0;
   const cy = cameraY;
 
-  // in-game, paint the real atmosphere for this altitude (day → sunset → night → space);
+  // in-game, paint the STILL environment for this altitude (day → sunset → night → space) — a fixed
+  // backdrop that cross-fades between biomes as you climb but never scrolls up/down with the blocks;
   // `dark` then follows altitude so stars/moon/HUD arrive with the night, not the colour band
-  if (!menu) drawBiomeSky(cy, h);
+  if (!menu) drawBackdrop(h, reduceMotion ? 0 : tick);
   const dark = menu ? 1 - lum(sky) : atmoDark(h);
 
   ctx.globalAlpha = .05; ctx.fillStyle = '#000';
-  const bandOff = Math.floor(cameraY*.5) % 40;
+  const bandOff = menu ? Math.floor(tick*.5) % 40 : 0;   // static scanline vignette in-game (part of the fixed backdrop)
   for (let y = -bandOff; y < H; y += 40) ctx.fillRect(0, y, W, 12);
   ctx.globalAlpha = 1;
 
   if (dark > 0.32) {
     const twSpeed = combo >= 7 ? .12 : .05;          // stars get excited during hot streaks
     for (const st of stars) {
-      const sy = ((st.y - (menu?tick*.4:cy*.35)) % (H+20) + H+20) % (H+20) - 10;
+      const sy = ((st.y - (menu?tick*.4:0)) % (H+20) + H+20) % (H+20) - 10;   // in-game: fixed twinkling starfield (backdrop never scrolls)
       const tw = .5 + .5*Math.sin(tick*twSpeed + st.tw);
       ctx.globalAlpha = Math.min(1,(dark-.32)*2.2) * (.35 + tw*.65);
       ctx.fillStyle = '#FFF6E8'; ctx.fillRect(Math.floor(st.x), Math.floor(sy), st.sz, st.sz);
@@ -2573,15 +2605,13 @@ function render() {
   }
   if (dark < .58 && (menu || h < 200)) {   // clouds/birds belong to the lower sky — gone once SPACE begins
     ctx.globalAlpha = (.58-dark)*.95; ctx.fillStyle = '#FFF6E8';
-    for (const c of clouds) { const cyy = Math.floor(c.y - (menu?tick*.3:cy*.4)); if (cyy<-20||cyy>H+20) continue; const cx=Math.floor(c.x); ctx.fillRect(cx,cyy,Math.floor(c.w),5); ctx.fillRect(cx+4,cyy-3,Math.floor(c.w*.6),3); ctx.fillRect(cx+2,cyy+5,Math.floor(c.w*.75),3); }
+    for (const c of clouds) { const cyy = Math.floor(c.y - (menu?tick*.3:0)); if (cyy<-20||cyy>H+20) continue; const cx=Math.floor(c.x); ctx.fillRect(cx,cyy,Math.floor(c.w),5); ctx.fillRect(cx+4,cyy-3,Math.floor(c.w*.6),3); ctx.fillRect(cx+2,cyy+5,Math.floor(c.w*.75),3); }   /* in-game clouds: fixed, no vertical drift */
     ctx.globalAlpha = 1;
     if (dark < .4 && (menu || h > SURF_A)) { for (const b of birds) drawBird(b.x, b.y, b.s, tick*.22 + b.ph, 'rgba(38,28,54,0.78)'); }   // birds ride the daytime sky, never underground
   }
-  if (!menu) drawBiomeDecor(cy);   // per-tier biome sprites you climb past (matches the map)
   drawEventFx(menu);
 
-  if (!menu) renderWorld(cy, shX);
-  if (!menu) drawCaveForeground(cy, reduceMotion ? 0 : tick);   // near cave rock the tower passes behind (fades locally so it never hides gameplay)
+  if (!menu) renderWorld(cy, shX);   // the blocks scroll with the live camera, over the still backdrop
   if (!menu && regionIntro) renderRegionIntro();   // cinematic region-entry overlay, on top of the world
 
   if (state === 'splash') renderSplash();
