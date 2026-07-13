@@ -2,7 +2,7 @@
 
 A pixel-art block-stacking game for mobile and web. One self-contained HTML file, zero dependencies, installable as a PWA with full offline support.
 
-**Play:** live at [playskystack.netlify.app](https://playskystack.netlify.app), or deploy this repo to any static host and open `index.html` (Netlify / GitHub Pages both work as-is).
+**Play:** live at [asherbb6.github.io/SKYSTACK](https://asherbb6.github.io/SKYSTACK/) (GitHub Pages, auto-deploys from `main`), or deploy this repo to any static host and open `index.html`.
 
 ## Game
 
@@ -17,6 +17,7 @@ A pixel-art block-stacking game for mobile and web. One self-contained HTML file
 - **Procedural chiptune** — calm menus, intense in-game, escalates with height and fever
 - **10 seasonal events** — Christmas, Halloween, July 4th, Easter and more auto-activate for a 7-day window (holiday = middle day) from the device clock, each with its own UI colors, pixel decorations, free skin, themed music, and +25% coins
 - **A real climb through the sky** — the background is a continuous atmospheric journey with a sun that rises white and sets orange: a **sunny blue day** on the ground → **fluffy sunlit clouds** → thin deep-blue high air → a **fiery sunset** → **aurora night** → **black starry space** → a huge **Earth limb from orbit** → a **golden cosmic gate** at the summit. `atmoDark` brings the stars and moon out with the night, not with a colour band.
+- **A living underground** — the opening climb is a fully **procedural, animated earthy cave** (no image backdrops): layered dirt/cobble strata stamped from a cached rock texture, asymmetric walls that funnel up to an organic surface exit, warm flickering torches, hanging vines + roots + moss + mushrooms + wooden supports + cobwebs, crawling beetles/worms/bats, drips and dust, and a soft-lit escape hole that reveals the city progressively. Near foreground rock the tower passes **behind** for real depth — and any piece that would cover the tower fades locally (`fgAlpha`) so gameplay always stays readable. Layout is derived from the viewport (guaranteed play lane + tower-fitting exit) so it holds on phone, desktop and ultrawide.
 - **Living biomes** — every tier is its own animated world with parallax depth: a **solid, asymmetric daytime city** (concrete + glass towers, sky-reflecting windows, water tanks, roof beacons), **real trees** (solid bark trunks, branches carrying connected 3-D-shaded canopy, a distant forest wall, falling leaves), drifting **cloud banks + sun shafts**, racing **wind streaks + a jet trailing a contrail**, rising **weather balloons + a signalling dish**, bold **aurora curtains, ice crystals + snow**, **colour nebulae, spiral galaxies, asteroids + meteors**, orbiting **satellites over the Earth**, and a **radiant gate with giant twinkling stars + a ringed planet**. The tower and falling block always stay readable, and it all respects reduced-motion. Campaign levels start pre-stacked in their own biome.
 - **Fits any screen** — logical resolution matches the device aspect exactly (portrait, desktop, ultrawide) and re-adapts live on resize/rotate; on wide screens blocks travel a centered corridor with a pixel-fade wrap instead of crossing the whole screen
 
@@ -34,13 +35,15 @@ A pixel-art block-stacking game for mobile and web. One self-contained HTML file
 
 Serve the folder from any static server, e.g. `npx http-server -p 8460 -c-1`.
 
+- **Tests** — `node tests/headless.js` stubs the browser, evals the game in a `vm`, and drives internal functions (campaign/level system, SKY MAP, biome + cave renderers, foreground-occlusion fade, layout guarantees). Run it before every commit; it also asserts `sw.js` is version-bumped.
+
 - `index.html?event=christmas` — force any seasonal theme (ids: `newyear valentine stpatrick easter mothers fathers july4 halloween thanksgiving christmas`)
 - `index.html?tour=1` — auto-cycle all 10 event themes, ~10 s each
 - If an edit doesn't seem to load, unregister the service worker / clear site data (it caches for offline)
 
 ## Publishing checklist
 
-1. **Host** — import this repo into Netlify (or enable GitHub Pages) → gives an HTTPS URL
+1. **Host** — GitHub Pages serves `main` at `/ (root)` and auto-deploys on push → [asherbb6.github.io/SKYSTACK](https://asherbb6.github.io/SKYSTACK/) (any static host works too)
 2. **Android** — wrap the URL as a TWA with [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap), upload to Play Console ($25 one-time)
 3. **Web portals** — optionally submit to Poki / CrazyGames for zero-cost distribution + ads
 4. **Before adding ads/analytics** — update `privacy.html` first

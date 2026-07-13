@@ -1803,11 +1803,45 @@ function biomeWeather(tier, cy, a, ph) {
 // The low world (caves, surface, trees, buildings) lives at ABSOLUTE world altitude and is
 // simply climbed PAST — never cross-faded. A=0 is the tower base / cave floor.
 const SURF_A = 33;                                           // surface line (blocks): cave ceiling / where trees+buildings root (~100m deep cave below)
-const SHAFT_W_F = 0.52;                                      // central open shaft (the corridor the tower climbs) as a fraction of W
+const SHAFT_W_F = 0.36;                                      // the surface escape hole as a fraction of W — an opening the tower tunnels through, not a wide trench
+// ---- cave layout + foreground-occlusion tuning (all screen px unless noted) ----
+const LANE_MIN_F = 0.42;                                     // guaranteed clear play lane between the walls, as a fraction of W (never narrower)
+const EXIT_MIN_F = 0.26;                                     // narrowest useful width of the surface exit, as a fraction of W
+const CEIL_THICK = 34;                                       // rocky ceiling thickness the tower tunnels through before it emerges
+const FG_FADE_RADIUS = 52;                                   // a foreground group closer than this to the tower box starts fading
+const FG_FADE_BAND   = 30;                                   // softness of the fade edge (bigger = smoother, more gradual)
+const FG_FADE_MIN    = 0.30;                                 // opacity a foreground group drops to when it sits right over the tower
+// the live tower's screen bounding box (top blocks + slider/faller), refreshed each frame so the
+// foreground layer can fade only where it would actually hide gameplay. null when there's no tower.
+let fgTowerBox = null;
+function towerScreenBox(cy) {
+  if (!blocks.length || (state !== 'playing' && state !== 'dropping')) return null;
+  let x0 = 1e9, x1 = -1e9; const n = blocks.length, from = Math.max(0, n - 7);
+  for (let i = from; i < n; i++) { const b = blocks[i]; if (b.x < x0) x0 = b.x; if (b.x + b.w > x1) x1 = b.x + b.w; }
+  if (slider) { x0 = Math.min(x0, slider.x); x1 = Math.max(x1, slider.x + slider.w); }
+  if (faller) { x0 = Math.min(x0, faller.x); x1 = Math.max(x1, faller.x + faller.w); }
+  const topY = Math.round(towerTopY() - cy);
+  return { x0: x0 + swayX - 8, x1: x1 + swayX + 8, y0: topY - 50, y1: Math.min(H, topY + 7 * BH) };   // headroom for slider+mascot; guard the top blocks
+}
+// opacity for a foreground group spanning screen rect [gx0,gy0..gx1,gy1]: full (1) when clear of the
+// tower box, easing down to FG_FADE_MIN when it overlaps it. Smooth in space, so the scroll reads smooth.
+function fgAlpha(gx0, gy0, gx1, gy1) {
+  const b = fgTowerBox; if (!b) return 1;
+  const dx = Math.max(b.x0 - gx1, gx0 - b.x1, 0), dy = Math.max(b.y0 - gy1, gy0 - b.y1, 0);
+  const d = Math.sqrt(dx*dx + dy*dy);
+  if (d >= FG_FADE_RADIUS) return 1;
+  let t = clamp((d - (FG_FADE_RADIUS - FG_FADE_BAND)) / FG_FADE_BAND, 0, 1);   // 0 deep-overlap .. 1 clear
+  t = t*t*(3 - 2*t);                                                            // smoothstep
+  return FG_FADE_MIN + (1 - FG_FADE_MIN) * t;
+}
 // the escape hole in the surface — slightly off-centre + uneven edges (organic, not symmetric).
 // Shared by the cave mouth and the surface lip so they always line up.
+const EXIT_CLEARANCE = 30;                                   // px of breathing room each side of the widest tower through the hole
+function mouthShaftW() {                                     // exit width: the fraction, floored by EXIT_MIN_F and by a tower + clearance (no choke on tall phones)
+  return Math.min(W - 24, Math.max(Math.round(W * SHAFT_W_F), Math.round(W * EXIT_MIN_F), BASE_W + EXIT_CLEARANCE));
+}
 function caveMouth() {
-  const shaftW = Math.round(W * SHAFT_W_F), holeShift = Math.round(W * 0.05);
+  const shaftW = mouthShaftW(), holeShift = Math.round(W * 0.05);
   const cxL = Math.round((W - shaftW) / 2) - holeShift;
   return { cxL, cxR: cxL + shaftW + Math.round(holeShift * 0.6) };
 }
@@ -1886,7 +1920,17 @@ function caveWallW(row, side, baseW) {
   const s2 = Math.floor(row / 26), f2 = row / 26 - s2;
   const c2 = bhash(s2*11 + side*997), d2 = bhash((s2 + 1)*11 + side*997);
   const m = c2 + (d2 - c2) * (f2*f2*(3 - 2*f2));                                              // big masses
-  return Math.round(baseW * (0.62 + m * 0.95)) + Math.round(n * 22);
+  let w = Math.round(baseW * (0.62 + m * 0.95)) + Math.round(n * 22);
+  w = Math.min(w, Math.round(W * (1 - LANE_MIN_F) / 2));                                      // cap so the play lane stays >= LANE_MIN_F
+  // near the surface the walls funnel inward to MEET the escape hole over the last ~7 blocks (no flat columns)
+  const surfRow = SURF_A * BH / 4, dRows = surfRow - row, band = 7 * BH / 4;
+  if (dRows > -4 && dRows < band) {
+    const shaftW = mouthShaftW(), holeShift = Math.round(W * 0.05);
+    const cxL = Math.round((W - shaftW) / 2) - holeShift, cxR = cxL + shaftW + Math.round(holeShift * 0.6);
+    const target = side ? W - cxR : cxL, tt = clamp((band - dRows) / band, 0, 1), m2 = tt*tt*(3 - 2*tt);
+    w = Math.round(w * (1 - m2) + target * m2);
+  }
+  return w;
 }
 // which material a wall stretch is made of: 0 = brown dirt, 1 = gray cobblestone (patchy columns)
 function caveWallMat(row, side) {
@@ -1912,22 +1956,24 @@ function blitCaveTex(x0, y, w, h, srcRow, tex) {
 function drawCaveBackdrop(top, cy, ph) {
   const under = H - top; if (under <= 0) return;
   const g = ctx.createLinearGradient(0, top, 0, H);
-  g.addColorStop(0, '#241811'); g.addColorStop(0.45, '#150E0A'); g.addColorStop(1, '#080504');
+  g.addColorStop(0, '#2A1C12'); g.addColorStop(0.45, '#1A120C'); g.addColorStop(1, '#0B0705');
   ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.fillRect(0, top, W, under);
-  // the whole back wall is packed rock too (dim, half-speed parallax) — then the centre is
-  // sunk back into darkness so the open cavern reads and the play lane stays clear
-  ctx.globalAlpha = 0.38;
+  // the whole back wall is packed rock too (dim, half-speed parallax) — kept visible in the centre so
+  // the lane has real stone depth, then only gently sunk back so the colourful blocks still pop
+  ctx.globalAlpha = 0.5;
   for (let y = top; y < H; y += 12) blitCaveTex(0, y, W, Math.min(12, H - y), Math.round((GROUND_Y - cy * 0.5 - y)));
   ctx.globalAlpha = 1;
-  const hg = ctx.createLinearGradient(0, 0, W, 0);
-  hg.addColorStop(0, 'rgba(6,4,3,0)'); hg.addColorStop(0.32, 'rgba(6,4,3,0.72)');
-  hg.addColorStop(0.68, 'rgba(6,4,3,0.72)'); hg.addColorStop(1, 'rgba(6,4,3,0)');
+  const hg = ctx.createLinearGradient(0, 0, W, 0);                                            // soft central shade — dark enough to read, not a black void
+  hg.addColorStop(0, 'rgba(6,4,3,0)'); hg.addColorStop(0.34, 'rgba(6,4,3,0.42)');
+  hg.addColorStop(0.66, 'rgba(6,4,3,0.42)'); hg.addColorStop(1, 'rgba(6,4,3,0)');
   ctx.fillStyle = hg; ctx.fillRect(0, top, W, under);
-  const P = 68, s = cy * 0.4, off = ((s % P) + P) % P;                                        // far rock lumps
+  const P = 68, s = cy * 0.4, off = ((s % P) + P) % P;                                        // far rock lumps — receding masses that give the centre depth
   for (let y = top - off - P; y < H; y += P) { const row = Math.round((y + s) / P);
-    for (let k = 0; k < 4; k++) { const ly = Math.round(y + bhash(row*3 + k) * P), lr = 8 + Math.round(bhash(row + k) * 9);
+    for (let k = 0; k < 4; k++) { const ly = Math.round(y + bhash(row*3 + k) * P), lr = 9 + Math.round(bhash(row + k) * 10);
       if (ly - lr < top) continue;                                                            // never poke above the ceiling into the sky
-      ctx.globalAlpha = 0.4; pixDisc(Math.round(bhash(row*7 + k*13) * W), ly, lr, '#20160F'); } }
+      const lx = Math.round(bhash(row*7 + k*13) * W);
+      ctx.globalAlpha = 0.5; pixDisc(lx, ly, lr, '#241811');
+      ctx.globalAlpha = 0.32; pixDisc(lx - lr*0.3|0, ly - lr*0.35|0, Math.max(2, lr*0.55|0), '#3A2A1B'); } }   // faint lit crown = 3-D mass
   ctx.globalAlpha = 1;
   const HP = 158, hs = cy, hoff = ((hs % HP) + HP) % HP;                                       // tunnel mouths + eye glints
   for (let y = top - hoff - HP; y < H; y += HP) { const row = Math.round((y + hs) / HP);
@@ -1990,11 +2036,14 @@ function drawCaveWalls(top, cy, ph) {
         ctx.fillStyle = r2 < 0.15 ? '#8A4A38' : '#6E4A2E'; ctx.fillRect(mx - 1, my - 5 + bob, 3, 2);
         ctx.fillStyle = 'rgba(255,220,180,0.35)'; ctx.fillRect(mx, my - 5 + bob, 1, 1);
         if (r2 < 0.1) { ctx.fillStyle = '#6E4A2E'; ctx.fillRect(mx + 3, my - 3, 2, 1); ctx.fillStyle = '#B8A47C'; ctx.fillRect(mx + 3, my - 2, 1, 2); }
-      } else if (r2 < 0.6) {                                                                           // hanging root from the wall
-        const rx = side ? inx - 2 : inx + 1, rl = 8 + Math.round(bhash(row*5) * 16), sway = reduceMotion ? 0 : Math.sin(ph*0.03 + row) * 2;
-        ctx.globalAlpha = 0.9; ctx.fillStyle = '#3A2814';
-        for (let t = 0; t < rl; t++) ctx.fillRect(Math.round(rx + sway * t / rl), my + t, 1, 1);
-        ctx.fillStyle = '#2A1C0E'; ctx.fillRect(rx, my, 1, 3);                                         // thick anchor at the wall
+      } else if (r2 < 0.6) {                                                                           // hanging root OR leafy green vine from the wall
+        const rx = side ? inx - 2 : inx + 1, rl = 10 + Math.round(bhash(row*5) * 20), sway = reduceMotion ? 0 : Math.sin(ph*0.03 + row) * 2;
+        const leafy = bhash(row*41 + side*13) > 0.5;                                                   // half grow into green vines like the reference
+        ctx.globalAlpha = leafy ? 1 : 0.9; ctx.fillStyle = leafy ? '#2C5C22' : '#3A2814';
+        for (let t = 0; t < rl; t++) { const vx = Math.round(rx + sway * t / rl); ctx.fillRect(vx, my + t, 1, 1);
+          if (leafy && (t % 5) === 2) { ctx.fillStyle = '#3E8A32'; ctx.fillRect(vx - 1, my + t, 1, 1); ctx.fillRect(vx + 1, my + t, 1, 1); ctx.fillStyle = '#2C5C22'; } }   // paired leaves
+        if (leafy) { ctx.fillStyle = '#6ECB54'; ctx.fillRect(Math.round(rx + sway), my + rl, 1, 1); } // bright tip
+        ctx.fillStyle = leafy ? '#24421A' : '#2A1C0E'; ctx.fillRect(rx, my, 1, 3);                     // anchor at the wall
       } else if (r2 < 0.72) {                                                                          // stalactite cluster off the wall face
         const sx0 = side ? inx - 1 : inx - 7;
         ctx.globalAlpha = 1;
@@ -2080,6 +2129,68 @@ function drawCaveWeather(top, cy, ph) {
   ctx.fillStyle = '#C8AA78';
   for (let k = 0; k < 12; k++) { const mx = (k*67 + ph*0.3) % W, my = top + ((k*53 + Math.sin(ph*0.04 + k) * 20) % Math.max(1, H - top));
     ctx.globalAlpha = 0.2; ctx.fillRect(Math.round(mx), Math.round(my), 1, 1); }
+  ctx.globalAlpha = 1;
+}
+// FRONT cave layer — drawn AFTER the tower so near rock reads as closer than the climb. Near edge
+// lips, dangling root/rock knots, and (at the top) a near exit rim the tower slips BEHIND. Anything
+// that would actually cover the live tower fades locally via fgAlpha, then restores as it clears.
+function drawCaveForeground(cy, ph) {
+  const gy = worldY(0, cy), yCeil = worldY(SURF_A, cy);
+  if (gy < -40 || yCeil > H + 40) { fgTowerBox = null; return; }               // only inside the cave band
+  fgTowerBox = towerScreenBox(cy);
+  const cyF = cy * 1.08;                                                       // the near layer parallaxes a touch faster = depth
+  // (1) near rock lips hugging the screen edges — big, dark, sharp; frame the field without touching the lane
+  for (const side of [0, 1]) {
+    const fw = Math.round(W * 0.05);
+    for (let y = Math.max(0, Math.round(yCeil)); y < Math.min(H, gy + 4); y += 6) {
+      const row = Math.round((GROUND_Y - cyF - y) / 6);
+      const w = fw + Math.round(bhash(row*7 + side*57) * 10), xx = side ? W - w : 0, inx = side ? xx : w;
+      ctx.globalAlpha = fgAlpha(xx, y, xx + w, y + 6);
+      blitCaveTex(xx, y, w, 6, row * 6 + side * 61, bhash(row*3 + side) > 0.7 ? caveTexGray : caveTex);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';     ctx.fillRect(side ? inx : inx - 3, y, 3, 6);   // inner shade into the lane
+      ctx.fillStyle = 'rgba(132,104,66,0.5)'; ctx.fillRect(side ? inx - 1 : inx, y, 1, 6);   // lit rim
+      if (bhash(row*13 + side*29) > 0.82) { ctx.fillStyle = '#31471F'; ctx.fillRect(side ? inx - 3 : inx, y, 3, 2); }   // moss tuft
+    }
+  }
+  ctx.globalAlpha = 1;
+  // (2) sparse dangling clumps: a rooty rock knot hangs from above; the tower slips behind it, then it clears
+  const CP = 178, coff = ((cyF % CP) + CP) % CP;
+  for (let y = -coff - CP; y < H; y += CP) {
+    const row = Math.round((y + cyF) / CP);
+    if (bhash(row*17) < 0.5) continue;
+    const cxp = Math.round(bhash(row*5) * (W - 60) + 30), topy = Math.round(y);
+    if (topy > H + 20 || topy + 40 < yCeil) continue;                          // never hang a clump up in the open sky
+    const rl = 14 + Math.round(bhash(row*3) * 22), sway = reduceMotion ? 0 : Math.sin(ph*0.03 + row) * 2;
+    ctx.globalAlpha = fgAlpha(cxp - 8, topy, cxp + 8, topy + rl + 8);
+    pixDisc(cxp, topy + 3, 5, '#241A11'); pixDisc(cxp - 2, topy + 1, 3, '#31241A');           // rock knot
+    ctx.fillStyle = 'rgba(132,104,66,0.4)'; ctx.fillRect(cxp - 4, topy, 3, 1);                // lit top
+    ctx.fillStyle = '#2A1C0E';
+    for (let t = 0; t < rl; t++) { const rx = Math.round(cxp + sway * t / rl); ctx.fillRect(rx, topy + 6 + t, 1, 1);
+      if ((t & 6) === 2) ctx.fillRect(rx + (t & 1 ? 1 : -1), topy + 6 + t, 1, 1); }             // fine offshoots
+    if (bhash(row*11) > 0.5) { ctx.fillStyle = '#31471F'; ctx.fillRect(cxp - 2, topy + 6, 4, 2); ctx.fillStyle = '#456826'; ctx.fillRect(cxp - 1, topy + 5, 2, 1); }
+    ctx.globalAlpha = 1;
+  }
+  ctx.globalAlpha = 1;
+  // (3) exit: a NEAR ceiling lip + thick foreground roots the tower passes behind as it emerges into daylight
+  if (yCeil > -CEIL_THICK && yCeil < H) {
+    const { cxL, cxR } = caveMouth(), lipY = Math.round(yCeil + 3);            // sits a touch below the bg rim = closer
+    for (let x = 0; x < W; x += 6) {
+      if (x > cxL - 4 && x < cxR + 4) continue;                               // leave the hole open
+      const edgeD = Math.min(Math.abs(x - cxL), Math.abs(x - cxR));
+      const hang = 8 + Math.round(bhash(x*5 + 3) * 14) + (edgeD < 26 ? Math.round((26 - edgeD) * 0.5) : 0);
+      ctx.globalAlpha = fgAlpha(x, lipY, x + 6, lipY + hang);
+      blitCaveTex(x, lipY, 6, hang, x*7 + 13, bhash(x*3 + 1) > 0.72 ? caveTexGray : caveTex);
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x, lipY + hang - 2, 6, 2);             // AO under the near lip
+    }
+    for (const ex of [cxL, cxR]) {                                            // thick roots dangling into the hole
+      const dir = ex === cxL ? 1 : -1, rx0 = ex + dir * 3, rl = 22 + Math.round(bhash(ex) * 16);
+      const sway = reduceMotion ? 0 : Math.sin(ph*0.025 + ex) * 3;
+      ctx.globalAlpha = fgAlpha(rx0 - 3, lipY, rx0 + 3, lipY + rl); ctx.fillStyle = '#2A1C0E';
+      for (let t = 0; t < rl; t++) { const rx = Math.round(rx0 + dir * t * 0.15 + sway * t / rl); ctx.fillRect(rx, lipY + t, 2, 1);
+        if ((t & 7) === 3) { ctx.fillStyle = '#31471F'; ctx.fillRect(rx - 1, lipY + t, 3, 1); ctx.fillStyle = '#2A1C0E'; } }
+    }
+    ctx.globalAlpha = 1;
+  }
   ctx.globalAlpha = 1;
 }
 // orchestrator: full cave stack in depth order (back -> front)
@@ -2458,6 +2569,7 @@ function render() {
   drawEventFx(menu);
 
   if (!menu) renderWorld(cy, shX);
+  if (!menu) drawCaveForeground(cy, reduceMotion ? 0 : tick);   // near cave rock the tower passes behind (fades locally so it never hides gameplay)
   if (!menu && regionIntro) renderRegionIntro();   // cinematic region-entry overlay, on top of the world
 
   if (state === 'splash') renderSplash();

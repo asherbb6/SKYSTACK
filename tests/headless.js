@@ -24,7 +24,7 @@ function anyProxy() {
   return p;
 }
 
-function makeGame(storageSeed) {
+function makeGame(storageSeed, reducedMotion) {
   const mem = new Map(Object.entries(storageSeed || {}));
   const ctx2d = anyProxy();
   const canvas = {
@@ -43,7 +43,7 @@ function makeGame(storageSeed) {
     cancelAnimationFrame: noop,
     innerWidth: 320, innerHeight: 480,
     addEventListener: noop, removeEventListener: noop,
-    matchMedia: () => ({ matches: false, addEventListener: noop }),
+    matchMedia: () => ({ matches: !!reducedMotion, addEventListener: noop }),
     document: {
       getElementById: () => canvas,
       addEventListener: noop, hidden: false,
@@ -421,6 +421,36 @@ check('cave suite renders across the whole underground without throwing', () => 
 });
 check('no embedded image backdrops left (cave is fully procedural)', () =>
   !/caveBgImg|data:image\/jpeg;base64/.test(src));
+// ---- foreground occlusion + layout guarantees ----
+check('foreground layer + fade helpers + tuning constants exist', () => bio.run(
+  '["drawCaveForeground","fgAlpha","towerScreenBox","caveMouth","mouthShaftW"].every(f => eval("typeof "+f) === "function") ' +
+  '&& [LANE_MIN_F,EXIT_MIN_F,CEIL_THICK,FG_FADE_RADIUS,FG_FADE_BAND,FG_FADE_MIN].every(n => typeof n === "number")'));
+check('drawCaveForeground renders across the cave + exit without throwing', () => {
+  bio.run('for (let a = 0; a < SURF_A + 8; a += 3) { cameraY = GROUND_Y - a*BH - (H-100); drawCaveForeground(cameraY, 30); }');
+  return true;
+});
+check('fgAlpha: full when no tower, drops to the floor over the tower, restores far away, monotonic', () => bio.run(
+  '(() => { fgTowerBox = null; if (fgAlpha(0,0,4,4) !== 1) return false; ' +
+  'fgTowerBox = {x0:100,x1:160,y0:100,y1:200}; ' +
+  'const over = fgAlpha(120,140,128,148), far = fgAlpha(400,140,404,148); ' +
+  'const near = fgAlpha(160 + FG_FADE_RADIUS*0.5, 150, 164 + FG_FADE_RADIUS*0.5, 156); ' +
+  'return Math.abs(over - FG_FADE_MIN) < 0.001 && far === 1 && near > over && near < far; })()'));
+check('the play lane never drops below LANE_MIN_F at any depth (both walls capped)', () => bio.run(
+  '(() => { const baseW = Math.round(W * 0.17); for (let row = 0; row < Math.round(SURF_A*BH/4) - 8; row++) { ' +
+  'const lane = W - caveWallW(row, 0, baseW) - caveWallW(row, 1, baseW); if (lane < W * LANE_MIN_F - 1) return false; } return true; })()'));
+check('the surface exit is always wide enough for a tower + clearance (never a choke point)', () => bio.run(
+  '(() => { const m = caveMouth(); return (m.cxR - m.cxL) >= BASE_W + EXIT_CLEARANCE - 1; })()'));
+check('walls funnel to MEET the mouth right under the surface (no flat columns detached from the hole)', () => bio.run(
+  '(() => { const baseW = Math.round(W * 0.17), surfRow = Math.floor(SURF_A*BH/4), m = caveMouth(); ' +
+  'const nearL = caveWallW(surfRow, 0, baseW), nearR = caveWallW(surfRow, 1, baseW); ' +          // both walls land on the hole edges
+  'const deepL = caveWallW(surfRow - 40, 0, baseW); ' +                                             // deep wall is untapered noise, not the mouth
+  'return Math.abs(nearL - m.cxL) <= 3 && Math.abs(nearR - (W - m.cxR)) <= 3 && nearL !== deepL; })()'));
+check('reduced-motion: full cave + foreground still render without throwing', () => {
+  const rm = makeGame({ 'skystack-height': '80' }, true);
+  if (!rm.run('reduceMotion === true')) return false;
+  rm.run('mode = "endless"; for (let a = 0; a < SURF_A + 8; a += 4) { cameraY = GROUND_Y - a*BH - (H-100); const yc = GROUND_Y - SURF_A*BH - cameraY; drawCave(0, Math.max(0, Math.min(yc, H)), yc, cameraY); drawCaveForeground(cameraY, 0); }');
+  return true;
+});
 // ---- Phase 5: region entry cinematics ----
 check('region intro system exists, one tag per stage, arms on entry', () => bio.run(
   '(() => { regionIntro = null; return typeof startRegionIntro === "function" && typeof renderRegionIntro === "function" && INTRO_TAGS.length === TIERS.length && (startRegionIntro(0), regionIntro !== null && regionIntro.ti === 0 && regionIntro.dur > 0); })()'));
@@ -466,7 +496,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v47', () => /const CACHE = 'skystack-v47'/.test(sw));
+check('sw.js cache bumped to v48', () => /const CACHE = 'skystack-v48'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
