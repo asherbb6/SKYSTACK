@@ -1961,13 +1961,13 @@ function drawCaveBackdrop(top, cy, ph) {
   // the whole back wall is packed rock too (dim, half-speed parallax) — kept visible in the centre so
   // the lane has real stone depth, then only gently sunk back so the colourful blocks still pop
   ctx.globalAlpha = 0.5;
-  for (let y = top; y < H; y += 12) blitCaveTex(0, y, W, Math.min(12, H - y), Math.round((GROUND_Y - cy * 0.5 - y)));
+  for (let y = top; y < H; y += 12) blitCaveTex(0, y, W, Math.min(12, H - y), Math.round((GROUND_Y - cy - y)));
   ctx.globalAlpha = 1;
   const hg = ctx.createLinearGradient(0, 0, W, 0);                                            // soft central shade — dark enough to read, not a black void
   hg.addColorStop(0, 'rgba(6,4,3,0)'); hg.addColorStop(0.34, 'rgba(6,4,3,0.42)');
   hg.addColorStop(0.66, 'rgba(6,4,3,0.42)'); hg.addColorStop(1, 'rgba(6,4,3,0)');
   ctx.fillStyle = hg; ctx.fillRect(0, top, W, under);
-  const P = 68, s = cy * 0.4, off = ((s % P) + P) % P;                                        // far rock lumps — receding masses that give the centre depth
+  const P = 68, s = cy, off = ((s % P) + P) % P;                                              // far rock lumps — receding masses locked to the wall (no parallax slide)
   for (let y = top - off - P; y < H; y += P) { const row = Math.round((y + s) / P);
     for (let k = 0; k < 4; k++) { const ly = Math.round(y + bhash(row*3 + k) * P), lr = 9 + Math.round(bhash(row + k) * 10);
       if (ly - lr < top) continue;                                                            // never poke above the ceiling into the sky
@@ -2138,7 +2138,7 @@ function drawCaveForeground(cy, ph) {
   const gy = worldY(0, cy), yCeil = worldY(SURF_A, cy);
   if (gy < -40 || yCeil > H + 40) { fgTowerBox = null; return; }               // only inside the cave band
   fgTowerBox = towerScreenBox(cy);
-  const cyF = cy * 1.08;                                                       // the near layer parallaxes a touch faster = depth
+  const cyF = cy;                                                             // locked to the world — the near layer moves exactly with the walls + tower (no parallax slide)
   // (1) near rock lips hugging the screen edges — big, dark, sharp; frame the field without touching the lane
   for (const side of [0, 1]) {
     const fw = Math.round(W * 0.05);
