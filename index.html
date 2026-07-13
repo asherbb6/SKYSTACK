@@ -1258,7 +1258,7 @@ function update(dt) {
   updateEventFx(dt);
   // critically-damped smooth follow (SmoothDamp): the camera glides toward the tower with no lurch,
   // so the world scrolls so gently it barely reads as moving — never a per-drop jerk.
-  { const dts = dt / 60, smoothTime = 0.5, omega = 2 / smoothTime;
+  { const dts = dt / 60, smoothTime = 0.85, omega = 2 / smoothTime;
     const x = omega * dts, expc = 1 / (1 + x + 0.48*x*x + 0.235*x*x*x);
     const change = cameraY - cameraTarget, temp = (camVel + omega * change) * dts;
     camVel = (camVel - omega * temp) * expc;
@@ -2145,20 +2145,7 @@ function drawCaveForeground(cy, ph) {
   if (gy < -40 || yCeil > H + 40) { fgTowerBox = null; return; }               // only inside the cave band
   fgTowerBox = towerScreenBox(cy);
   const cyF = cy;                                                             // locked to the world — the near layer moves exactly with the walls + tower (no parallax slide)
-  // (1) near rock lips hugging the screen edges — big, dark, sharp; frame the field without touching the lane
-  for (const side of [0, 1]) {
-    const fw = Math.round(W * 0.05);
-    for (let y = Math.max(0, Math.round(yCeil)); y < Math.min(H, gy + 4); y += 6) {
-      const row = Math.round((GROUND_Y - cyF - y) / 6);
-      const w = fw + Math.round(bhash(row*7 + side*57) * 10), xx = side ? W - w : 0, inx = side ? xx : w;
-      ctx.globalAlpha = fgAlpha(xx, y, xx + w, y + 6);
-      blitCaveTex(xx, y, w, 6, row * 6 + side * 61, bhash(row*3 + side) > 0.7 ? caveTexGray : caveTex);
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';     ctx.fillRect(side ? inx : inx - 3, y, 3, 6);   // inner shade into the lane
-      ctx.fillStyle = 'rgba(132,104,66,0.5)'; ctx.fillRect(side ? inx - 1 : inx, y, 1, 6);   // lit rim
-      if (bhash(row*13 + side*29) > 0.82) { ctx.fillStyle = '#31471F'; ctx.fillRect(side ? inx - 3 : inx, y, 3, 2); }   // moss tuft
-    }
-  }
-  ctx.globalAlpha = 1;
+  // (the near dirt "side rails" that hugged the screen edges were removed — they just overlapped the walls)
   // (2) sparse dangling clumps: a rooty rock knot hangs from above; the tower slips behind it, then it clears
   const CP = 178, coff = ((cyF % CP) + CP) % CP;
   for (let y = -coff - CP; y < H; y += CP) {
