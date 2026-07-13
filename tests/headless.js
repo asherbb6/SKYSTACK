@@ -451,6 +451,27 @@ check('reduced-motion: full cave + foreground still render without throwing', ()
   rm.run('mode = "endless"; for (let a = 0; a < SURF_A + 8; a += 4) { cameraY = GROUND_Y - a*BH - (H-100); const yc = GROUND_Y - SURF_A*BH - cameraY; drawCave(0, Math.max(0, Math.min(yc, H)), yc, cameraY); drawCaveForeground(cameraY, 0); }');
   return true;
 });
+// ---- camera follows the blocks; the environment is a FIXED backdrop that never scrolls ----
+check('camera follows the blocks: the tower top stays framed near the bottom band', () => {
+  const cam = makeGame();
+  return cam.run('(() => { if (["panCamera","camReset"].some(f => eval("typeof "+f) !== "function")) return false; ' +
+    'mode="endless"; state="playing"; blocks=[{x:0,w:96,col:"#fff"}]; camReset(); ' +
+    'const a = Math.round(towerTopY() - cameraY); ' +                            // tower top screen-y at 1 block
+    'for (let n=0;n<12;n++){ blocks.push({x:0,w:96,col:"#fff"}); panCamera(); } ' +
+    'const b = Math.round(towerTopY() - cameraTarget); ' +                       // ...and after climbing: still pinned to the same band
+    'return a === H - 100 && b === H - 100; })()');
+});
+check('fixed backdrop: helpers exist, render across the whole climb, and frame each biome at a CONSTANT (non-scrolling) cy', () => {
+  const cam = makeGame();
+  return cam.run('(() => {' +
+    'if (["drawBackdrop","drawSceneFull","bgCyFor","ensureSceneBuf"].some(f => eval("typeof "+f) !== "function")) return false;' +
+    'mode="endless"; state="playing";' +
+    'for (let a=0;a<560;a+=8){ cameraY = GROUND_Y - a*BH - (H-100); drawBackdrop(Math.round(a), 30); }' +   // whole climb, no throw
+    // the backdrop framing for a tier does NOT depend on the live camera (so it never scrolls up/down)
+    'const lowInCave = GROUND_Y - 4*BH - (H-100), highInCave = GROUND_Y - 24*BH - (H-100);' +
+    'cameraY = lowInCave; const c1 = bgCyFor(0); cameraY = highInCave; const c2 = bgCyFor(0);' +
+    'return c1 === c2 && [0,1,4,8].every(ti => Number.isFinite(bgCyFor(ti))); })()');
+});
 // ---- Phase 5: region entry cinematics ----
 check('region intro system exists, one tag per stage, arms on entry', () => bio.run(
   '(() => { regionIntro = null; return typeof startRegionIntro === "function" && typeof renderRegionIntro === "function" && INTRO_TAGS.length === TIERS.length && (startRegionIntro(0), regionIntro !== null && regionIntro.ti === 0 && regionIntro.dur > 0); })()'));
@@ -496,7 +517,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v52', () => /const CACHE = 'skystack-v52'/.test(sw));
+check('sw.js cache bumped to v53', () => /const CACHE = 'skystack-v53'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
