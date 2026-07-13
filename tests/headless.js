@@ -404,14 +404,23 @@ check('drawGroundWorld renders across the whole climb without throwing', () => {
 });
 // ---- Phase 4: wildlife ----
 check('wildlife helpers + herds exist', () => bio.run(
-  '["drawBird","drawBat","drawCaveLife"].every(f => eval("typeof "+f) === "function") && birds.length > 0 && bats.length > 0 && glowworms.length > 0'));
+  '["drawBird","drawBat","drawCaveCreatures"].every(f => eval("typeof "+f) === "function") && birds.length > 0 && bats.length > 0 && beetles.length > 0 && worms.length > 0'));
 check('cave wildlife is anchored to cave altitudes (below the surface line)', () => bio.run(
-  'bats.every(b => b.a < SURF_A) && glowworms.every(g => g.a < SURF_A)'));
-check('drawBird/drawBat/drawCaveLife render across the climb without throwing', () => {
+  'bats.every(b => b.a < SURF_A) && beetles.every(b => b.a < SURF_A) && worms.every(w => w.a < SURF_A)'));
+check('drawBird/drawBat/drawCaveCreatures render across the climb without throwing', () => {
   bio.run('for (let p = 0; p < 6.3; p += 1.2) { drawBird(50, 80, 1, p, "#000"); drawBat(60, 90, p); }');
-  bio.run('for (let a = 0; a < 60; a += 8) { cameraY = GROUND_Y - a*BH - (H-100); drawCaveLife(cameraY, 30); }');
+  bio.run('for (let a = 0; a < 60; a += 8) { cameraY = GROUND_Y - a*BH - (H-100); drawCaveCreatures(cameraY, 30); }');
   return true;
 });
+// ---- living procedural cave (Level 1) ----
+check('cave renderer suite exists (backdrop/walls/ground/torch/weather/ceiling/orchestrator)', () => bio.run(
+  '["drawCave","drawCaveBackdrop","drawCaveWalls","drawCaveGround","drawCaveTorchLight","drawCaveWeather","drawCaveCeiling"].every(f => eval("typeof "+f) === "function")'));
+check('cave suite renders across the whole underground without throwing', () => {
+  bio.run('for (let a = 0; a < SURF_A + 6; a += 4) { cameraY = GROUND_Y - a*BH - (H-100); const yc = GROUND_Y - SURF_A*BH - cameraY; drawCave(30, Math.max(0, Math.min(yc, H)), yc, cameraY); }');
+  return true;
+});
+check('no embedded image backdrops left (cave is fully procedural)', () =>
+  !/caveBgImg|data:image\/jpeg;base64/.test(src));
 // ---- Phase 5: region entry cinematics ----
 check('region intro system exists, one tag per stage, arms on entry', () => bio.run(
   '(() => { regionIntro = null; return typeof startRegionIntro === "function" && typeof renderRegionIntro === "function" && INTRO_TAGS.length === TIERS.length && (startRegionIntro(0), regionIntro !== null && regionIntro.ti === 0 && regionIntro.dur > 0); })()'));
@@ -457,7 +466,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v44', () => /const CACHE = 'skystack-v44'/.test(sw));
+check('sw.js cache bumped to v45', () => /const CACHE = 'skystack-v45'/.test(sw));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
