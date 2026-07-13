@@ -592,6 +592,17 @@ let shooter = null, shooterTimer = 240;
 let demo = { n: 1, t: 0 };
 
 function towerTopY() { return GROUND_Y - blocks.length * BH; }
+// ---- classic-stacker deadzone camera ----
+// The tower RISES up the screen as you stack; the world only PANS when the tower's head climbs into
+// the top band. Between pans cameraTarget is fixed, so the cave holds perfectly still while you build.
+const CAM_TOP_F = 0.26, CAM_REST_F = 0.58, CAM_BOTTOM_F = 0.74;   // head screen-y as a fraction of H: pan-trigger / rest-after-pan / lowest
+function camHeadY() { return towerTopY() - BH; }                  // world-y just above the top block (where the incoming block sits)
+function panCamera() {
+  const head = camHeadY(), hs = head - cameraTarget;             // the head's screen-y under the current (settled) target
+  if (hs < H * CAM_TOP_F)         cameraTarget = head - H * CAM_REST_F;    // climbed into the top band -> pan up; head rests lower again
+  else if (hs > H * CAM_BOTTOM_F) cameraTarget = head - H * CAM_BOTTOM_F;  // short tower / post-resize -> keep the head on screen
+}
+function camReset() { cameraTarget = camHeadY() - H * CAM_BOTTOM_F; cameraY = cameraTarget; }   // snap on run start: tower low, all the room above to climb
 function blockCol(i) { const s = skin(); return s.base(i, hueBase); }
 function setExpr(e, t) { mascot.expr = e; mascot.exprT = t; }
 function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assist); }
@@ -628,7 +639,7 @@ function resetRun() {
     if (loadout.slow) slowBlocks = 4;
   }
   loadout = { shield:false, aura:false, slow:false };
-  cameraY = towerTopY() - (H - 100); cameraTarget = cameraY;
+  camReset();
   if (runLevel >= 0 && !reduceMotion) cameraY = cameraTarget + 120;   // pan-to-landmark: reveal the themed base, then settle up into play
   schedulePickups(); spawnSlider();
 }
@@ -758,7 +769,7 @@ function land() {
       floaters.push({ text: m.fail ? 'SHIELD!' : 'SAVED', x:W/2, y:towerTopY()-BH, vy:-.4, life:1.4, color:'#5EC8F2' });
       for (let i = 0; i < 20; i++) particles.push({ x:nx+nw/2, y:towerTopY()-BH, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life:1, color:'#5EC8F2' });
       sfx.shield(); shake = Math.max(shake, 3); faller = null; squash = 1;
-      cameraTarget = towerTopY() - (H - 100); state = 'playing'; afterPlace(f, false); spawnSlider(); return;
+      panCamera(); state = 'playing'; afterPlace(f, false); spawnSlider(); return;
     }
     debris.push({ x:f.x, y:f.y, w:f.w, h:BH, vx:f.x<top.x?-.6:.6, vy:1.5, rot:0, vr:(Math.random()-.5)*.2, col:f.col });
     setExpr('sad', 999); gameOver('miss'); return;
@@ -834,13 +845,13 @@ function land() {
     shake = Math.max(shake, reduceMotion ? 3 : 6);
     mascot.hop = 1; setExpr('wow', 40);
     sfx.fever(); hapt([30, 30, 60]);
-    faller = null; squash = 1; cameraTarget = towerTopY() - (H - 100); state = 'playing';
+    faller = null; squash = 1; panCamera(); state = 'playing';
     afterPlace(f, false);
     spawnSlider(); return;
   }
 
   blocks.push({ x:nx, w:nw, col:f.col });
-  faller = null; squash = 1; cameraTarget = towerTopY() - (H - 100); state = 'playing';
+  faller = null; squash = 1; panCamera(); state = 'playing';
   afterPlace(f, true, nx + nw/2);
   if (Math.abs(balance) > TOPPLE) { setExpr('dizzy', 999); gameOver('topple'); return; }
   spawnSlider();
@@ -981,7 +992,7 @@ function doRevive() {
   shield = Math.min(shield + 1, 2);            // a shield so the comeback can breathe
   mascot.expr = 'normal'; mascot.exprT = 0;
   state = 'playing'; fadeT = 1;
-  cameraTarget = towerTopY() - (H - 100);
+  panCamera();
   floaters.push({ text: 'REVIVED!', x: W/2, y: towerTopY() - BH - 10, vy: -.4, life: 1.5, color: '#62E8B5' });
   burst(W/2, towerTopY() - BH, 20, { h: 150 }, true);
   sfx.shield(); hapt([20, 30, 40]);
@@ -1095,7 +1106,7 @@ function adaptToScreen() {
   for (const cl of clouds) cl.x *= kx;
   for (const bd of birds) bd.x *= kx;
   for (const fl of evFlakes) { fl.x *= kx; fl.y *= ky; }
-  cameraY = towerTopY() - (H - 100); cameraTarget = cameraY;
+  cameraTarget = camHeadY() - H * CAM_REST_F; cameraY = cameraTarget;   // re-anchor the head at rest after a resize
   canvasRect = null; fitCanvas();
   if (booted) render();
 }
@@ -1256,6 +1267,7 @@ function update(dt) {
   tick += dt;
   musicStep();
   updateEventFx(dt);
+  if (state === 'playing' || state === 'dropping') panCamera();   // deadzone: pan only when the tower reaches the top band
   cameraY += (cameraTarget - cameraY) * 0.08 * dt;
   if (shake > 0) shake = Math.max(0, shake - .25*dt);
   if (squash > 0) squash = Math.max(0, squash - .07*dt);
@@ -3753,7 +3765,7 @@ function renderGameOver() {
 let last = performance.now();
 function frame(now) { rafId = 0; let dt=(now-last)/16.667; last=now; if (dt>3) dt=3; if (dt<0) dt=0; update(dt); render(); rafId = requestAnimationFrame(frame); }
 blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
-cameraY = towerTopY()-(H - 100); cameraTarget = cameraY; fadeT = 0;
+camReset(); fadeT = 0;
 previewIdx = Math.max(0, SKINS.findIndex(s => s.id === skinId));
 booted = true;
 render();
