@@ -531,6 +531,31 @@ function persistCharacters() {
   store.set('skystack-skins',persistentOwned); store.set('skystack-skin',skinId);   // rollback compatibility
 }
 persistCharacters();
+
+// ---------- cosmetic bases (S3) ----------
+// Bases are a separate, purely visual run-start choice. They never replace the checkpoint's
+// structural landmark and have no gameplay effects; functional side-grades remain deferred.
+const BASE_REGISTRY = deepFreeze([
+  { id:'natural', name:'NATURAL GROUND', cost:0,   style:'natural', accent:'#7A8595', unlock:{type:'starter',cost:0}, identity:'THE ORIGINAL CAVE EARTH' },
+  { id:'runestone',name:'RUNESTONE',      cost:90,  style:'rune',    accent:'#BFE8FF', unlock:{type:'coins',cost:90},  identity:'ANCIENT STONE MARKS' },
+  { id:'rootbound',name:'ROOTBOUND',      cost:160, style:'roots',   accent:'#62E8B5', unlock:{type:'coins',cost:160}, identity:'LIVING FOREST ROOTS' },
+  { id:'starforge',name:'STARFORGE',      cost:260, style:'stars',   accent:'#FFD75E', unlock:{type:'coins',cost:260}, identity:'A QUIET CELESTIAL SEAL' }
+]);
+function baseById(id) { return BASE_REGISTRY.find(b=>b.id===id) || BASE_REGISTRY[0]; }
+function normalizeBaseState(v) {
+  const src=v&&typeof v==='object'&&!Array.isArray(v)?v:{};
+  const list=stringList(src.owned); if (list.indexOf('natural')<0) list.unshift('natural');
+  const wanted=typeof src.selected==='string'?src.selected:'natural';
+  const selected=BASE_REGISTRY.some(b=>b.id===wanted)&&list.indexOf(wanted)>=0?wanted:'natural';
+  return { owned:list, selected };
+}
+let baseState=normalizeBaseState(store.get(FUTURE_SAVE_CONTRACTS.bases.key,null));
+let ownedBases=baseState.owned, baseId=baseState.selected;
+function persistBases() {
+  baseState={owned:[...ownedBases],selected:baseId};
+  store.set(FUTURE_SAVE_CONTRACTS.bases.key,baseState);
+}
+persistBases();
 // event UI palette: theme accents + PLAY button per holiday (fallback = normal gold/mint)
 function hexRGB(h) { return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; }
 const UI_HEX = () => (EV && EV.pal) ? EV.pal.ui : '#FFD75E';
@@ -611,7 +636,7 @@ const MODE_REGISTRY = deepFreeze({
 });
 const MODES = Object.freeze(['level','practice','endless','time','pure','daily'].map(id => MODE_REGISTRY[id]));
 const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
-const FEATURE_FLAGS = deepFreeze({ characters:true, bases:false, collections:false, modifiers:false, challenges:false });
+const FEATURE_FLAGS = deepFreeze({ characters:true, bases:true, collections:false, modifiers:false, challenges:false });
 const EXTRAS = MODES.filter(m => !m.hidden);   // the picker: side modes, not the main climb
 let mode = store.get('skystack-mode', 'endless');
 if (!MODES.find(m => m.id === mode) || mode === 'level') { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
@@ -637,6 +662,7 @@ let best = store.get('skystack-best', 0), bestHeight = store.get('skystack-heigh
 let prog = store.get('skystack-tiers', 0);
 let levelStars = store.get('skystack-levelstars', []);
 let pendingLevel = -1;   // level chosen on the map, consumed by the next resetRun
+let pendingCheckpointId = null; // checkpoint choice is independent from the selected campaign goal
 let runLevel = -1;       // active level for the current run (-1 = free modes)
 let runLaunch = 0;       // blocks pre-stacked for the current run (0 = full ground-up run)
 let runContext = null;   // deeply immutable rules/seed snapshot owned by the active run
@@ -763,7 +789,18 @@ const LEVEL_REGISTRY = deepFreeze(TIERS.map((t, i) => {
 function laneForMode(modeId) { const p=PERMISSION_REGISTRY[modeId] || PERMISSION_REGISTRY.endless; return DIFFICULTY_LANES[p.lane] || DIFFICULTY_LANES.assisted; }
 const matAt = t => MATERIALS[clamp(t | 0, 0, MATERIALS.length - 1)];
 const levelStartN = i => LEVEL_REGISTRY[clamp(i | 0, 0, LEVEL_REGISTRY.length - 1)].startAltitude; // level i climbs start -> goal
-function startLevel(i) { pendingLevel = i; mode = 'level'; startRun(); }
+const CHECKPOINT_SCORE_MULTIPLIER = 0.75;
+const CHECKPOINT_REGISTRY = deepFreeze([
+  { id:'ground', name:'GROUND', short:'GROUND', startAltitude:0, region:0, unlock:{requiresClearedLevel:null}, scoreMultiplier:1, rewardScope:'full-climb', recordScope:'ground-up' },
+  ...TIERS.map((t,i)=>({ id:'checkpoint-'+i, name:t.name, short:t.name.split(' ')[0], startAltitude:t.n, region:i,
+    unlock:{requiresClearedLevel:i}, scoreMultiplier:CHECKPOINT_SCORE_MULTIPLIER, rewardScope:'campaign-segment', recordScope:'checkpoint' }))
+]);
+function checkpointById(id) { return CHECKPOINT_REGISTRY.find(c=>c.id===id) || CHECKPOINT_REGISTRY[0]; }
+function checkpointAtAltitude(a) { return CHECKPOINT_REGISTRY.find(c=>c.startAltitude===(a|0)) || CHECKPOINT_REGISTRY[0]; }
+function checkpointForLevel(i) { return i > 0 ? CHECKPOINT_REGISTRY[clamp(i,1,CHECKPOINT_REGISTRY.length-1)] : CHECKPOINT_REGISTRY[0]; }
+function checkpointUnlocked(cp, cleared) { return cp.unlock.requiresClearedLevel===null || (cleared===undefined?prog:cleared)>cp.unlock.requiresClearedLevel; }
+function startingStructureFor(cp) { return cp.startAltitude > 0 ? { id:'landmark-'+cp.region, kind:'landmark', region:cp.region } : { id:'natural-cave-ground', kind:'ground', region:0 }; }
+function startLevel(i, checkpointId) { pendingLevel = i; pendingCheckpointId = checkpointId || checkpointForLevel(i).id; mode = 'level'; startRun(); }
 
 // ---------- power-ups ----------
 const POW = {
@@ -811,7 +848,8 @@ let regionIntro = null;   // cinematic entry animation for the region you're ent
 let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false;
 let wind = null, windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
 let nextPickupRow = 8;
-let previewIdx = 0, completedThisRun = [], achThisRun = [], levelUpsThisRun = 0, xpThisRun = 0;
+let previewIdx = 0, basePreviewIdx = Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)), shopView = 'character';
+let completedThisRun = [], achThisRun = [], levelUpsThisRun = 0, xpThisRun = 0;
 let overCause = '';
 let fever = false, feverT = 0;
 let nova = false, novaT = 0, novaFlash = 0;   // SUPERNOVA at combo x15 (3x score)
@@ -843,14 +881,23 @@ function createRunContext(o) {
   const p = PERMISSION_REGISTRY[m.id];
   const lane = laneForMode(m.id), levelSpec = campaignLevel >= 0 ? LEVEL_REGISTRY[campaignLevel] : null;
   const char=characterById(o.characterId), passive=PASSIVE_REGISTRY[char.passiveId] || PASSIVE_REGISTRY.classic;
-  const load = o.loadout || {};
+  const checkpoint=o.checkpointId?checkpointById(o.checkpointId):checkpointAtAltitude(startingAltitude);
+  const structure=startingStructureFor(checkpoint), selectedBase=baseById(o.baseId);
+  const load = o.loadout || {}, boosts={ shield:!!load.shield, aura:!!load.aura, slow:!!load.slow };
+  const recordEligible=p.records && campaignLevel<0 && startingAltitude===0 && checkpoint.recordScope==='ground-up';
   return deepFreeze({
     mode:m.id, campaignLevel, startingAltitude, seed:o.seed >>> 0,
     assistPolicy:p.assist,
-    loadoutSnapshot:{ shield:!!load.shield, aura:!!load.aura, slow:!!load.slow },
+    checkpointSnapshot:{ id:checkpoint.id, name:checkpoint.name, startAltitude:checkpoint.startAltitude, scoreMultiplier:checkpoint.scoreMultiplier, rewardScope:checkpoint.rewardScope, recordScope:checkpoint.recordScope },
+    startingStructureSnapshot:structure,
+    baseSnapshot:{ id:selectedBase.id, name:selectedBase.name, style:selectedBase.style, cosmetic:true },
+    basePermissions:{ cosmetic:true, effects:false },
+    boostSnapshot:boosts,
+    boostPermissions:{ allowed:p.loadout },
+    loadoutSnapshot:boosts, // S0 compatibility alias; boostSnapshot is the S3 canonical owner
     modifiers:Array.isArray(o.modifiers) ? o.modifiers.map(x => JSON.parse(JSON.stringify(x))) : [],
-    rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards },
-    recordPermissions:{ write:p.records && campaignLevel < 0 && startingAltitude === 0 },
+    rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards, scope:checkpoint.rewardScope, scoreMultiplier:checkpoint.scoreMultiplier },
+    recordPermissions:{ write:recordEligible, scope:checkpoint.recordScope, reason:campaignLevel>=0?'campaign-level':checkpoint.recordScope==='ground-up'?'eligible-ground-up':'checkpoint-start' },
     loadoutAllowed:p.loadout,
     characterSnapshot:{ id:char.id, passiveId:passive.id, passiveEnabled:!!p.passives, mastery:masteryEntry(o.characterMastery) },
     difficultyProfile:{ lane:lane.id, assistEnvelope:lane.assist, startingAssist:startingAssist(m.id, o.skill), campaignLevel, levelSpeedScale:levelSpec ? levelSpec.speedCurve.campaignScale : 1, slider:BALANCE_REGISTRY.slider }
@@ -860,7 +907,7 @@ function canEarnRewards(ctx) { return !!(ctx && ctx.rewardPermissions && ctx.rew
 function canWriteRecords(ctx) { return !!(ctx && ctx.recordPermissions && ctx.recordPermissions.write); }
 function canUseLoadout(ctx) {
   if (typeof ctx === 'string') return !!(PERMISSION_REGISTRY[ctx] && PERMISSION_REGISTRY[ctx].loadout);
-  return !!(ctx && ctx.loadoutAllowed);
+  return !!(ctx && ctx.boostPermissions && ctx.boostPermissions.allowed);
 }
 function canSpawnPickups(ctx) { return !!(ctx && ctx.rewardPermissions && ctx.rewardPermissions.pickups); }
 function activePassive(ctx) {
@@ -872,7 +919,7 @@ function passiveEffect(ctx, key, fallback) {
   return Object.prototype.hasOwnProperty.call(e,key)?e[key]:fallback;
 }
 function adjustedRunCoins(ctx,n) { return Math.max(0,Math.round(n*passiveEffect(ctx,'runCoin',1))); }
-function adjustedRunScore(ctx,n) { return Math.max(0,Math.round(n*passiveEffect(ctx,'score',1))); }
+function adjustedRunScore(ctx,n) { return Math.max(0,Math.round(n*passiveEffect(ctx,'score',1)*(ctx&&ctx.rewardPermissions?ctx.rewardPermissions.scoreMultiplier:1))); }
 function feverThreshold(ctx) { return passiveEffect(ctx,'feverAt',10); }
 function adjustedReviveCost(ctx,n) { return Math.max(1,Math.ceil(n*passiveEffect(ctx,'reviveCost',1))); }
 function difficultyAt(ctx, altitude, currentAssist, tierOverride) {
@@ -952,9 +999,13 @@ function resetRun() {
   const m = curMode();
   // campaign level: pre-stack the tower to the level's start height
   runLevel = m.id === 'level' ? pendingLevel : -1; pendingLevel = -1;
-  runLaunch = runLevel >= 0 ? levelStartN(runLevel) : 0;
+  const requestedCheckpoint=checkpointById(pendingCheckpointId || (runLevel>=0?checkpointForLevel(runLevel).id:'ground'));
+  pendingCheckpointId=null;
+  const checkpoint=runLevel>=0 && checkpointUnlocked(requestedCheckpoint) && requestedCheckpoint.startAltitude<=levelStartN(runLevel)
+    ? requestedCheckpoint : (runLevel>=0?checkpointForLevel(runLevel):CHECKPOINT_REGISTRY[0]);
+  runLaunch = checkpoint.startAltitude;
   const seed = m.daily ? seedForRun(m.id, 0) : seedForRun(m.id, Math.floor(Math.random() * 4294967296));
-  runContext = createRunContext({ mode:m.id, campaignLevel:runLevel, startingAltitude:runLaunch, seed, skill, loadout, characterId:skinId, characterMastery:masteryFor(skinId), modifiers:[] });
+  runContext = createRunContext({ mode:m.id, campaignLevel:runLevel, startingAltitude:runLaunch, checkpointId:checkpoint.id, baseId, seed, skill, loadout, characterId:skinId, characterMastery:masteryFor(skinId), modifiers:[] });
   rnd = mulberry32(runContext.seed); hueBase = rnd() * 360;
   blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
   for (let i = 1; i < runLaunch; i++) blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col: blockCol(i) });
@@ -976,9 +1027,9 @@ function resetRun() {
   mascot.hop = 0; mascot.expr = 'normal'; mascot.exprT = 0;
   tutStep = m.practice ? 0 : (tutDone ? -1 : 0);
   if (canUseLoadout(runContext)) {
-    if (runContext.loadoutSnapshot.shield) shield = 1;
-    if (runContext.loadoutSnapshot.aura) auraBlocks = 5;
-    if (runContext.loadoutSnapshot.slow) slowBlocks = 4;
+    if (runContext.boostSnapshot.shield) shield = 1;
+    if (runContext.boostSnapshot.aura) auraBlocks = 5;
+    if (runContext.boostSnapshot.slow) slowBlocks = 4;
   }
   loadout = { shield:false, aura:false, slow:false };
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY; camVel = 0;
@@ -1395,7 +1446,7 @@ function shareScore() {
 const PAD = 6;
 const NAV_H = 20;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
-    SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
+    SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
@@ -1429,6 +1480,8 @@ function relayout() {
   MISS_PANEL = { x: Math.round((W-missW)/2), y:H-114, w:missW, h:44 };   // centered, capped on wide screens
   INSTALL_BTN = { x:W/2-42, y:H-58, w:84, h:14 };
   // shop
+  const shopTabW=Math.min(90,Math.floor((W-30)/2));
+  SHOP_TABS=['character','base'].map((id,i)=>({id,x:Math.round(W/2-shopTabW)+i*shopTabW,y:22,w:shopTabW,h:14}));
   SKIN_L = { x: Math.max(PAD, Math.round(W/2)-80), y:66, w:20, h:26 };   // arrows hug the preview, not the screen edge
   SKIN_R = { x: Math.min(W-PAD-20, Math.round(W/2)+60), y:66, w:20, h:26 };
   EQUIP_BTN = { x:W/2-46, y:138, w:92, h:18 };
@@ -1486,7 +1539,7 @@ function startRun() { resetRun(); startRegionIntro(tier); state = 'playing'; sfx
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
-    if (state !== t.id) { state = t.id; sfx.tap(); if (t.id === 'shop') { previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
+    if (state !== t.id) { state = t.id; sfx.tap(); if (t.id === 'shop') { shopView='character'; previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); basePreviewIdx=Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
     return true;
   }
   return true;
@@ -1561,9 +1614,19 @@ function pressDown(e) {
   } else if (state === 'shop') {
     if (!p) return;
     if (navHit(p)) return;
-    if (inR(p, SKIN_L, 6)) { previewIdx = (previewIdx+CHARACTER_REGISTRY.length-1)%CHARACTER_REGISTRY.length; demo.n=1; sfx.tap(); return; }
-    if (inR(p, SKIN_R, 6)) { previewIdx = (previewIdx+1)%CHARACTER_REGISTRY.length; demo.n=1; sfx.tap(); return; }
+    for (const tab of SHOP_TABS) if (inR(p,tab,2)) { shopView=tab.id; sfx.tap(); return; }
+    const catalog=shopView==='base'?BASE_REGISTRY:CHARACTER_REGISTRY;
+    if (inR(p, SKIN_L, 6)) { if(shopView==='base')basePreviewIdx=(basePreviewIdx+catalog.length-1)%catalog.length;else previewIdx=(previewIdx+catalog.length-1)%catalog.length; demo.n=1; sfx.tap(); return; }
+    if (inR(p, SKIN_R, 6)) { if(shopView==='base')basePreviewIdx=(basePreviewIdx+1)%catalog.length;else previewIdx=(previewIdx+1)%catalog.length; demo.n=1; sfx.tap(); return; }
     if (inR(p, EQUIP_BTN, 3)) {
+      if (shopView==='base') {
+        const b=BASE_REGISTRY[basePreviewIdx];
+        if (ownedBases.indexOf(b.id)===-1) {
+          if (coins>=b.cost) { coins-=b.cost; ownedBases.push(b.id); baseId=b.id; persistBases(); store.set('skystack-coins',coins); sfx.unlock(); toast('BASE UNLOCKED!'); }
+          else { sfx.deny(); toast('NEED MORE COINS'); }
+        } else if (b.id!==baseId) { baseId=b.id; persistBases(); sfx.tap(); toast('BASE EQUIPPED'); }
+        return;
+      }
       const sk = CHARACTER_REGISTRY[previewIdx];
       if (owned.indexOf(sk.id) === -1) {
         if (coins >= sk.cost) { coins -= sk.cost; owned.push(sk.id); skinId = sk.id; persistCharacters(); store.set('skystack-coins', coins); sfx.unlock(); toast('UNLOCKED!'); }
@@ -1571,7 +1634,7 @@ function pressDown(e) {
       } else if (sk.id !== skinId) { skinId = sk.id; persistCharacters(); sfx.tap(); toast('EQUIPPED'); }
       return;
     }
-    if (canUseLoadout(mode)) for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
+    if (shopView==='character' && canUseLoadout(mode)) for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
       shopInfo = POW_DESC[c.id];
       if (loadout[c.id]) { loadout[c.id] = false; coins += c.cost; store.set('skystack-coins', coins); sfx.tap(); }
       else if (coins >= c.cost) { loadout[c.id] = true; coins -= c.cost; store.set('skystack-coins', coins); sfx.coin(); }
@@ -1628,7 +1691,7 @@ canvas.addEventListener('wheel', e => {
 addEventListener('keydown', e => {
   if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; if (paused) sfx.pause(); else sfx.resume(); e.preventDefault(); return; }
   if (paused) { if (e.code === 'Space' || e.code === 'Enter') { paused = false; sfx.resume(); e.preventDefault(); } return; }
-  if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { previewIdx = (previewIdx + (e.code==='ArrowLeft'?CHARACTER_REGISTRY.length-1:1)) % CHARACTER_REGISTRY.length; demo.n=1; sfx.tap(); e.preventDefault(); return; }
+  if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { const a=shopView==='base'?BASE_REGISTRY:CHARACTER_REGISTRY, d=e.code==='ArrowLeft'?a.length-1:1; if(shopView==='base')basePreviewIdx=(basePreviewIdx+d)%a.length;else previewIdx=(previewIdx+d)%a.length; demo.n=1; sfx.tap(); e.preventDefault(); return; }
   if (e.code==='Space'||e.code==='Enter'||e.code==='ArrowDown') {
     e.preventDefault();
     if (state === 'playing') drop(); else pressDown(null);
@@ -3331,6 +3394,24 @@ function drawLandmarkPlatform(cx, topY, bw, region) {
   }
   ctx.globalAlpha = 1;
 }
+// Cosmetic overlay only: it decorates the natural ground or checkpoint landmark but never changes
+// collision width, starting altitude, score, or any other gameplay state.
+function drawBaseCosmetic(cx, topY, bw, id) {
+  const b=baseById(id), x=Math.round(cx-bw*.62), w=Math.round(bw*1.24), y=Math.round(topY);
+  if (b.style==='natural') return;
+  ctx.save();
+  if (b.style==='rune') {
+    ctx.fillStyle='rgba(34,42,62,0.92)'; ctx.fillRect(x,y,w,5);
+    ctx.fillStyle='#BFE8FF'; for(let k=0;k<5;k++){const rx=Math.round(x+5+k*(w-10)/4);ctx.fillRect(rx,y+1,1,3);if(k%2===0)ctx.fillRect(rx-1,y+2,3,1);}
+  } else if (b.style==='roots') {
+    ctx.fillStyle='#3A2616'; ctx.fillRect(x,y,w,3); ctx.fillStyle='#62E8B5'; ctx.fillRect(x+2,y,w-4,1);
+    ctx.fillStyle='#6B4526'; for(let k=0;k<5;k++){const rx=Math.round(x+4+k*(w-8)/4);ctx.fillRect(rx,y+3,2,3+(k%3));}
+  } else if (b.style==='stars') {
+    ctx.fillStyle='rgba(42,38,66,0.94)'; ctx.fillRect(x,y,w,5); ctx.fillStyle='#FFD75E';
+    for(let k=0;k<5;k++){const rx=Math.round(x+5+k*(w-10)/4),ry=y+1+(k%2);ctx.fillRect(rx,ry,1,3);ctx.fillRect(rx-1,ry+1,3,1);}
+  }
+  ctx.restore();
+}
 function renderWorld(cy, shX) {
   ctx.save(); ctx.translate(Math.round(shX), 0);
   // the cave floor at A=0 is drawn by drawCaveGround (earthy dirt) — the old flat street strip is gone
@@ -3354,11 +3435,15 @@ function renderWorld(cy, shX) {
     const isTop = i === blocks.length-1;
     if (isTop && squash>0 && !reduceMotion) { const sq=Math.sin(squash*Math.PI)*.35; bh=Math.round(BH*(1-sq*.4)); bw=Math.round(b.w*(1+sq*.25)); bx=b.x-(bw-b.w)/2; y+=BH-bh; }
     if (isTop) { topScreenX = b.x + b.w/2; topScreenY = Math.round(GROUND_Y-(i+1)*BH-cy); }
-    // campaign: hide the height-holding foundation and start on a small themed LANDMARK, not a pillar
-    const startIdx = runLevel >= 0 ? Math.max(runLaunch - 1, 0) : -1;
+    // checkpoint structure and selected cosmetic Base are independent immutable run-start fields
+    const structure=runContext?runContext.startingStructureSnapshot:{kind:'ground',region:0};
+    const startIdx = runLevel >= 0 ? Math.max(runLaunch - 1, 0) : 0;
     if (runLevel >= 0 && i < startIdx) continue;
     if (y>H || y+bh<0) continue;
-    if (i === startIdx) drawLandmarkPlatform(Math.round(bx + bw/2), y + bh, Math.round(bw), runLevel);   // the cloud/branch/rock/deck under the starting block
+    if (i === startIdx) {
+      if (structure.kind==='landmark') drawLandmarkPlatform(Math.round(bx+bw/2),y+bh,Math.round(bw),structure.region);
+      drawBaseCosmetic(Math.round(bx+bw/2),y+bh,Math.round(bw),runContext?runContext.baseSnapshot.id:baseId);
+    }
     drawBlock(Math.round(bx),y,Math.round(bw),bh,b.col,isTop, isTop?comboGlow:0, sstyle);
   }
   if (slider) {
@@ -4064,9 +4149,11 @@ function renderSkyMap() {
     if (unlocked) for (let s2 = 0; s2 < 3; s2++) drawStarPix(pt.x - 8 + s2*8, pt.y + 15, 1, s2 < (levelStars[k] || 0));
     // selected stage: a PLAY pill (a second tap on the badge launches it)
     if (sel) {
+      const cp=checkpointForLevel(k), cpText=cp.startAltitude?cp.name+' CP - '+cp.scoreMultiplier+'X SCORE':'GROUND START - FULL SCORE';
       const pw2 = 34, px2 = Math.round(pt.x - pw2/2);
       plate3D(px2, pt.y + 20, pw2, 9, playA(.8 + .12*Math.sin(tick*.1)));
       txt('PLAY', pt.x, pt.y + 22, 1, '#08301F', 'center');
+      txt(cpText,pt.x,pt.y+33,1,'rgba(255,246,232,0.7)','center');
     }
   }
   // mascot marks your best height on the winding trail
@@ -4114,11 +4201,12 @@ function renderModePicker() {
 // ---------- SHOP ----------
 function renderShop() {
   topBar('SHOP');
+  for(const tab of SHOP_TABS){const on=shopView===tab.id;plate3D(tab.x,tab.y,tab.w,tab.h,on?uiA(.78):'rgba(255,246,232,0.10)',on?null:'rgba(255,246,232,0.18)');txt(tab.id==='character'?'CHARACTERS':'BASES',tab.x+tab.w/2,tab.y+4,1,on?'#141022':'#FFF6E8','center');}
+  if(shopView==='base'){renderBaseShop();return;}
   // functional Character Select; current block skins are the temporary character art
-  txt('CHARACTER SELECT', W/2, 24, 1, UI_HEX(), 'center');
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
   const dotsW = CHARACTER_REGISTRY.length*6-2, ddx = Math.round(W/2 - dotsW/2);
-  for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 35, 4, 3); }
+  for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 41, 4, 3); }
   for (let i = 0; i < Math.min(demo.n, 4); i++) {
     const col = sk.base(i, hueBase);
     const w2 = 50 - i*6;
@@ -4181,6 +4269,26 @@ function renderShop() {
     txt('PASSIVES + BOOSTS OFF IN DAILY', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
     txt('EVERYONE GETS THE SAME FAIR RUN', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
   }
+}
+
+function renderBaseShop(){
+  const b=BASE_REGISTRY[basePreviewIdx], isOwned=ownedBases.indexOf(b.id)!==-1, isEquipped=b.id===baseId;
+  const dotsW=BASE_REGISTRY.length*8-2,dx=Math.round(W/2-dotsW/2);
+  for(let i=0;i<BASE_REGISTRY.length;i++){ctx.fillStyle=i===basePreviewIdx?'#FFF6E8':'rgba(255,246,232,0.3)';ctx.fillRect(dx+i*8,43,6,3);}
+  ctx.fillStyle='#2D2016';ctx.fillRect(W/2-44,92,88,7);ctx.fillStyle='#57422F';ctx.fillRect(W/2-44,92,88,2);
+  drawBaseCosmetic(W/2,92,50,b.id);drawBlock(W/2-25,78,50,BH,{h:210,s:18,l:62},false,0,'facet');
+  txt('<',SKIN_L.x+5,72,2,'rgba(255,246,232,0.85)','left');txt('>',SKIN_R.x+5,72,2,'rgba(255,246,232,0.85)','left');
+  txt(b.name,W/2,108,1,'#FFF6E8','center');txt('COSMETIC BASE',W/2,120,1,b.accent,'center');
+  if(isEquipped){ctx.fillStyle='rgba(255,246,232,0.15)';ctx.fillRect(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h);txt('EQUIPPED',W/2,EQUIP_BTN.y+6,1,'rgba(255,246,232,0.6)','center');}
+  else if(isOwned){ctx.fillStyle='rgba(98,232,181,0.85)';ctx.fillRect(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h);txt('EQUIP',W/2,EQUIP_BTN.y+6,1,'#08301F','center');}
+  else {const afford=coins>=b.cost;ctx.fillStyle=afford?'rgba(255,215,94,0.85)':'rgba(120,120,140,0.4)';ctx.fillRect(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h);const c=afford?'#2A1F0A':'rgba(255,246,232,0.6)';txt('UNLOCK',W/2-14,EQUIP_BTN.y+6,1,c,'center');drawCoin(W/2+8,EQUIP_BTN.y+5);txt(b.cost,W/2+17,EQUIP_BTN.y+6,1,c,'left');}
+  txt(b.identity,W/2,166,1,b.accent,'center');
+  ctx.fillStyle='rgba(255,246,232,0.15)';ctx.fillRect(PAD,184,W-PAD*2,1);
+  txt('VISUAL IDENTITY ONLY',W/2,198,1,'#62E8B5','center');
+  txt('NO GAMEPLAY EFFECTS',W/2,212,1,'rgba(255,246,232,0.65)','center');
+  txt('ACTIVE IN PURE + DAILY',W/2,226,1,'rgba(255,246,232,0.55)','center');
+  txt('CHECKPOINT IS SEPARATE',W/2,242,1,'rgba(255,246,232,0.45)','center');
+  txt('BASE LOCKS AT RUN START',W/2,256,1,'rgba(255,246,232,0.4)','center');
 }
 
 // ---------- ME ----------
@@ -4276,7 +4384,7 @@ function renderLevelWin() {
   const t = TIERS[runLevel], num = runLevel + 1;
   // full themed backdrop: the exact slice of sky you just climbed — launch pad at the
   // bottom of the screen, the stage goal at the top (same trick as the SKY MAP)
-  const goal = TIERS[runLevel].n, from = levelStartN(runLevel);
+  const goal = TIERS[runLevel].n, from = runLaunch;
   for (let y2 = 0; y2 < H; y2 += 3) {
     const sky = skyColor(from + (1 - y2/H) * (goal - from));
     ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')'; ctx.fillRect(0, y2, W, 3);
@@ -4316,6 +4424,8 @@ function renderLevelWin() {
   }
   ctx.globalAlpha = 1;
   const topY = Math.round(H*.13);
+  const cp=runContext&&runContext.checkpointSnapshot?runContext.checkpointSnapshot:checkpointForLevel(runLevel);
+  txt(cp.startAltitude?cp.name+' CHECKPOINT - '+cp.scoreMultiplier+'X SCORE':'GROUND START - FULL SCORE',W/2,topY-10,1,'rgba(255,246,232,0.58)','center');
   txt('LEVEL ' + num, W/2, topY, 1, 'rgba(255,246,232,0.7)', 'center');
   txt(t.name, W/2+1, topY + 12, 2, 'rgba(0,0,0,0.5)', 'center');
   txt(t.name, W/2, topY + 11, 2, t.c, 'center');
@@ -4422,7 +4532,10 @@ function renderHUD(h) {
   txt(h*METERS_PER+'M', W/2, 22, 1, 'rgba(255,246,232,0.8)', 'center');
   if (runLevel >= 0) {   // campaign HUD: the goal + a slim progress bar
     const goal = TIERS[runLevel].n, from = runLaunch;
-    txt('LEVEL ' + (runLevel+1) + ' - GOAL ' + goal*METERS_PER + 'M', W/2, 33, 1, TIERS[runLevel].c, 'center');
+    const cp=runContext.checkpointSnapshot;
+    txt(cp.startAltitude?cp.name.split(' ')[0]+' CP':'GROUND',4,33,1,'rgba(255,246,232,0.62)','left');
+    txt('L' + (runLevel+1) + ' GOAL ' + goal*METERS_PER + 'M', W/2, 33, 1, TIERS[runLevel].c, 'center');
+    txt((cp.scoreMultiplier+'X SCORE').replace('0.','.'),W-4,33,1,'rgba(255,246,232,0.62)','right');
     const bw = Math.min(W - 80, 120), bx = Math.round(W/2 - bw/2);
     const pct = clamp((h - from) / (goal - from), 0, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx, 43, bw, 3);
