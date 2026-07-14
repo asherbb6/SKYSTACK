@@ -607,7 +607,7 @@ const TIERS = [
   { n:33,  name:'CAVES',        c:'#7A8595' },   // ~100m deep underground climb
   { n:44,  name:'SURFACE',      c:'#8FD46A' },
   { n:60,  name:'TREETOPS',     c:'#62E8B5' },
-  { n:80,  name:'ROOFTOPS',     c:'#FF9E5E' },
+  { n:80,  name:'LOWER SKY',    c:'#FF9E5E' },   // legacy internal tier id: ROOFTOPS (no buildings)
   { n:106, name:'CLOUD NINE',   c:'#BFE8FF' },
   { n:136, name:'JET STREAM',   c:'#5EC8F2' },
   { n:168, name:'STRATOSPHERE', c:'#C77EFF' },
@@ -623,7 +623,7 @@ const MATERIALS = [
   { name:'STONE',  spd:0.90, wob:0,    wind:0.3 },   // 0 CAVES        — heavy, steady, sheltered
   { name:'WOOD',   spd:1.00, wob:0,    wind:0.8 },   // 1 SURFACE
   { name:'WOOD',   spd:1.00, wob:0,    wind:0.9 },   // 2 TREETOPS
-  { name:'BRICK',  spd:1.02, wob:0,    wind:1.0 },   // 3 ROOFTOPS
+  { name:'BREEZE', spd:1.02, wob:0,    wind:1.0 },   // 3 LOWER SKY    — open air above the canopy
   { name:'CLOUD',  spd:1.00, wob:0.18, wind:1.1 },   // 4 CLOUD NINE   — wobbly footing
   { name:'STEEL',  spd:1.06, wob:0,    wind:1.6 },   // 5 JET STREAM   — fast, windy corridor
   { name:'GLASS',  spd:1.05, wob:0,    wind:1.3 },   // 6 STRATOSPHERE
@@ -1676,7 +1676,7 @@ function topBar(title) {
 
 // ---------- biome backdrop ----------
 // Each tier is its own living environment, not a colour swap: large parallax structures
-// (city towers, forest trunks, cloud banks, a planet limb…), drifting mid-ground sprites,
+// (cave rock, forest trunks, cloud banks, a planet limb…), drifting mid-ground sprites,
 // and animated weather (leaves, snow, contrails, meteors) — the same biomes the SKY MAP
 // shows, so a level's sky matches its map stage. Everything here draws BEHIND the tower
 // (render() calls it before renderWorld) and stays dark / low-alpha with clear parallax
@@ -1700,7 +1700,7 @@ const SKY_STOPS = [
   [[0,'#241C22'],[0.5,'#3A2E33'],[1,'#5A4A48']],                                    // 0 CAVES        — dark earth (walls overpaint in P3)
   [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 1 SURFACE      — clear sunny day
   [[0,'#4A93D6'],[0.5,'#84C2E8'],[1,'#DCEFDE']],                                    // 2 TREETOPS     — green-horizon afternoon
-  [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 3 ROOFTOPS     — bright day over the city
+  [[0,'#3E92DA'],[0.55,'#79BEEC'],[1,'#C6E9FB']],                                   // 3 LOWER SKY    — bright open day above the canopy
   [[0,'#6FB0E8'],[0.5,'#A6D2F2'],[1,'#EBF7FF']],                                    // 4 CLOUD NINE   — bright, sunlit high
   [[0,'#1C56AA'],[0.55,'#3E86D0'],[1,'#93C4EC']],                                   // 5 JET STREAM   — deep thin-air blue
   [[0,'#141A4E'],[0.42,'#5A3A86'],[0.7,'#C85E7A'],[0.87,'#F0904E'],[1,'#FFC46A']],  // 6 STRATOSPHERE — sunset / golden hour
@@ -1711,7 +1711,7 @@ const SKY_STOPS = [
 ];
 // how dark the sky reads at a given height (drives stars/moon/HUD) — night arrives with altitude
 function atmoDark(h) {
-  if (h < 80)  return 0.10;                       // caves..rooftops: bright day (cave dark is drawn, not atmospheric)
+  if (h < 80)  return 0.10;                       // caves..lower sky: bright day (cave dark is drawn, not atmospheric)
   if (h < 106) return 0.10 + (h - 80) / 26 * 0.13;
   if (h < 168) return 0.23 + (h - 106) / 62 * 0.42;
   if (h < 205) return 0.65 + (h - 168) / 37 * 0.28;
@@ -1766,15 +1766,7 @@ function drawSun(h) {
 // small drifting mid-ground sprite (kept subtle — the backdrops carry each biome now)
 function biomeSprite(tier, x, y, s, ph) {
   x = Math.round(x + (reduceMotion ? 0 : Math.sin(ph*.02 + s)*3));
-  if (tier === 0) {                    // ROOFTOPS — a distant floating tower
-    if (s & 1) return;
-    ctx.globalAlpha = .5;
-    const bh2 = 12 + (s*7 & 14);
-    ctx.fillStyle = '#20304C'; ctx.fillRect(x, y - bh2, 9, bh2);
-    ctx.fillStyle = 'rgba(255,224,138,0.7)';
-    for (let wy = y - bh2 + 3; wy < y - 2; wy += 4) { ctx.fillRect(x+3, wy, 1, 1); ctx.fillRect(x+6, wy, 1, 1); }
-    ctx.globalAlpha = 1;
-  } else if (tier === 1) {             // TREETOPS — a floating leaf clump
+  if (tier <= 1) {                     // TREETOPS / LOWER SKY (legacy indices, unused in-game) — a floating leaf clump
     if (s & 1) return;
     ctx.globalAlpha = .5; pixDisc(x, y-5, 6, '#20522A'); pixDisc(x-5, y-1, 5, '#20522A'); pixDisc(x+5, y-1, 5, '#20522A');
     pixDisc(x, y-6, 4, '#2E6E3A'); ctx.globalAlpha = 1;
@@ -1801,7 +1793,7 @@ function biomeSprite(tier, x, y, s, ph) {
   }
 }
 
-// ---- celestial sky bands (tiers 4..10). Ground tiers 0..3 (caves/surface/trees/buildings)
+// ---- celestial sky bands (tiers 4..10). Ground tiers 0..3 (caves/surface/trees/open sky)
 // are the rooted, anchored world drawn by drawGroundWorld — never routed through here.
 function biomeBackdrop(tier, cy, a) {
   if (a <= 0.01 || tier < 4) return;
@@ -1966,7 +1958,7 @@ function biomeWeather(tier, cy, a, ph) {
     for (let k = 0; k < 6; k++) { ctx.globalAlpha = .5*a; ctx.fillStyle = k%2 ? '#C7CFE6' : '#8FB8FF'; ctx.fillRect(Math.round((W+40) - (ph*(1.4+k*.3) + k*60)%(W+40)), Math.round(30 + (k*41)%(H-120) + Math.sin(ph*.05+k)*4), 2, 1); }
   } else if (tier === 8) {                                                              // THE STARS — celebratory gold sparks
     for (let k = 0; k < 10; k++) { const tw = Math.sin(ph*.1 + k*1.3); ctx.globalAlpha = (tw > .2 ? .8 : .2)*a; ctx.fillStyle = k%2 ? '#FFE28A' : '#FFFFFF'; ctx.fillRect(Math.round((k*31 + Math.sin(ph*.02+k)*8) % W), Math.round((k*53) % H), tw > .5 ? 2 : 1, tw > .5 ? 2 : 1); }
-  } else if (tier === 0) {                                                              // ROOFTOPS — drifting dust motes
+  } else if (tier === 0) {                                                              // legacy low index (unused in-game) — drifting dust motes
     ctx.fillStyle = 'rgba(255,246,232,0.5)';
     for (let k = 0; k < 5; k++) { ctx.globalAlpha = .35*a; ctx.fillRect(Math.round((k*67 + ph*.3)%W), Math.round(60 + (k*51)%(H-120) + Math.sin(ph*.05+k)*5), 1, 1); }
   }
@@ -1974,9 +1966,9 @@ function biomeWeather(tier, cy, a, ph) {
 }
 
 // ================= continuous anchored world (Phase 2) =================
-// The low world (caves, surface, trees, buildings) lives at ABSOLUTE world altitude and is
+// The low world (caves, surface, forest) lives at ABSOLUTE world altitude and is
 // simply climbed PAST — never cross-faded. A=0 is the tower base / cave floor.
-const SURF_A = 33;                                           // surface line (blocks): cave ceiling / where trees+buildings root (~100m deep cave below)
+const SURF_A = 33;                                           // surface line (blocks): cave ceiling / where the forest roots (~100m deep cave below)
 const SHAFT_W_F = 0.36;                                      // the surface escape hole as a fraction of W — an opening the tower tunnels through, not a wide trench
 // ---- cave layout + foreground-occlusion tuning (all screen px unless noted) ----
 const LANE_MIN_F = 0.42;                                     // guaranteed clear play lane between the walls, as a fraction of W (never narrower)
@@ -2538,7 +2530,8 @@ function drawCaveCeiling(ph, ceilY) {
     ctx.globalAlpha = 0.5; ctx.fillStyle = '#9FB4B8'; ctx.fillRect(dx, ceilY + dp, 1, 3); ctx.globalAlpha = 1; }
 }
 
-// the grass+dirt surface lip on either side of the escape hole, where trees root
+// the forest floor on either side of the escape hole, where the trees root: layered grass +
+// dirt, and a living understory (ferns, wildflowers, mushrooms, a leafy bush hugging each side)
 function drawSurfaceGround(ph, yCeil) {
   const { cxL, cxR } = caveMouth();
   for (const seg of [[0, cxL], [cxR, W]]) {
@@ -2555,12 +2548,34 @@ function drawSurfaceGround(ph, yCeil) {
       ctx.fillStyle = '#45433D'; ctx.fillRect(sx - 2, yCeil - 5, 7, 4); ctx.fillStyle = '#6E6B62'; ctx.fillRect(sx - 1, yCeil - 6, 4, 1);
       if (bhash(sx*29) > .62) { ctx.fillStyle = '#3B5A27'; ctx.fillRect(sx, yCeil - 7, 4, 2); ctx.fillStyle = '#5D7A38'; ctx.fillRect(sx + 1, yCeil - 8, 2, 1); }
     }
+    for (let fx = x0 + 5; fx < x1 - 7; fx += 17) {                                             // ferns arc out of the grass
+      const r = bhash(fx*13); if (r < .5) continue;
+      const fh = 4 + Math.round(r*4), sw = reduceMotion ? 0 : Math.sin(ph*0.04 + fx)*0.9;
+      ctx.fillStyle = '#2E6E3A';
+      for (let s2 = 0; s2 < fh; s2++) { const lean = s2*0.55 + sw*s2/fh;
+        ctx.fillRect(Math.round(fx + lean), yCeil - 3 - s2, 1, 1); ctx.fillRect(Math.round(fx - lean), yCeil - 3 - s2, 1, 1); }
+    }
+    for (let px2 = x0 + 10; px2 < x1 - 4; px2 += 21) {                                         // wildflowers on thin stems
+      const r = bhash(px2*31); if (r < .45) continue;
+      ctx.fillStyle = '#3E8A32'; ctx.fillRect(px2, yCeil - 6, 1, 4);
+      ctx.fillStyle = r > .8 ? '#FF9ED2' : r > .62 ? '#FFD75E' : '#FFF6E8';
+      ctx.fillRect(px2 - 1, yCeil - 8, 3, 2); ctx.fillRect(px2, yCeil - 9, 1, 1);
+    }
+    for (let mx = x0 + 15; mx < x1 - 5; mx += 37) {                                            // small red-cap mushrooms in the shade
+      if (bhash(mx*43) < .55) continue;
+      ctx.fillStyle = '#E8E0D0'; ctx.fillRect(mx, yCeil - 3, 1, 2);
+      ctx.fillStyle = '#B5432E'; ctx.fillRect(mx - 1, yCeil - 5, 3, 2); ctx.fillStyle = '#FFF6E8'; ctx.fillRect(mx, yCeil - 5, 1, 1);
+    }
+    if (x1 - x0 > 26) {                                                                        // a leafy bush hugs the outer side of each lip
+      const bx = x0 === 0 ? x0 + 12 : x1 - 13, br = 6 + Math.round(bhash(bx*17)*3);
+      foliageBlob(bx, yCeil - 4, br, 1); foliageBlob(bx - 5, yCeil - 2, br*0.7, 1); foliageBlob(bx + 5, yCeil - 2, br*0.7, 1);
+    }
   }
   ctx.globalAlpha = 1;
 }
 
 // deterministic instances rooted at the surface. Trees top out ~TREETOPS(22).
-// Fixed screen-X (the world never pans X). (City buildings were removed by request.)
+// Fixed screen-X (the world never pans X). The forest is the only rooted structure set.
 const TREES = [
   { x:0.085, topA:57, s:1.05 }, { x:0.245, topA:47, s:0.82 },
   { x:0.66,  topA:60, s:1.15 }, { x:0.93,  topA:50, s:0.95 }
@@ -2641,14 +2656,91 @@ function drawCaveCreatures(cy, ph) {
   ctx.globalAlpha = 1;
 }
 
+// a distant forest wall on the horizon behind the rooted trees — dark canopy silhouettes,
+// world-locked to the surface line (1.0x, NO parallax) so the whole world scrolls as one piece
+function drawTreeline(cy) {
+  const yCeil = worldY(SURF_A, cy);
+  if (yCeil < -40 || yCeil > H + 30) return;
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#1E3A22';                                                                   // far canopy row
+  for (let x = 0; x < W; x += 4) {
+    const hgt = 8 + Math.round(bhash(x*7 + 3)*10) + Math.round(Math.sin(x*0.05)*3);
+    ctx.fillRect(x, yCeil - 2 - hgt, 4, hgt);
+  }
+  ctx.fillStyle = '#25482A';                                                                   // nearer, lighter row for depth
+  for (let x = 2; x < W; x += 7) {
+    const hgt = 4 + Math.round(bhash(x*11)*6);
+    ctx.fillRect(x, yCeil - 2 - hgt, 5, hgt);
+  }
+}
+// slim background trunks between the main trees — silhouettes that thicken the forest.
+// Fixed screen-X like TREES; rooted at the surface, world-anchored, no parallax.
+const BACK_TREES = [ { x:0.15, topA:41 }, { x:0.37, topA:38 }, { x:0.585, topA:39 }, { x:0.815, topA:42 } ];
+function backTrunk(t, seed) {
+  const baseY = worldY(SURF_A), topY = worldY(t.topA);
+  if (topY > H || baseY < 0) return;
+  const x = Math.round(W * t.x), y0 = Math.max(topY + 4, -12), y1 = Math.min(baseY, H + 2);
+  if (y1 <= y0) return;
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#241B10'; ctx.fillRect(x, y0, 4, y1 - y0);                                  // dark slim trunk
+  if (topY < H + 16) {                                                                         // shaded crown
+    pixDisc(x + 2, topY + 5, 8, '#1E3A22'); pixDisc(x - 3, topY + 8, 6, '#1E3A22'); pixDisc(x + 7, topY + 8, 6, '#1E3A22');
+    pixDisc(x + 2, topY + 3, 5, '#25482A');
+  }
+}
+// TREETOPS / LOWER SKY flank decor: leafy boughs reach in from the screen sides through the
+// canopy band, loose leaves drift down between them, and the first thin cloud wisps appear as
+// the foliage runs out below CLOUD NINE. World-anchored (worldY), deterministic (bhash on
+// altitude slots), side-weighted so the stacking lane stays clear. Blocks draw on top.
+const CANOPY_A0 = 40, CANOPY_A1 = 62, WISP_A0 = 62, WISP_A1 = 82;
+function drawForestBand(cy, ph) {
+  const visLo = (GROUND_Y - cy - H - 30) / BH, visHi = (GROUND_Y - cy + 30) / BH;
+  if (visLo > WISP_A1 || visHi < CANOPY_A0) return;
+  for (let A = CANOPY_A0; A <= CANOPY_A1; A += 4) {                                            // boughs alternate sides every few blocks
+    const y = worldY(A, cy); if (y < -30 || y > H + 30) continue;
+    const r = bhash(A * 97); if (r < 0.2) continue;
+    const side = (A >> 2) & 1, thin = clamp((A - 52) / 10, 0, 1);                              // foliage thins toward open air
+    const rad = Math.round((9 + r * 6) * (1 - thin * 0.55));
+    const sw = reduceMotion ? 0 : Math.sin(ph * .02 + A) * 2;
+    const bx = side ? Math.round(W - rad * .5 + sw) : Math.round(rad * .5 + sw);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#3A2616';                                                                 // the bough itself, attached to a trunk off-screen
+    if (side) ctx.fillRect(bx - 2, y, W - bx + 4, 3); else ctx.fillRect(-4, y, bx + 6, 3);
+    ctx.fillStyle = '#25130A'; if (side) ctx.fillRect(bx - 2, y + 3, W - bx + 4, 1); else ctx.fillRect(-4, y + 3, bx + 6, 1);
+    foliageBlob(bx, y - 2, rad, 1 - thin * 0.3);
+    foliageBlob(bx + (side ? -6 : 6), y + 2, rad * 0.7, 1 - thin * 0.3);
+    foliageBlob(bx + (side ? 4 : -4), y - 6, rad * 0.55, 1 - thin * 0.3);
+  }
+  for (let k = 0; k < 8; k++) {                                                                // loose leaves drift down through the band
+    const seed = k * 37 + 11, span = (CANOPY_A1 - CANOPY_A0 + 6) * BH;
+    const fx = bhash(seed) * (W - 20) + 10 + Math.sin(ph * .03 + k) * 6;
+    const fy = worldY(CANOPY_A1, cy) + ((ph * (0.4 + bhash(seed * 3) * 0.5) + k * 53) % span);
+    if (fy < -10 || fy > H + 10) continue;
+    ctx.fillStyle = k % 2 ? '#3FBF5A' : '#C98A3E'; ctx.fillRect(Math.round(fx), Math.round(fy), 2, 1);
+  }
+  for (let A = WISP_A0; A <= WISP_A1; A += 3) {                                                // the first thin wisps herald CLOUD NINE
+    const y = worldY(A, cy); if (y < -20 || y > H + 20) continue;
+    const r = bhash(A * 131); if (r < 0.3) continue;
+    const t = clamp((A - WISP_A0) / (WISP_A1 - WISP_A0), 0, 1);                                // denser and bolder as the clouds near
+    const wx = Math.round(((r * 1.7) % 1) * W + (reduceMotion ? 0 : Math.sin(ph * .008 + A) * 8));
+    ctx.globalAlpha = 0.14 + t * 0.3;
+    pixDisc(wx, y, 6 + Math.round(t * 5), '#FFFFFF');
+    pixDisc(wx - 7, y + 2, 4 + Math.round(t * 3), '#FFFFFF'); pixDisc(wx + 7, y + 2, 4 + Math.round(t * 3), '#FFFFFF');
+  }
+  ctx.globalAlpha = 1;
+}
+
 // draw the rooted low world for the current camera; each layer self-clips by altitude (no fade)
 function drawGroundWorld(cy, ph) {
   const yCeil = worldY(SURF_A, cy);
-  for (let i = 0; i < TREES.length; i++) rootedTree(TREES[i], i + 17);                         // rooted trees on the surface (buildings removed by request)
+  drawTreeline(cy);                                                                            // distant forest wall (behind everything rooted)
+  for (let i = 0; i < BACK_TREES.length; i++) backTrunk(BACK_TREES[i], i + 5);                 // background trunks thicken the forest
+  for (let i = 0; i < TREES.length; i++) rootedTree(TREES[i], i + 17);                         // rooted trees on the surface
   if (yCeil > 0) drawCave(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil, cy);              // the living cave below the ceiling
   else if (worldY(0, cy) > 0) drawCave(ph, 0, -999, cy);                                       // (transition safety) rock still below
   drawCaveCreatures(cy, ph);                                                                   // bats/beetles/worms (self-cull to the cave band)
   if (yCeil > -8 && yCeil < H + 8) drawSurfaceGround(ph, yCeil);
+  drawForestBand(cy, ph);                                                                      // canopy flanks, leaf-fall, first wisps (A 40..82)
 }
 
 function drawBiomeDecor(cy) {
@@ -2689,7 +2781,7 @@ function startRegionIntro(ti) {
   regionIntro = { ti, t: 0, dur: reduceMotion ? 55 : 100 };
   if (state === 'playing' || state === 'dropping') sfx.region(ti);
 }
-const INTRO_TAGS = ['ESCAPE THE DEEP','INTO THE LIGHT','OVER THE CANOPY','ABOVE THE CITY','INTO THE CLOUDS','RIDE THE WIND','GOLDEN HOUR','POLAR LIGHTS','LEAVE THE SKY','ABOVE THE WORLD','THE SUMMIT'];
+const INTRO_TAGS = ['ESCAPE THE DEEP','INTO THE LIGHT','OVER THE CANOPY','INTO OPEN AIR','INTO THE CLOUDS','RIDE THE WIND','GOLDEN HOUR','POLAR LIGHTS','LEAVE THE SKY','ABOVE THE WORLD','THE SUMMIT'];
 // the per-region signature flourish (screen-space, procedural — no persistent particle arrays)
 function drawIntroFx(ti, p, env, ph) {
   if (ti === 0) {                                                                    // CAVES — darkness recedes through warm torch embers
@@ -2704,10 +2796,11 @@ function drawIntroFx(ti, p, env, ph) {
   } else if (ti === 2) {                                                              // TREETOPS — leaves burst up through sunbeams
     for (let k = 0; k < 22; k++) { const a2 = k*0.63, lx = W/2 + Math.cos(a2)*p*W*0.6, ly = H*0.62 - p*H*0.5 + Math.sin(a2)*18;
       ctx.globalAlpha = env * (1 - p) * 0.9; ctx.fillStyle = k % 2 ? '#3E8A32' : '#6ECB54'; ctx.fillRect(Math.round(lx), Math.round(ly), 3, 3); }
-  } else if (ti === 3) {                                                              // ROOFTOPS — window lights flicker on, a plane crosses
-    for (let k = 0; k < 26; k++) { const wx = (k*37) % W, wy = Math.round(H*0.28) + (k*53) % Math.round(H*0.5);
-      ctx.globalAlpha = env * (Math.sin(p*9 + k) > 0 ? 0.9 : 0.12); ctx.fillStyle = '#FFE08A'; ctx.fillRect(wx, wy, 3, 3); }
-    const px = W + 40 - p*(W + 80); ctx.globalAlpha = env; ctx.fillStyle = '#C7D2E6'; ctx.fillRect(Math.round(px), Math.round(H*0.2), 8, 3); ctx.fillRect(Math.round(px)+8, Math.round(H*0.2)+1, 3, 1);
+  } else if (ti === 3) {                                                              // LOWER SKY — the last leaves whip away on the wind, a flock climbs past
+    for (let k = 0; k < 18; k++) { const lx = ((k*47) % W) + p*(W*0.5 + k*9), ly = H*0.72 - p*H*0.6 + Math.sin(p*7 + k)*10;
+      ctx.globalAlpha = env * (1 - p) * 0.85; ctx.fillStyle = k % 3 ? '#3E8A32' : '#C98A3E'; ctx.fillRect(Math.round(lx % (W + 20)) - 10, Math.round(ly), 2, 2); }
+    for (let k = 0; k < 5; k++) { const bx = -30 + p*(W + 60) + k*14, by = H*0.3 + k*7 + Math.sin(p*10 + k)*4;
+      ctx.globalAlpha = env * 0.9; drawBird(bx, Math.round(by), 0.8, p*12 + k, 'rgba(38,28,54,0.85)'); }
   } else if (ti === 4) {                                                              // CLOUD NINE — punch through a cloud floor, it parts
     const gap = p*W*0.7; ctx.globalAlpha = env * (1 - p);
     pixDisc(Math.round(W/2 - gap - 34), Math.round(H*0.5), 42, '#FFFFFF'); pixDisc(Math.round(W/2 + gap + 34), Math.round(H*0.5), 42, '#FFFFFF');
@@ -2857,7 +2950,7 @@ const BASE_THEMES = [
   { b:'#3A2E36', t:'#6A5A64' },   // 0 CAVES        — stone ledge
   { b:'#5A3F2A', t:'#4E9E3E' },   // 1 SURFACE      — dirt + grass cap
   { b:'#3A2616', t:'#2E6E3A' },   // 2 TREETOPS     — bark + leaf cap
-  { b:'#4A5568', t:'#9AA8BE' },   // 3 ROOFTOPS     — concrete slab
+  { b:'#4A3620', t:'#6EB65E' },   // 3 LOWER SKY    — high bough + airy leaf cap
   { b:'#A8C2DE', t:'#FFFFFF' },   // 4 CLOUD NINE   — cloud
   { b:'#6E7A9A', t:'#BFE8FF' },   // 5 JET STREAM   — pale metal
   { b:'#5A4A6E', t:'#C77EFF' },   // 6 STRATOSPHERE
@@ -2874,7 +2967,7 @@ function drawBaseBlock(x, y, w, h, lvl, cap) {
   ctx.fillStyle = 'rgba(0,0,0,0.18)';       for (let bx2 = x + 4; bx2 < x + w - 3; bx2 += 8) ctx.fillRect(bx2, y + (h>>1), 1, 1);  // speckle
   if (cap) { ctx.fillStyle = th.t; ctx.fillRect(x, y, w, 3); ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(x, y, w, 1); }   // themed platform surface
 }
-// a compact themed LANDMARK the campaign level starts on — a real cloud / branch / rock / rooftop /
+// a compact themed LANDMARK the campaign level starts on — a real cloud / branch / rock /
 // deck (NOT a tall pillar), sitting under the single starting block. cx = block centre, topY = block bottom.
 function drawLandmarkPlatform(cx, topY, bw, region) {
   const pw = Math.round(bw * 1.7), x = Math.round(cx - pw / 2), y = Math.round(topY);
@@ -2883,11 +2976,13 @@ function drawLandmarkPlatform(cx, topY, bw, region) {
     pixDisc(cx, y + 3, Math.round(pw * 0.32), '#FFFFFF');
     for (let k = -1; k <= 1; k++) pixDisc(cx + k * Math.round(pw * 0.34), y + 8, Math.round(pw * 0.26), 'rgba(240,247,255,0.96)');
     ctx.globalAlpha = 0.5; pixDisc(cx - Math.round(pw * 0.22), y + 3, Math.round(pw * 0.15), 'rgba(206,224,242,0.9)'); ctx.globalAlpha = 1;
-  } else if (region === 2) {                                             // TREETOPS — a thick tree branch with leaves
-    ctx.fillStyle = '#3A2616'; ctx.fillRect(x, y + 2, pw, 6);
+  } else if (region === 2 || region === 3) {                             // TREETOPS / LOWER SKY — a tree branch; the high bough is barer, up in open air
+    ctx.fillStyle = '#3A2616'; ctx.fillRect(x, y + 2, pw, region === 3 ? 5 : 6);
     ctx.fillStyle = 'rgba(96,66,36,0.6)'; ctx.fillRect(x, y + 2, pw, 1);
-    ctx.fillStyle = '#25130A'; ctx.fillRect(x, y + 7, pw, 1);
-    for (let k = 0; k < 4; k++) { const lx = x + Math.round(pw * (0.12 + k * 0.26)); pixDisc(lx, y + 11, 7, '#2E6E3A'); pixDisc(lx - 3, y + 9, 5, '#49A048'); }
+    ctx.fillStyle = '#25130A'; ctx.fillRect(x, y + (region === 3 ? 6 : 7), pw, 1);
+    const nl = region === 3 ? 2 : 4;
+    for (let k = 0; k < nl; k++) { const lx = x + Math.round(pw * (region === 3 ? 0.2 + k * 0.6 : 0.12 + k * 0.26)); pixDisc(lx, y + 11, region === 3 ? 5 : 7, '#2E6E3A'); pixDisc(lx - 3, y + 9, region === 3 ? 4 : 5, '#49A048'); }
+    if (region === 3) { ctx.globalAlpha = 0.5; pixDisc(x + pw + 9, y + 2, 4, '#FFFFFF'); pixDisc(x - 9, y + 6, 3, '#FFFFFF'); ctx.globalAlpha = 1; }   // first wisps drift past the bough
   } else if (region === 0) {                                             // CAVES — a rocky ledge
     ctx.fillStyle = '#4A4048'; ctx.fillRect(x, y, pw, 9);
     ctx.fillStyle = '#5E525A'; ctx.fillRect(x, y, pw, 2);
@@ -2897,7 +2992,7 @@ function drawLandmarkPlatform(cx, topY, bw, region) {
     ctx.fillStyle = '#5A5468'; ctx.fillRect(x, y, pw, 2);
     ctx.fillStyle = '#8FB8FF'; ctx.fillRect(x - 7, y + 2, 6, 3); ctx.fillRect(x + pw + 1, y + 2, 6, 3);   // solar panels
     ctx.fillStyle = '#3A3648'; ctx.fillRect(x - 1, y + 2, 1, 3); ctx.fillRect(x + pw, y + 2, 1, 3);
-  } else {                                                               // SURFACE / ROOFTOPS / JET STREAM / STRATOSPHERE / AURORA — themed slab
+  } else {                                                               // SURFACE / JET STREAM / STRATOSPHERE / AURORA — themed slab
     const th = BASE_THEMES[clamp(region, 0, BASE_THEMES.length - 1)];
     ctx.fillStyle = th.b; ctx.fillRect(x, y, pw, 9);
     ctx.fillStyle = th.t; ctx.fillRect(x, y, pw, 3);
@@ -3165,17 +3260,20 @@ function renderPause() {
 // list layout: one generous row per level on a straight climbing trail down a
 // centered column; the list drag-scrolls whenever it is taller than the screen
 const MAP_ROW = 60, MAP_HEAD = 34, MAP_FOOT = 10;
-// per-stage floating-island palette (grass, cloud, rock, ice, space-rock, metal, gold)
+// per-stage floating-island palette, index-aligned to the 11 TIERS
+// (cave rock, grass, grass, cloud, cloud, cloud, rock, ice, space-rock, metal, gold)
 const ISLES = [
-  { top:'#57AC50', s:'#2F6B30', e:'#1B481D' },              // 0 rooftops  — grass
-  { top:'#41A04E', s:'#26602E', e:'#164019' },              // 1 treetops  — grass
-  { cloud:true },                                           // 2 cloud nine
-  { cloud:true },                                           // 3 jet stream
-  { top:'#6A5A90', s:'#3E3459', e:'#28203C' },              // 4 stratosphere — rock
-  { top:'#8FE6F0', s:'#3E8AA6', e:'#276A84' },              // 5 aurora — ice
-  { top:'#4C4670', s:'#2C2846', e:'#1A1730' },              // 6 space — dark rock
-  { top:'#9090AC', s:'#4E4E6C', e:'#333350' },              // 7 orbit — metal
-  { top:'#FFD75E', s:'#9A7420', e:'#5E4610' }               // 8 the stars — gold
+  { top:'#5E525A', s:'#3A2E36', e:'#241C22' },              // 0 caves — dark rock
+  { top:'#57AC50', s:'#2F6B30', e:'#1B481D' },              // 1 surface — grass
+  { top:'#41A04E', s:'#26602E', e:'#164019' },              // 2 treetops — grass
+  { cloud:true },                                           // 3 lower sky — open air
+  { cloud:true },                                           // 4 cloud nine
+  { cloud:true },                                           // 5 jet stream
+  { top:'#6A5A90', s:'#3E3459', e:'#28203C' },              // 6 stratosphere — rock
+  { top:'#8FE6F0', s:'#3E8AA6', e:'#276A84' },              // 7 aurora — ice
+  { top:'#4C4670', s:'#2C2846', e:'#1A1730' },              // 8 space — dark rock
+  { top:'#9090AC', s:'#4E4E6C', e:'#333350' },              // 9 orbit — metal
+  { top:'#FFD75E', s:'#9A7420', e:'#5E4610' }               // 10 the stars — gold
 ];
 // numbered badges weave left/right down an S-curve; only x winds, y stays evenly
 // spaced by altitude so scroll + progress math is unchanged
@@ -3240,35 +3338,46 @@ function mapNode3D(x, y, r, face, side) {
 function drawStageDeco(i, x, y) {
   const c = TIERS[i].c, ph = reduceMotion ? 0 : tick;
   ctx.fillStyle = c;
-  if (i === 0) {        // rooftops: two houses
-    ctx.fillRect(x-5, y+1, 4, 3); ctx.fillRect(x-4, y-1, 2, 2);
-    ctx.fillRect(x, y-1, 6, 5); ctx.fillRect(x+1, y-3, 4, 2); ctx.fillRect(x+2, y-4, 2, 1);
-    ctx.fillStyle = '#141022'; ctx.fillRect(x+2, y+1, 1, 2); ctx.fillRect(x+4, y, 1, 1); ctx.fillRect(x-4, y+2, 1, 1);
-  } else if (i === 1) { // treetops: two trees
+  if (i === 0) {        // caves: rocky mouth + torch
+    ctx.fillRect(x-4, y-4, 8, 2); ctx.fillRect(x-5, y-2, 2, 6); ctx.fillRect(x+3, y-2, 2, 6);
+    ctx.fillStyle = '#141022'; ctx.fillRect(x-3, y-2, 6, 6);
+    const fl = reduceMotion ? 0 : Math.floor(ph/9)%2;
+    ctx.fillStyle = '#E0863A'; ctx.fillRect(x-1, y-1-fl, 2, 2); ctx.fillStyle = '#FFD75E'; ctx.fillRect(x-1, y-fl, 1, 1);
+  } else if (i === 1) { // surface: two young trees on the meadow
     ctx.fillRect(x+1, y-4, 4, 3); ctx.fillRect(x, y-2, 6, 2);
     ctx.fillRect(x-5, y-1, 4, 2);
     ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x+2, y, 2, 4); ctx.fillRect(x-4, y+1, 1, 3);
-  } else if (i === 2) { // cloud nine: puffy cloud
+  } else if (i === 2) { // treetops: one broad canopy + a perched bird
+    ctx.fillRect(x-5, y-2, 10, 3); ctx.fillRect(x-3, y-4, 7, 2); ctx.fillRect(x-1, y-5, 3, 1);
+    ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x-1, y+1, 2, 3);
+    ctx.fillStyle = '#141022'; ctx.fillRect(x+3, y-5, 2, 1); ctx.fillRect(x+4, y-6, 1, 1);
+  } else if (i === 3) { // lower sky: birds climbing into open air + a wisp
+    const up = reduceMotion ? 0 : Math.floor(ph/10)%2;
+    ctx.fillStyle = '#141022';
+    ctx.fillRect(x-5, y-1+(up?-1:0), 2, 1); ctx.fillRect(x-3, y-1, 1, 1); ctx.fillRect(x-2, y-1+(up?-1:0), 2, 1);
+    ctx.fillRect(x+1, y-4+(up?0:-1), 2, 1); ctx.fillRect(x+3, y-4, 1, 1); ctx.fillRect(x+4, y-4+(up?0:-1), 2, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(x-4, y+3, 8, 1); ctx.fillRect(x-1, y+2, 4, 1);
+  } else if (i === 4) { // cloud nine: puffy cloud
     ctx.fillRect(x-5, y, 10, 2); ctx.fillRect(x-3, y-2, 5, 2); ctx.fillRect(x+2, y-1, 3, 1);
     ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x-4, y-1, 2, 1);
-  } else if (i === 3) { // jet stream: tiny jet + speed dashes
+  } else if (i === 5) { // jet stream: tiny jet + speed dashes
     ctx.fillRect(x-5, y-3, 4, 1); ctx.fillRect(x-4, y+3, 5, 1);
     ctx.fillRect(x-1, y-1, 5, 2); ctx.fillRect(x+1, y-2, 1, 1); ctx.fillRect(x, y+1, 2, 1);
     ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-1, 1, 1);
-  } else if (i === 4) { // stratosphere: weather balloon with basket
+  } else if (i === 6) { // stratosphere: weather balloon with basket
     ctx.fillRect(x-2, y-5, 4, 3); ctx.fillRect(x-3, y-4, 6, 2);
     ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-1, y-1, 1, 2); ctx.fillRect(x+1, y-1, 1, 2);
     ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x-1, y+1, 3, 2);
-  } else if (i === 5) { // aurora: waving two-tone ribbons
+  } else if (i === 7) { // aurora: waving two-tone ribbons
     for (let k = 0; k < 4; k++) {
       const wob = Math.round(Math.sin(ph*.06 + k*1.8)*1.5);
       ctx.fillStyle = k % 2 ? '#C77EFF' : c;
       ctx.fillRect(x-4+k*3, y-4+wob, 1, 7);
     }
-  } else if (i === 6) { // space: star cluster + comet
+  } else if (i === 8) { // space: star cluster + comet
     ctx.fillRect(x-3, y-2, 1, 1); ctx.fillRect(x+2, y-4, 2, 2); ctx.fillRect(x-1, y+1, 1, 1); ctx.fillRect(x+3, y+2, 1, 1);
     ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-5, y+3, 3, 1); ctx.fillRect(x-2, y+2, 1, 1);
-  } else if (i === 7) { // orbit: shaded ringed planet + orbiting moon
+  } else if (i === 9) { // orbit: shaded ringed planet + orbiting moon
     ctx.fillRect(x-2, y-2, 4, 4); ctx.fillRect(x-1, y-3, 2, 6);
     ctx.fillStyle = dkHex(c, .55); ctx.fillRect(x, y, 2, 2);
     ctx.fillStyle = 'rgba(255,246,232,0.55)'; ctx.fillRect(x-4, y, 3, 1); ctx.fillRect(x+2, y, 3, 1);
@@ -3303,7 +3412,16 @@ function drawIsland(i, cx, topY) {
   const P = ISLES[i] || ISLES[0];
   cx = Math.round(cx); topY = Math.round(topY);
   const ph = reduceMotion ? 0 : tick;
-  if (P.cloud) { drawCloudIsland(cx, topY, half, ph, i === 3); return; }
+  if (P.cloud) {
+    drawCloudIsland(cx, topY, half, ph, i === 5);
+    if (i === 3) {   // LOWER SKY — a pair of birds ride the open air above the bank
+      const up = Math.floor(ph*.15)%2;
+      ctx.fillStyle = 'rgba(20,16,34,0.7)';
+      for (const bo of [[-14,-14],[10,-19]]) { const bx = cx+bo[0]+Math.round(Math.sin(ph*.02+bo[1])*3), by = topY+bo[1];
+        ctx.fillRect(bx-2, by+(up?-1:0), 2, 1); ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx+1, by+(up?-1:0), 2, 1); }
+    }
+    return;
+  }
   // --- shared floating slab ---
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(cx - half + 4, topY + 17, w - 8, 3);   // cast shadow
   ctx.fillStyle = P.e;                                                                      // tapering rocky underside
@@ -3314,42 +3432,50 @@ function drawIsland(i, cx, topY) {
   ctx.fillStyle = 'rgba(255,255,255,0.30)'; ctx.fillRect(cx - half, topY - 1, w, 1);        // rim light
   ctx.fillStyle = P.s; ctx.fillRect(cx - half + 8, topY + 22 + (Math.sin(ph*.05)*1|0), 3, 2); ctx.fillRect(cx + half - 12, topY + 25, 4, 2);   // crumbs
   const sy = topY - 1;   // surface line — scenery stands up from here
-  if (i === 0) {         // ROOFTOPS — a little skyline on grass
+  if (i === 0) {         // CAVES — a dark rocky mouth lit by torches
+    ctx.fillStyle = liteHex(P.top,.18); ctx.fillRect(cx-half, sy, w, 1);
+    ctx.fillStyle = '#140E14'; ctx.fillRect(cx-7, sy-8, 14, 9); ctx.fillRect(cx-5, sy-10, 10, 2);   // the cave opening
+    ctx.fillStyle = P.s; ctx.fillRect(cx-9, sy-10, 2, 11); ctx.fillRect(cx+7, sy-10, 2, 11); ctx.fillRect(cx-7, sy-12, 14, 2);   // rocky rim
+    ctx.fillStyle = '#241C22'; ctx.fillRect(cx-3, sy-8, 1, 3); ctx.fillRect(cx+2, sy-8, 1, 2);      // dripstone teeth
+    const fl = reduceMotion ? 0 : Math.floor(ph/8)%2;                                               // torches flicker either side
+    for (const tx of [cx-13, cx+13]) { ctx.fillStyle = '#5A3A1E'; ctx.fillRect(tx, sy-5, 1, 5);
+      ctx.fillStyle = '#E0863A'; ctx.fillRect(tx-1, sy-7-fl, 3, 2+fl); ctx.fillStyle = '#FFD75E'; ctx.fillRect(tx, sy-6-fl, 1, 1); }
+  } else if (i === 1) {  // SURFACE — a fresh meadow: tufts, flowers, a sapling and mossy stones
     ctx.fillStyle = liteHex(P.top,.28); ctx.fillRect(cx-half, sy, w, 1);
     ctx.fillStyle = liteHex(P.top,.12); for (let g = -half+7; g < half-7; g += 12) { ctx.fillRect(cx+g, sy-2, 1, 2); ctx.fillRect(cx+g+3, sy-1, 1, 1); }
-    const bldg = (bx, bh2, bw2) => { ctx.fillStyle = '#3E4C68'; ctx.fillRect(bx, sy-bh2, bw2, bh2); ctx.fillStyle = '#586A8C'; ctx.fillRect(bx, sy-bh2, 1, bh2);
-      ctx.fillStyle = '#FFE08A'; for (let wy = sy-bh2+2; wy < sy-2; wy += 3) for (let wx = bx+2; wx < bx+bw2-1; wx += 3) if ((wx*7+wy) % 5 < 3) ctx.fillRect(wx, wy, 1, 1); };
-    bldg(cx-half+7, 12, 8); bldg(cx-half+17, 16, 7); bldg(cx+half-15, 13, 8);
-    ctx.fillStyle = '#8AA0BE'; ctx.fillRect(cx-half+20, sy-22, 1, 6);
-    if (!reduceMotion && Math.floor(ph/18)%2===0) { ctx.fillStyle = '#FF5E5E'; ctx.fillRect(cx-half+20, sy-23, 1, 1); }
-  } else if (i === 1) {  // TREETOPS — layered canopies
+    ctx.fillStyle = '#7A4A24'; ctx.fillRect(cx-1, sy-5, 2, 6);                                      // sapling
+    pixDisc(cx, sy-7, 4, P.s); pixDisc(cx, sy-9, 3, P.top); pixDisc(cx-1, sy-10, 2, liteHex(P.top,.3));
+    ctx.fillStyle = '#45433D'; ctx.fillRect(cx-half+9, sy-2, 5, 2); ctx.fillStyle = '#6E6B62'; ctx.fillRect(cx-half+10, sy-3, 3, 1);   // mossy stone
+    ctx.fillStyle = '#3B5A27'; ctx.fillRect(cx-half+10, sy-4, 3, 1);
+    ctx.fillStyle = '#FF9ED2'; ctx.fillRect(cx+half-14, sy-2, 1, 1); ctx.fillStyle = '#FFD75E'; ctx.fillRect(cx+half-20, sy-3, 1, 1); ctx.fillStyle = '#FFF6E8'; ctx.fillRect(cx-half+20, sy-2, 1, 1);   // flowers
+  } else if (i === 2) {  // TREETOPS — layered canopies
     ctx.fillStyle = liteHex(P.top,.22); ctx.fillRect(cx-half, sy, w, 1);
     const tree = tx => { ctx.fillStyle = '#7A4A24'; ctx.fillRect(tx-1, sy-4, 2, 5);
       pixDisc(tx, sy-8, 4, P.s); pixDisc(tx-3, sy-5, 3, P.s); pixDisc(tx+3, sy-5, 3, P.s);
       pixDisc(tx-1, sy-9, 3, P.top); pixDisc(tx-1, sy-10, 2, liteHex(P.top,.3)); };
     tree(cx-half+13); tree(cx+half-13); tree(cx-half+30);
     ctx.fillStyle = '#FF9ED2'; ctx.fillRect(cx+half-25, sy-2, 1, 1); ctx.fillStyle = '#FFD75E'; ctx.fillRect(cx+half-20, sy-2, 1, 1);   // flowers
-  } else if (i === 4) {  // STRATOSPHERE — mesa with a dish + relay tower
+  } else if (i === 6) {  // STRATOSPHERE — mesa with a dish + relay tower
     ctx.fillStyle = liteHex(P.top,.2); ctx.fillRect(cx-half, sy, w, 1);
     ctx.fillStyle = '#8A93AD'; ctx.fillRect(cx-half+13, sy-7, 1, 7);
     pixDisc(cx-half+17, sy-9, 4, '#C9D2E6'); pixDisc(cx-half+18, sy-9, 3, '#8A93AD'); ctx.fillStyle = '#E6ECFF'; ctx.fillRect(cx-half+16, sy-10, 1, 1);
     ctx.fillStyle = '#9AA6C2'; ctx.fillRect(cx+half-16, sy-14, 1, 14); ctx.fillRect(cx+half-19, sy-4, 7, 1); ctx.fillRect(cx+half-18, sy-9, 5, 1);
     if (!reduceMotion && Math.floor(ph/16)%2===0) { ctx.fillStyle = '#FF5E5E'; ctx.fillRect(cx+half-16, sy-15, 1, 1); }
-  } else if (i === 5) {  // AURORA — ice crystals + shimmer
+  } else if (i === 7) {  // AURORA — ice crystals + shimmer
     ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(cx-half, sy-1, w, 1);
     const shard = (sx, h) => { for (let r = 0; r < h; r++) { const ww = Math.max(1, Math.round((h-r)*.55)); ctx.fillStyle = r < 2 ? '#FFFFFF' : '#BFF0FA'; ctx.fillRect(sx-Math.floor(ww/2), sy-h+r, ww, 1); } ctx.fillStyle = '#7FD4EC'; ctx.fillRect(sx-1, sy-1, 2, 1); };
     shard(cx-half+16, 12); shard(cx-half+27, 8); shard(cx+half-16, 10);
     if (!reduceMotion) { ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fillRect(cx-half+16 + (Math.floor(ph/12)%3)*6, sy-13, 1, 1); }
-  } else if (i === 6) {  // SPACE — cratered asteroid + planted flag
+  } else if (i === 8) {  // SPACE — cratered asteroid + planted flag
     pixDisc(cx-half+16, sy+2, 3, dkHex(P.top,.6)); pixDisc(cx+half-18, sy+3, 2, dkHex(P.top,.6)); pixDisc(cx-3, sy+4, 2, dkHex(P.top,.6));
     ctx.fillStyle = 'rgba(255,246,232,0.8)'; ctx.fillRect(cx-half+10, sy-2, 1, 1); ctx.fillRect(cx+half-12, sy-3, 1, 1);
-    ctx.fillStyle = '#8A93AD'; ctx.fillRect(cx+half-24, sy-8, 1, 8); ctx.fillStyle = TIERS[6].c; ctx.fillRect(cx+half-24, sy-8, 4, 3);
-  } else if (i === 7) {  // ORBIT — solar array + station module
+    ctx.fillStyle = '#8A93AD'; ctx.fillRect(cx+half-24, sy-8, 1, 8); ctx.fillStyle = TIERS[8].c; ctx.fillRect(cx+half-24, sy-8, 4, 3);
+  } else if (i === 9) {  // ORBIT — solar array + station module
     ctx.fillStyle = '#3A5E88'; ctx.fillRect(cx-half+8, sy-10, 15, 8); ctx.fillStyle = '#5E9AD6'; ctx.fillRect(cx-half+9, sy-9, 13, 6);
     ctx.fillStyle = '#2E4E74'; for (let gx = cx-half+11; gx < cx-half+22; gx += 3) ctx.fillRect(gx, sy-9, 1, 6); for (let gy = sy-8; gy < sy-3; gy += 2) ctx.fillRect(cx-half+9, gy, 13, 1);
     ctx.fillStyle = '#AEB6CC'; ctx.fillRect(cx+half-20, sy-8, 10, 7); ctx.fillStyle = '#5E9AD6'; ctx.fillRect(cx+half-16, sy-6, 3, 3);
     if (!reduceMotion && Math.floor(ph/14)%2===0) { ctx.fillStyle = '#62E8B5'; ctx.fillRect(cx+half-11, sy-8, 1, 1); }
-  } else if (i === 8) {  // THE STARS — golden dais with twinkling studs
+  } else if (i === 10) { // THE STARS — golden dais with twinkling studs
     ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(cx-half, sy-1, w, 1);
     ctx.fillStyle = '#C99A2E'; ctx.fillRect(cx-half+8, sy-6, 2, 6); ctx.fillRect(cx+half-10, sy-6, 2, 6);
     for (let k = 0; k < 4; k++) { const stx = cx-half+15+k*17, on2 = reduceMotion || (Math.floor(ph/10)+k)%3 !== 0; ctx.fillStyle = on2 ? '#FFF6C8' : '#B8860B'; ctx.fillRect(stx, sy-4, 1, 1); ctx.fillRect(stx-1, sy-3, 3, 1); ctx.fillRect(stx, sy-2, 1, 1); }
@@ -3359,22 +3485,30 @@ function drawIsland(i, cx, topY) {
 function drawStageWeather(i, cx, y, ph) {
   if (reduceMotion) return;
   const half = Math.round(Math.min(W - 24, 104) / 2), w = half*2, x0 = cx - half;
-  if (i === 0) {            // ROOFTOPS — drifting pollen motes
+  if (i === 0) {            // CAVES — warm torch embers rise through the dark
+    for (let k = 0; k < 5; k++) { const ex = x0 + 8 + (k*29)%(w-16) + Math.sin(ph*.05+k)*2, ey = y - 4 - ((k*17 + ph*.6) % 26);
+      ctx.fillStyle = k%2 ? 'rgba(224,134,58,0.7)' : 'rgba(210,168,60,0.55)'; ctx.fillRect(Math.round(ex), Math.round(ey), 1, 1); }
+  } else if (i === 1) {     // SURFACE — drifting pollen motes
     ctx.fillStyle = 'rgba(255,246,232,0.35)';
     for (let k = 0; k < 5; k++) ctx.fillRect(Math.round(x0 + ((k*37 + ph*.3) % w)), Math.round(y - 16 + ((k*53) % 30) + Math.sin(ph*.05+k)*3), 1, 1);
-  } else if (i === 1) {     // TREETOPS — falling leaves
+  } else if (i === 2) {     // TREETOPS — falling leaves
     for (let k = 0; k < 5; k++) { const px = x0 + 10 + (k*31)%(w-20) + Math.sin(ph*.06+k)*4, py = y - 24 + ((ph*.5 + k*44) % 58);
       ctx.fillStyle = k%2 ? '#3FBF5A' : '#C98A3E'; ctx.fillRect(Math.round(px), Math.round(py), 2, 1); }
-  } else if (i === 2) {     // CLOUD NINE — a light shower under the cloud
+  } else if (i === 3) {     // LOWER SKY — a light breeze carries the last leaves away
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    for (let k = 0; k < 3; k++) ctx.fillRect(Math.round(x0 + ((k*44 + ph*1.4) % (w+20)) - 10), y - 22 + k*9, 5, 1);
+    for (let k = 0; k < 2; k++) { const px = x0 + ((k*61 + ph*1.1) % (w+16)) - 8, py = y - 14 + k*9 + Math.sin(ph*.08+k)*3;
+      ctx.fillStyle = k ? '#3FBF5A' : '#C98A3E'; ctx.fillRect(Math.round(px), Math.round(py), 2, 1); }
+  } else if (i === 4) {     // CLOUD NINE — a light shower under the cloud
     ctx.fillStyle = 'rgba(190,232,255,0.6)';
     for (let k = 0; k < 9; k++) ctx.fillRect(Math.round(x0 + 8 + (k*23)%(w-16)), Math.round(y + 2 + ((k*17 + ph*2.4) % 30)), 1, 3);
-  } else if (i === 3) {     // JET STREAM — fast wind streaks
+  } else if (i === 5) {     // JET STREAM — fast wind streaks
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     for (let k = 0; k < 5; k++) ctx.fillRect(Math.round(x0 + ((k*40 + ph*3) % (w+20)) - 10), y - 20 + k*8, 6, 1);
-  } else if (i === 4) {     // STRATOSPHERE — thin high cirrus
+  } else if (i === 6) {     // STRATOSPHERE — thin high cirrus
     ctx.fillStyle = 'rgba(255,246,232,0.16)';
     for (let k = 0; k < 3; k++) ctx.fillRect(Math.round(x0 + ((k*50 + ph*.5) % (w+30)) - 15), y - 22 + k*11, 12, 1);
-  } else if (i === 5) {     // AURORA — falling snow
+  } else if (i === 7) {     // AURORA — falling snow
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     for (let k = 0; k < 12; k++) ctx.fillRect(Math.round(x0 + 6 + (k*19)%(w-12) + Math.sin(ph*.04+k)*3), Math.round(y - 26 + ((k*13 + ph*.8) % 46)), 1, 1);
   } else {                  // SPACE / ORBIT / THE STARS — floating dust sparkles
@@ -3412,46 +3546,61 @@ function mapBadge(num, x, y, cleared, isNext, unlocked, sel) {
 function drawMapDecor(L, ph) {
   const on = y2 => y2 > -34 && y2 < H + 34;
   const P = L.pts;
-  if (on(P[1].y)) {   // TREETOPS — a small flock flaps across
+  if (on(P[0].y)) {   // CAVES — bats flit through the dark
+    ctx.fillStyle = 'rgba(20,14,30,0.75)';
+    for (let k = 0; k < 2; k++) { const span = W+40, bx = Math.round(((k*140+60+ph*.35)%span+span)%span-20), by = P[0].y-20+k*8 + Math.round(Math.sin(ph*.09+k*2)*3), up = Math.floor(ph*.25+k)%2;
+      ctx.fillRect(bx-3, by+(up?-1:1), 3, 1); ctx.fillRect(bx, by, 1, 2); ctx.fillRect(bx+1, by+(up?-1:1), 3, 1); }
+  }
+  if (on(P[1].y)) {   // SURFACE — butterflies wander the meadow air
+    for (let k = 0; k < 3; k++) { const bx = Math.round(W*(.2+.3*k) + Math.sin(ph*.03+k*2)*9), by = P[1].y-18+k*7 + Math.round(Math.sin(ph*.07+k)*4), fold = Math.floor(ph*.2+k)%2;
+      ctx.fillStyle = k%2 ? '#FF9ED2' : '#FFD75E'; ctx.fillRect(bx-(fold?1:2), by, fold?1:2, 1); ctx.fillRect(bx+1, by, fold?1:2, 1);
+      ctx.fillStyle = '#141022'; ctx.fillRect(bx, by, 1, 1); }
+  }
+  if (on(P[2].y)) {   // TREETOPS — a small flock flaps across
     ctx.fillStyle = 'rgba(20,16,34,0.6)';
-    for (let k = 0; k < 3; k++) { const span = W+40, bx = Math.round(((k*120+30+ph*.25)%span+span)%span-20), by = P[1].y-26+k*9, up = Math.floor(ph*.18+k*2)%2;
+    for (let k = 0; k < 3; k++) { const span = W+40, bx = Math.round(((k*120+30+ph*.25)%span+span)%span-20), by = P[2].y-26+k*9, up = Math.floor(ph*.18+k*2)%2;
       ctx.fillRect(bx-2, by+(up?-1:0), 2, 1); ctx.fillRect(bx, by, 1, 1); ctx.fillRect(bx+1, by+(up?-1:0), 2, 1); }
   }
-  if (on(P[2].y)) {   // CLOUD NINE — drifting clouds + a pink gift balloon
+  if (on(P[3].y)) {   // LOWER SKY — the first thin wisps drift past
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    for (let k = 0; k < 2; k++) { const span = W+60, cx2 = Math.round(((k*130+40+ph*(.1+k*.05))%span+span)%span)-30, cy2 = P[3].y-24+k*13;
+      ctx.fillRect(cx2-6, cy2, 12, 2); ctx.fillRect(cx2-2, cy2-1, 6, 1); }
+  }
+  if (on(P[4].y)) {   // CLOUD NINE — drifting clouds + a pink gift balloon
     ctx.fillStyle = 'rgba(255,255,255,0.14)';
-    for (let k = 0; k < 3; k++) { const span = W+60, cx2 = Math.round(((k*90+ph*(.15+k*.05))%span+span)%span)-30, cy2 = P[2].y-30+[0,14,26][k];
+    for (let k = 0; k < 3; k++) { const span = W+60, cx2 = Math.round(((k*90+ph*(.15+k*.05))%span+span)%span)-30, cy2 = P[4].y-30+[0,14,26][k];
       ctx.fillRect(cx2-7, cy2, 14, 3); ctx.fillRect(cx2-3, cy2-2, 8, 2); }
-    const balx = W - (W>200?40:20), baly = P[2].y-16 + Math.round(Math.sin(ph*.04)*3);
+    const balx = W - (W>200?40:20), baly = P[4].y-16 + Math.round(Math.sin(ph*.04)*3);
     pixDisc(balx, baly, 5, '#FF7EA5'); pixDisc(balx, baly, 4, '#FF5E8E'); ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(balx-2, baly-3, 2, 2);
     ctx.fillStyle = 'rgba(255,246,232,0.5)'; ctx.fillRect(balx, baly+5, 1, 6); ctx.fillStyle = '#C77EFF'; ctx.fillRect(balx-2, baly+11, 4, 3); ctx.fillStyle = '#FFD75E'; ctx.fillRect(balx-2, baly+11, 4, 1);
   }
-  if (on(P[3].y)) {   // JET STREAM — an airliner trailing vapor
-    const span = W+50, px = Math.round(((ph*.6)%span+span)%span)-25, py = P[3].y-22;
+  if (on(P[5].y)) {   // JET STREAM — an airliner trailing vapor
+    const span = W+50, px = Math.round(((ph*.6)%span+span)%span)-25, py = P[5].y-22;
     ctx.fillStyle = 'rgba(255,255,255,0.4)'; for (let k = 1; k < 9; k++) ctx.fillRect(px-k*3, py+1, 2, 1);
     ctx.fillStyle = '#C7CFE6'; ctx.fillRect(px, py, 6, 2); ctx.fillRect(px+5, py-1, 2, 1); ctx.fillStyle = '#8A93AD'; ctx.fillRect(px+1, py-1, 2, 1); ctx.fillRect(px+1, py+2, 2, 1);
   }
-  if (on(P[4].y)) {   // STRATOSPHERE — a hot-air balloon
-    const hx = 24, hy = P[4].y-16 + Math.round(Math.sin(ph*.03+1)*3);
+  if (on(P[6].y)) {   // STRATOSPHERE — a hot-air balloon
+    const hx = 24, hy = P[6].y-16 + Math.round(Math.sin(ph*.03+1)*3);
     pixDisc(hx, hy, 6, '#FF9E3D'); ctx.fillStyle = '#FFD75E'; ctx.fillRect(hx-6, hy-1, 12, 1); ctx.fillStyle = '#C7502A'; ctx.fillRect(hx-1, hy-6, 2, 12);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(hx-2, hy+7, 4, 3); ctx.fillStyle = 'rgba(255,246,232,0.4)'; ctx.fillRect(hx-3, hy+6, 1, 1); ctx.fillRect(hx+2, hy+6, 1, 1);
   }
-  if (on(P[5].y) && !reduceMotion) {   // AURORA — shimmering curtains
+  if (on(P[7].y) && !reduceMotion) {   // AURORA — shimmering curtains
     for (let k = 0; k < 7; k++) { const ax = Math.round(W*(k+.5)/7 + Math.sin(ph*.02+k*1.4)*5); ctx.globalAlpha = .10+.06*Math.sin(ph*.05+k); ctx.fillStyle = k%2 ? '#7EF2C5' : '#C77EFF';
-      for (let s2 = -14; s2 <= 14; s2 += 2) ctx.fillRect(ax + Math.round(Math.sin((P[5].y+s2)*.15+ph*.03)*3), P[5].y-24+s2, 2, 2); }
+      for (let s2 = -14; s2 <= 14; s2 += 2) ctx.fillRect(ax + Math.round(Math.sin((P[7].y+s2)*.15+ph*.03)*3), P[7].y-24+s2, 2, 2); }
     ctx.globalAlpha = 1;
   }
-  if (on(P[6].y)) {   // SPACE — a slow spiral galaxy
-    const gx = 30, gy = P[6].y-18;
+  if (on(P[8].y)) {   // SPACE — a slow spiral galaxy
+    const gx = 30, gy = P[8].y-18;
     for (let a = 0; a < 28; a++) { const ang = a*.5 + ph*.01, rr = a*.4; ctx.globalAlpha = .5 - a*.015; ctx.fillStyle = a%2 ? '#C77EFF' : '#8FB8FF'; ctx.fillRect(Math.round(gx+Math.cos(ang)*rr), Math.round(gy+Math.sin(ang)*rr*.6), 1, 1); }
     ctx.globalAlpha = 1; ctx.fillStyle = '#FFF6E8'; ctx.fillRect(gx, gy, 2, 2);
   }
-  if (on(P[7].y)) {   // ORBIT — a cratered moon with an orbiting satellite
-    const mx = W-24, my = P[7].y-20; pixDisc(mx, my, 9, 'rgba(150,146,180,0.8)'); pixDisc(mx-1, my-1, 8, 'rgba(220,216,236,0.92)');
+  if (on(P[9].y)) {   // ORBIT — a cratered moon with an orbiting satellite
+    const mx = W-24, my = P[9].y-20; pixDisc(mx, my, 9, 'rgba(150,146,180,0.8)'); pixDisc(mx-1, my-1, 8, 'rgba(220,216,236,0.92)');
     pixDisc(mx+2, my+2, 2, 'rgba(150,146,180,0.7)'); pixDisc(mx-3, my+3, 1, 'rgba(150,146,180,0.7)'); pixDisc(mx+1, my-3, 1, 'rgba(150,146,180,0.7)');
     const ang = ph*.05, sxx = Math.round(mx+Math.cos(ang)*13), syy = Math.round(my+Math.sin(ang)*8); ctx.fillStyle = '#C7CFE6'; ctx.fillRect(sxx, syy, 2, 1);
   }
-  if (on(P[8].y)) {   // THE STARS — a ringed planet
-    const px2 = 26, py2 = P[8].y-18; pixDisc(px2, py2, 6, '#B98CE6'); pixDisc(px2-1, py2-1, 5, '#C79AF2'); pixDisc(px2+1, py2+1, 2, '#7A4AA6');
+  if (on(P[10].y)) {  // THE STARS — a ringed planet
+    const px2 = 26, py2 = P[10].y-18; pixDisc(px2, py2, 6, '#B98CE6'); pixDisc(px2-1, py2-1, 5, '#C79AF2'); pixDisc(px2+1, py2+1, 2, '#7A4AA6');
     ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(px2-8, py2+1, 6, 1); ctx.fillRect(px2+3, py2+1, 6, 1);
   }
 }
@@ -3553,7 +3702,7 @@ function renderSkyMap() {
     const bob = reduceMotion ? 0 : Math.round(Math.sin(tick*.045 + k*1.3)*2);   // islands drift like they float
     if (isGate) {
       if (champ) {
-        drawIsland(8, pt.x, pt.y + 6 + bob);
+        drawIsland(10, pt.x, pt.y + 6 + bob);   // the golden dais
         mapNode3D(pt.x, pt.y, 7, '#FFD75E', '#7A5A14'); pixDisc(pt.x, pt.y, 4, '#4A3A0C');
         ctx.fillStyle = '#FFD75E'; ctx.fillRect(pt.x-2, pt.y-1, 5, 2);
         ctx.fillRect(pt.x-2, pt.y-2, 1, 1); ctx.fillRect(pt.x, pt.y-2, 1, 1); ctx.fillRect(pt.x+2, pt.y-2, 1, 1);

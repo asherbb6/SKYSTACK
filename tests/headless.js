@@ -104,8 +104,8 @@ function saved(g, k) {
 const fresh = makeGame();
 check('boots without throwing (fresh profile)', () => fresh.run('booted === true'));
 check('TIERS has 11 stages', () => fresh.run('TIERS.length === 11'));
-check('TIERS names are the 11-stage continuous world', () => fresh.run(
-  `JSON.stringify(TIERS.map(t=>t.name)) === JSON.stringify(['CAVES','SURFACE','TREETOPS','ROOFTOPS','CLOUD NINE','JET STREAM','STRATOSPHERE','AURORA','SPACE','ORBIT','THE STARS'])`));
+check('TIERS names are the 11-stage continuous world (no city language)', () => fresh.run(
+  `JSON.stringify(TIERS.map(t=>t.name)) === JSON.stringify(['CAVES','SURFACE','TREETOPS','LOWER SKY','CLOUD NINE','JET STREAM','STRATOSPHERE','AURORA','SPACE','ORBIT','THE STARS'])`));
 check('every tier has a theme color', () => fresh.run(`TIERS.every(t => /^#[0-9A-F]{6}$/i.test(t.c))`));
 check('fresh profile: prog=0, no active level', () => fresh.run('prog === 0 && runLevel === -1'));
 check('extras picker excludes the campaign mode', () => fresh.run(
@@ -707,6 +707,38 @@ check('Me volume mixer renders and stays above navigation on narrow portrait scr
 check('Me volume mixer touch controls adjust the selected channel only', () => fresh.run(
   '(() => { state="me"; musicVol=1;sfxVol=1;renderMe();const r=MIX_ROWS[0].minus;canvasRect=null;pressDown({clientX:(r.x+r.w/2)/W*320,clientY:(r.y+r.h/2)/H*480});return musicVol===.75&&sfxVol===1; })()'));
 
+// ---------- v73: Surface/Forest + Treetops/Lower Sky world identity ----------
+const fw = makeGame({ 'skystack-height': '90' });
+fw.run('mode = "endless"; resetRun(); state = "playing";');
+check('tier 3 is player-facing LOWER SKY (no city/rooftop language in visible tables)', () => fw.run(
+  'TIERS[3].name === "LOWER SKY" && MATERIALS[3].name === "BREEZE" && INTRO_TAGS[3] === "INTO OPEN AIR" && ' +
+  '!TIERS.some(t => /ROOF|CITY/.test(t.name)) && !INTRO_TAGS.some(t => /CITY|ROOF/.test(t)) && !MATERIALS.some(m => /BRICK/.test(m.name))'));
+check('forest helpers exist (treeline, back trunks, canopy band)', () => fw.run(
+  '["drawTreeline","backTrunk","drawForestBand","drawSurfaceGround"].every(f => eval("typeof "+f) === "function") && BACK_TREES.length > 0'));
+check('background trunks root at the surface and stay below the main canopy tops', () => fw.run(
+  'BACK_TREES.every(t => t.topA > SURF_A && t.topA < TIERS[2].n)'));
+check('canopy band spans TREETOPS and hands over to wisps before CLOUD NINE', () => fw.run(
+  'CANOPY_A0 < TIERS[1].n && CANOPY_A1 === WISP_A0 && WISP_A1 >= TIERS[3].n && WISP_A1 <= TIERS[3].n + 4'));
+check('forest band + treeline + trunks render across the whole climb without throwing', () => {
+  fw.run('for (let a = 0; a < 130; a += 5) { cameraY = GROUND_Y - a*BH - (H-100); drawTreeline(cameraY); drawForestBand(cameraY, 40); for (const t of BACK_TREES) backTrunk(t, 5); }');
+  return true;
+});
+check('reduced-motion forest world renders statically without throwing', () => {
+  const rm2 = makeGame({ 'skystack-height': '90' }, true);
+  rm2.run('mode = "endless"; for (let a = 30; a < 90; a += 6) { cameraY = GROUND_Y - a*BH - (H-100); drawGroundWorld(cameraY, 0); }');
+  return true;
+});
+check('sky map art tables are index-aligned to all 11 tiers', () => fw.run(
+  'ISLES.length === TIERS.length && !!ISLES[0].top && ISLES[3].cloud === true && ISLES[4].cloud === true && ISLES[5].cloud === true && ISLES[10].top === "#FFD75E"'));
+check('the campaign landmark for LOWER SKY is a tree bough, not a slab', () =>
+  /region === 2 \|\| region === 3/.test(src));
+check('forest world layers are world-anchored (worldY), never parallax-decoupled', () =>
+  /function drawTreeline[\s\S]{0,200}worldY\(SURF_A, cy\)/.test(src) &&
+  /function drawForestBand[\s\S]{0,400}worldY\(A, cy\)/.test(src) &&
+  !/function drawTreeline[\s\S]{0,600}cy \* 0?\.\d/.test(src));
+check('no city imagery left in the map art (no building helper, no window grids)', () =>
+  !/bldg\s*=|skyline/i.test(src.slice(src.indexOf('const ISLES'))));
+
 // ---------- save schema v2 + migration (v64) ----------
 // fresh profile: a valid v2 container is created, and nothing is ever written to v1 keys
 const sv = makeGame();
@@ -784,7 +816,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v72', () => /const CACHE = 'skystack-v72'/.test(sw));
+check('sw.js cache bumped to v73', () => /const CACHE = 'skystack-v73'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
