@@ -1966,28 +1966,33 @@ function blitCaveTex(x0, y, w, h, srcRow, tex) {
 // mouths with occasional blinking eye glints.
 function drawCaveBackdrop(top, cy, ph) {
   const under = H - top; if (under <= 0) return;
+  const gy = GROUND_Y - cy;                                                                   // ground line on screen — every band grid anchors to it
   const g = ctx.createLinearGradient(0, top, 0, H);
   g.addColorStop(0, '#2A1C12'); g.addColorStop(0.45, '#1A120C'); g.addColorStop(1, '#0B0705');
   ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.fillRect(0, top, W, under);
-  // the whole back wall is packed rock too (dim, half-speed parallax) — kept visible in the centre so
-  // the lane has real stone depth, then only gently sunk back so the colourful blocks still pop
+  // the whole back wall is packed rock, WORLD-anchored like the ground: bands ride the world and
+  // leave the screen with the camera — never a screen-fixed grid whose content re-rolls in place
   ctx.globalAlpha = 0.5;
-  for (let y = top; y < H; y += 12) blitCaveTex(0, y, W, Math.min(12, H - y), Math.round((GROUND_Y - cy - y)));
+  { const off = (((gy - top) % 12) + 12) % 12;
+    for (let y = top + off - 12; y < H; y += 12) {
+      const by = Math.max(y, top), bh = Math.min(y + 12, H) - by; if (bh <= 0) continue;
+      blitCaveTex(0, by, W, bh, Math.round(gy - y) + (by - y));
+    } }
   ctx.globalAlpha = 1;
   const hg = ctx.createLinearGradient(0, 0, W, 0);                                            // soft central shade — dark enough to read, not a black void
   hg.addColorStop(0, 'rgba(6,4,3,0)'); hg.addColorStop(0.34, 'rgba(6,4,3,0.42)');
   hg.addColorStop(0.66, 'rgba(6,4,3,0.42)'); hg.addColorStop(1, 'rgba(6,4,3,0)');
   ctx.fillStyle = hg; ctx.fillRect(0, top, W, under);
-  const P = 68, s = cy, off = ((s % P) + P) % P;                                              // far rock lumps — receding masses locked to the wall (no parallax slide)
-  for (let y = top - off - P; y < H; y += P) { const row = Math.round((y + s) / P);
+  const P = 68, s = cy, off = (((gy - top) % P) + P) % P;                                     // far rock lumps — grid anchored to the ground line (translates 1:1, even at the mouth)
+  for (let y = top + off - P*2; y < H; y += P) { const row = Math.round((y + s) / P);
     for (let k = 0; k < 4; k++) { const ly = Math.round(y + bhash(row*3 + k) * P), lr = 9 + Math.round(bhash(row + k) * 10);
       if (ly - lr < top) continue;                                                            // never poke above the ceiling into the sky
       const lx = Math.round(bhash(row*7 + k*13) * W);
       ctx.globalAlpha = 0.5; pixDisc(lx, ly, lr, '#241811');
       ctx.globalAlpha = 0.32; pixDisc(lx - lr*0.3|0, ly - lr*0.35|0, Math.max(2, lr*0.55|0), '#3A2A1B'); } }   // faint lit crown = 3-D mass
   ctx.globalAlpha = 1;
-  const HP = 158, hs = cy, hoff = ((hs % HP) + HP) % HP;                                       // tunnel mouths + eye glints
-  for (let y = top - hoff - HP; y < H; y += HP) { const row = Math.round((y + hs) / HP);
+  const HP = 158, hs = cy, hoff = (((gy - top) % HP) + HP) % HP;                               // tunnel mouths + eye glints — same ground-anchored grid
+  for (let y = top + hoff - HP*2; y < H; y += HP) { const row = Math.round((y + hs) / HP);
     if (bhash(row*17) < 0.4) continue;
     const hx = Math.round(bhash(row*5) * (W - W*0.4) + W*0.2), hy = Math.round(y + bhash(row*9) * 70), hr = 14 + Math.round(bhash(row*3) * 14);
     if (hy - hr - 8 < top) continue;                                                          // keep mouths fully underground
@@ -2006,22 +2011,27 @@ function drawCaveBackdrop(top, cy, ph) {
 function drawCaveWalls(top, cy, ph) {
   if (H - top <= 0) return;
   const baseW = Math.round(W * 0.17);
+  const gy = GROUND_Y - cy;                                                                    // ground line on screen — the band grid anchors to it
+  const off4 = (((gy - top) % 4) + 4) % 4;
   for (const side of [0, 1]) {
     let prevW = -1;
-    for (let y = top; y < H; y += 4) {
-      const row = Math.round((GROUND_Y - cy - y) / 4);
+    // WORLD-anchored 4px bands (like the ground): each band keeps its row for good and rides the
+    // camera off-screen — never a screen-fixed grid whose texture/edge re-rolls in place
+    for (let y = top + off4 - 4; y < H; y += 4) {
+      const by = Math.max(y, top), bh = Math.min(y + 4, H) - by; if (bh <= 0) continue;        // clip the part above the ceiling
+      const row = Math.round((gy - y) / 4);
       const w = caveWallW(row, side, baseW);
       const x0 = side ? W - w : 0, inner = side ? x0 : x0 + w;
       ctx.globalAlpha = 1;
-      blitCaveTex(x0, y, w, 4, row * 4 + side * 97);                                           // brown dirt body
+      blitCaveTex(x0, by, w, bh, row * 4 + side * 97 + (by - y));                              // brown dirt body
       if (caveWallMat(row, side)) {                                                            // gray cobblestone column facing the lane
         const gw = Math.round(w * 0.55);
-        blitCaveTex(side ? x0 : x0 + w - gw, y, gw, 4, row * 4 + side * 233, caveTexGray);
+        blitCaveTex(side ? x0 : x0 + w - gw, by, gw, bh, row * 4 + side * 233 + (by - y), caveTexGray);
       }
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(side ? inner : inner - 4, y, 4, 4);      // AO into the lane
-      ctx.fillStyle = 'rgba(0,0,0,0.24)'; ctx.fillRect(side ? inner + 4 : inner - 8, y, 4, 4); // soft falloff
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(side ? inner : inner - 4, by, 4, bh);    // AO into the lane
+      ctx.fillStyle = 'rgba(0,0,0,0.24)'; ctx.fillRect(side ? inner + 4 : inner - 8, by, 4, bh); // soft falloff
       ctx.fillStyle = caveWallMat(row, side) ? 'rgba(140,138,126,0.4)' : 'rgba(122,96,62,0.45)';
-      ctx.fillRect(side ? inner - 1 : inner, y, 1, 4);                                          // lit rock rim on the edge
+      ctx.fillRect(side ? inner - 1 : inner, by, 1, bh);                                        // lit rock rim on the edge
       if (prevW >= 0 && w < prevW - 3) {                                                       // overhang: teeth hang under the bulge
         const ledge = side ? W - prevW : prevW;
         ctx.fillStyle = '#241A10';
@@ -2035,10 +2045,10 @@ function drawCaveWalls(top, cy, ph) {
       }
       prevW = w;
     }
-    const DP = 34, doff = ((cy % DP) + DP) % DP;                                               // decor along the inner edge (denser)
-    for (let y = top - doff; y < H; y += DP) {
-      const row = Math.round((GROUND_Y - cy - y) / DP), r2 = bhash(row*9 + side*53);
-      const w = caveWallW(Math.round((GROUND_Y - cy - y) / 4), side, baseW);
+    const DP = 34, doff = (((gy - top) % DP) + DP) % DP;                                       // decor along the inner edge — ground-anchored like the walls (rides the world, no mouth slip)
+    for (let y = top + doff - DP; y < H; y += DP) {
+      const row = Math.round((gy - y) / DP), r2 = bhash(row*9 + side*53);
+      const w = caveWallW(Math.round((gy - y) / 4), side, baseW);
       const inx = side ? W - w : w, my = Math.round(y);
       if (my < top - 10 || my > H + 10) continue;
       if (r2 < 0.3) {                                                                                  // mushrooms on a ledge
@@ -2097,9 +2107,10 @@ function drawCaveGround(cy, ph) {
 // wall torches, reference style: angled wooden handle with an iron band, a tall layered flame
 // (orange -> amber -> white core) that breathes, a big soft double-halo, and embers drifting up
 function drawCaveTorchLight(top, cy, ph) {
-  const TP = 150, toff = ((cy % TP) + TP) % TP;
-  for (let y = top - toff - TP; y < H + TP; y += TP) {
-    const row = Math.round((GROUND_Y - cy - y) / TP), side = row & 1, dir = side ? -1 : 1;
+  const gy = GROUND_Y - cy;                                                                   // ground line on screen — torch grid anchors to it (1:1, even at the mouth)
+  const TP = 150, toff = (((gy - top) % TP) + TP) % TP;
+  for (let y = top + toff - TP*2; y < H + TP; y += TP) {
+    const row = Math.round((gy - y) / TP), side = row & 1, dir = side ? -1 : 1;
     const tx = side ? W - Math.round(W*0.15) : Math.round(W*0.15), ty = Math.round(y + bhash(row*7) * 60);
     if (ty < top + 6 || ty > H + 20) continue;                                                 // torches only below the ceiling
     const fl = reduceMotion ? 0.85 : (0.72 + 0.28 * Math.sin(ph*0.31 + row*2) * Math.sin(ph*0.17 + row));

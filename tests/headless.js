@@ -419,6 +419,31 @@ check('cave suite renders across the whole underground without throwing', () => 
   bio.run('for (let a = 0; a < SURF_A + 6; a += 4) { cameraY = GROUND_Y - a*BH - (H-100); const yc = GROUND_Y - SURF_A*BH - cameraY; drawCave(30, Math.max(0, Math.min(yc, H)), yc, cameraY); }');
   return true;
 });
+// the cave walls/backdrop/ground must be WORLD-anchored like the floor: a known camera shift
+// must translate every band rigidly by the same screen amount, keeping the SAME source texture
+// row + width (i.e. geometry+texture come from stable world coords, not from screen slots that
+// re-roll their content). Recording blitCaveTex is how we observe the real draw positions.
+check('cave bands translate rigidly under a camera shift (world-anchored, not screen-anchored)', () => bio.run(
+  '(() => {' +
+  '  const orig = blitCaveTex;' +
+  '  const cap = () => { const L = []; blitCaveTex = (x0,y,w,h,sr) => L.push(x0+"|"+w+"|"+sr+"|"+Math.round(y)); return L; };' +
+  '  try {' +
+  '    const d = 6, cy1 = GROUND_Y - 4*BH - (H-100), cy2 = cy1 + d;' +   // deep cave: ceiling off-screen, top=0, no clipping
+  '    const L1 = cap(); cameraY = cy1; drawCave(30, 0, -999, cy1); blitCaveTex = orig;' +
+  '    const L2 = cap(); cameraY = cy2; drawCave(30, 0, -999, cy2); blitCaveTex = orig;' +
+  '    if (L1.length < 20 || L2.length < 20) return "too few bands recorded: " + L1.length + "/" + L2.length;' +
+  '    const shifted = new Set(L2.map(k => { const p = k.split("|"); p[3] = String(Number(p[3]) + d); return p.join("|"); }));' +   // frame 2 nudged back up by d
+  '    let m = 0; for (const k of L1) if (shifted.has(k)) m++;' +        // rigid + same srcRow/width => identical key
+  '    return m >= L1.length * 0.7 ? true : "only " + m + "/" + L1.length + " bands translated rigidly (screen-anchored?)";' +
+  '  } finally { blitCaveTex = orig; }' +
+  '})()'));
+check('cave wall/decor/torch/backdrop grids are ground-anchored (gy = GROUND_Y - cy), no screen-fixed grid', () =>
+  /const gy = GROUND_Y - cy;/.test(src) &&
+  /off4 = \(\(\(gy - top\) % 4\)/.test(src) &&      // main 4px wall bands
+  /doff = \(\(\(gy - top\) % DP\)/.test(src) &&     // wall decor (mushrooms/roots/vines/stalactites/posts/cobwebs)
+  /toff = \(\(\(gy - top\) % TP\)/.test(src) &&     // wall torches
+  !/doff = \(\(cy % DP\)/.test(src) &&              // old screen-anchored decor grid removed
+  !/toff = \(\(cy % TP\)/.test(src));               // old screen-anchored torch grid removed
 check('no embedded image backdrops left (cave is fully procedural)', () =>
   !/caveBgImg|data:image\/jpeg;base64/.test(src));
 // ---- foreground occlusion + layout guarantees ----
@@ -496,7 +521,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v60', () => /const CACHE = 'skystack-v60'/.test(sw));
+check('sw.js cache bumped to v61', () => /const CACHE = 'skystack-v61'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
