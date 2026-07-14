@@ -884,7 +884,7 @@ const BALANCE_REGISTRY = deepFreeze({
 });
 const DIFFICULTY_LANES = deepFreeze({
   practice:{ id:'practice', modes:['practice'], fail:false, assist:{ policy:'fixed', min:BALANCE_REGISTRY.assist.practice, max:BALANCE_REGISTRY.assist.practice }, recovery:'AUTO SAVE' },
-  assisted:{ id:'assisted', modes:['level','endless','time'], fail:true, assist:{ policy:'adaptive', min:0, max:BALANCE_REGISTRY.assist.max }, recovery:'ASSIST + SHIELD/REVIVE' },
+  assisted:{ id:'assisted', modes:['level','endless','time','challenge'], fail:true, assist:{ policy:'adaptive', min:0, max:BALANCE_REGISTRY.assist.max }, recovery:'ASSIST + SHIELD/REVIVE' },
   unassisted:{ id:'unassisted', modes:['pure','daily'], fail:true, assist:{ policy:'off', min:0, max:0 }, recovery:'NONE' }
 });
 const LEVEL_BLUEPRINTS = deepFreeze([
@@ -1098,6 +1098,42 @@ const UNLOCK_CATALOG = deepFreeze({
   collections:COLLECTION_REGISTRY.map(c=>({id:c.id,unlock:{type:'collection',reward:c.reward}})),
   achievements:ACH.map(a=>({id:a.id,unlock:{type:'achievement',tier:a.tier,reward:a.reward}}))
 });
+// S7 mechanics-lock targets are explicit and auditable. They do not alter live tuning; the report
+// makes catalog coverage, economy pace, side-grade bounds, session lengths, and launch gates visible
+// so a later edit cannot silently move the first-release contract.
+const MECHANICS_LOCK_TARGETS = deepFreeze({
+  catalogs:{ characters:12, bases:4, modifiers:12, challenges:8, missions:12, achievements:24, collections:6 },
+  economy:{ visibleProgressCoins:30, firstPurchaseRuns:{min:2,max:6}, challengeReward:{min:30,max:40}, repeatChallengeRewards:false },
+  sidegrades:{ maxMultiplierDelta:.25 },
+  sessions:{ challengeSeconds:{min:10,max:90}, timedSeconds:60 },
+  technical:{ restartCycles:3, minViewport:{w:242,h:300}, headlessFrameMsMax:8, offlineShell:true },
+  weeklySeeded:false
+});
+function challengeBalanceReport(id) {
+  const c=challengeById(id); if(!c)return null;
+  const blockSeconds=LEVEL_REGISTRY.reduce((n,l)=>n+l.targetDurationSeconds.target/l.blocksRequired,0)/LEVEL_REGISTRY.length;
+  const interactions=c.family==='timed'?0:c.objective.type==='recoveries'?c.objective.target*2:c.objective.target;
+  const estimatedSeconds=c.duration?c.duration/60:Math.round(interactions*blockSeconds);
+  return deepFreeze({id:c.id,family:c.family,estimatedSeconds,reward:coinAmount(c.reward),firstClearOnly:c.reward>0});
+}
+function mechanicsLockReport() {
+  const t=MECHANICS_LOCK_TARGETS, paidChars=CHARACTER_REGISTRY.filter(c=>c.unlock.type==='coins').map(c=>c.unlock.cost).sort((a,b)=>a-b),
+    paidBases=BASE_REGISTRY.filter(b=>b.unlock.type==='coins').map(b=>b.unlock.cost).sort((a,b)=>a-b), progress=t.economy.visibleProgressCoins,
+    counts={characters:CHARACTER_REGISTRY.filter(c=>c.rare!=='EVENT').length,bases:BASE_REGISTRY.length,modifiers:MODIFIER_REGISTRY.length,
+      challenges:CHALLENGE_REGISTRY.length,missions:MKEYS.length,achievements:ACH.length,collections:COLLECTION_REGISTRY.length},
+    multiplierDeltas=Object.values(PASSIVE_REGISTRY).flatMap(p=>Object.entries(p.effects).filter(([k,v])=>k!=='feverAt'&&Number.isFinite(v)).map(([,v])=>Math.abs(v-1))),
+    challengeReports=CHALLENGE_REGISTRY.map(c=>challengeBalanceReport(c.id)), levelReports=LEVEL_REGISTRY.map(l=>levelBalanceReport(l.id,'assisted',.35)),
+    economy={firstBaseRuns:Math.ceil(paidBases[0]/progress),firstCharacterRuns:Math.ceil(paidChars[0]/progress),maxCharacterRuns:Math.ceil(paidChars[paidChars.length-1]/progress)},
+    checks={
+      catalogs:Object.keys(t.catalogs).every(k=>counts[k]>=t.catalogs[k]),
+      economy:paidChars.every(Number.isInteger)&&paidBases.every(Number.isInteger)&&economy.firstBaseRuns>=t.economy.firstPurchaseRuns.min&&economy.firstBaseRuns<=t.economy.firstPurchaseRuns.max&&economy.firstCharacterRuns>=t.economy.firstPurchaseRuns.min&&economy.firstCharacterRuns<=t.economy.firstPurchaseRuns.max,
+      sidegrades:Math.max(...multiplierDeltas)<=t.sidegrades.maxMultiplierDelta,
+      levels:levelReports.every(r=>r.durationSeconds.ordinary>=r.durationSeconds.range[0]&&r.durationSeconds.ordinary<=r.durationSeconds.range[1]),
+      challenges:challengeReports.every(r=>r.family==='timed'?r.estimatedSeconds===t.sessions.timedSeconds:r.estimatedSeconds>=t.sessions.challengeSeconds.min&&r.estimatedSeconds<=t.sessions.challengeSeconds.max&&r.reward>=t.economy.challengeReward.min&&r.reward<=t.economy.challengeReward.max),
+      noWeekly:!t.weeklySeeded&&!CHALLENGE_REGISTRY.some(c=>c.weekly||c.family==='weekly')
+    };
+  return deepFreeze({ready:Object.values(checks).every(Boolean),counts,economy,maxSidegradeDelta:Math.max(...multiplierDeltas),challengeReports,levelReports,checks});
+}
 let loadout = { shield:false, aura:false, slow:false };
 let shopInfo = 'TAP A BOOST TO BUY IT';
 function seedForRun(modeId, entropy, day) {
@@ -1136,7 +1172,6 @@ function createRunContext(o) {
     modifierPermissions:{ enabled:!!p.modifiers&&(!challenge||challenge.modifiers), deterministic:true, surpriseFailure:false },
     rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards, scope:checkpoint.rewardScope, scoreMultiplier:checkpoint.scoreMultiplier },
     recordPermissions:{ write:recordEligible, scope:challenge?'challenge':checkpoint.recordScope, reason:challenge?'challenge':campaignLevel>=0?'campaign-level':checkpoint.recordScope==='ground-up'?'eligible-ground-up':'checkpoint-start' },
-    loadoutAllowed:p.loadout,
     characterSnapshot:{ id:char.id, passiveId:passive.id, passiveEnabled:!!p.passives, mastery:masteryEntry(o.characterMastery) },
     difficultyProfile:{ lane:lane.id, assistEnvelope:lane.assist, startingAssist:startingAssist(m.id, o.skill), campaignLevel, levelSpeedScale:levelSpec ? levelSpec.speedCurve.campaignScale : 1, slider:BALANCE_REGISTRY.slider }
   });
@@ -1234,9 +1269,9 @@ function updateChallengeForPlacement(outcome) {
 }
 function completeChallenge() {
   const c=activeChallenge(); if (!c||challengeCleared) return;
-  challengeCleared=true; challengeRuntime.status='complete'; challengeReward=coinAmount(c.reward);
+  challengeCleared=true; challengeRuntime.status='complete'; challengeReward=challengeRecord(c.id).clears===0?coinAmount(c.reward):0;
   if (challengeReward) transactCoins(challengeReward,true);
-  bannerText='CHALLENGE CLEAR! +'+challengeReward; bannerT=1;
+  bannerText='CHALLENGE CLEAR!'+(challengeReward?' +'+challengeReward:''); bannerT=1;
   gameOver('challenge');
 }
 function recordChallengeOutcome() {

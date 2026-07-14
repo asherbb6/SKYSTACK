@@ -1161,9 +1161,53 @@ check('S6 leaving a hidden challenge restores the last real Extra Mode selection
 check('S6 Challenge picker fits all eight rows above navigation at phone width and renders every template', () => fresh.run(
   '(() => { W=242;H=300;relayout();state="home";challengePicker=true;renderChallengePicker();const fit=CHALLENGE_ROWS.length===8&&CHALLENGE_ROWS.every(r=>r.x>=0&&r.x+r.w<=W&&r.y>=0&&r.y+r.h<NAV_Y);for(const c of CHALLENGE_REGISTRY){startChallenge(c.id);renderHUD(blocks.length);gameOver(c.family==="timed"?"time":"precision");renderGameOver();}return fit; })()'));
 
+// ---------- S7 content lock, balance audit + technical hardening ----------
+check('S7 freezes explicit first-release catalog, economy, side-grade, session, and technical targets', () => fresh.run(
+  'Object.isFrozen(MECHANICS_LOCK_TARGETS)&&Object.isFrozen(MECHANICS_LOCK_TARGETS.catalogs)&&Object.isFrozen(MECHANICS_LOCK_TARGETS.economy)&&Object.isFrozen(MECHANICS_LOCK_TARGETS.technical)&&MECHANICS_LOCK_TARGETS.catalogs.characters===12&&MECHANICS_LOCK_TARGETS.catalogs.challenges===8&&MECHANICS_LOCK_TARGETS.technical.restartCycles===3&&MECHANICS_LOCK_TARGETS.technical.minViewport.w===242&&!MECHANICS_LOCK_TARGETS.weeklySeeded'));
+check('S7 mechanics-lock report is pure, deeply frozen, deterministic, and ready', () => fresh.run(
+  '(() => { const a=mechanicsLockReport(),b=mechanicsLockReport();return a.ready&&Object.isFrozen(a)&&Object.isFrozen(a.checks)&&Object.isFrozen(a.challengeReports)&&a.challengeReports.every(Object.isFrozen)&&JSON.stringify(a)===JSON.stringify(b)&&Object.values(a.checks).every(Boolean); })()'));
+check('S7 content catalogs meet launch counts with unique ids and complete rule data', () => fresh.run(
+  '(() => { const r=mechanicsLockReport(),groups=[CHARACTER_REGISTRY,BASE_REGISTRY,MODIFIER_REGISTRY,CHALLENGE_REGISTRY,COLLECTION_REGISTRY,ACH];return r.counts.characters>=12&&r.counts.bases===4&&r.counts.modifiers===12&&r.counts.challenges===8&&r.counts.missions===12&&r.counts.achievements===24&&r.counts.collections===6&&groups.every(g=>new Set(g.map(x=>x.id)).size===g.length)&&CHARACTER_REGISTRY.every(c=>c.role&&c.passiveId&&c.unlock)&&BASE_REGISTRY.every(b=>b.identity&&b.unlock)&&CHALLENGE_REGISTRY.every(c=>c.objective&&c.family); })()'));
+check('S7 economy keeps first visible purchases in 2–6 progress grants and all passives inside the side-grade envelope', () => fresh.run(
+  '(() => { const r=mechanicsLockReport(),t=MECHANICS_LOCK_TARGETS;return r.economy.firstBaseRuns===3&&r.economy.firstCharacterRuns===4&&r.economy.maxCharacterRuns===30&&r.economy.firstBaseRuns>=t.economy.firstPurchaseRuns.min&&r.economy.firstCharacterRuns<=t.economy.firstPurchaseRuns.max&&r.maxSidegradeDelta<=t.sidegrades.maxMultiplierDelta; })()'));
+check('S7 Challenge estimates stay inside the locked short-session range and Time remains exactly 60 seconds', () => fresh.run(
+  '(() => { const t=MECHANICS_LOCK_TARGETS.sessions,r=CHALLENGE_REGISTRY.map(c=>challengeBalanceReport(c.id));return r.length===8&&r.every(x=>Object.isFrozen(x))&&r.find(x=>x.id==="time60").estimatedSeconds===t.timedSeconds&&r.filter(x=>x.id!=="time60").every(x=>x.estimatedSeconds>=t.challengeSeconds.min&&x.estimatedSeconds<=t.challengeSeconds.max&&x.reward>=30&&x.reward<=40); })()'));
+check('S7 Challenge rewards are first-clear-only while records continue across replays', () => {
+  const g=makeGame();
+  return g.run('(() => { achDone=ACH.map(a=>a.id);missions=MKEYS.slice(0,3).map(k=>({key:k,target:99999,reward:1}));const clear=()=>{startChallenge("precision10");for(let i=0;i<10;i++){runPerfects++;updateChallengeForPlacement({perfect:true});}};coins=0;stats.coins=0;clear();const first=coins,reward1=challengeReward;state="home";clear();const second=coins,reward2=challengeReward,r=challengeRecord("precision10");return first===30&&second===30&&reward1===30&&reward2===0&&r.clears===2&&r.attempts===2&&!MECHANICS_LOCK_TARGETS.economy.repeatChallengeRewards; })()');
+});
+check('S7 every gameplay mode survives three dirty fail/restart cycles with clean owned state', () => fresh.run(
+  '(() => { const ids=["level","practice","endless","pure","daily","time60","precision10"],launch=(id,n)=>{if(id==="level")startLevel(0,"ground",100+n);else if(CHALLENGE_REGISTRY.some(c=>c.id===id))startChallenge(id,100+n);else{mode=id;startRun(100+n);}};for(const id of ids)for(let n=0;n<3;n++){launch(id,n);const old=runContext;debris.push({x:1});particles.push({x:1});floaters.push({x:1});trails.push({x:1});coinFx.push({x:1});pickups.push({row:999});balloon={x:1};wind={dir:1};balance=20;swayX=8;paused=true;dropPending=3;widenNext=true;slowBlocks=3;auraBlocks=2;goldenNext=true;fever=true;nova=true;score=500;runCoins=12;gameOver("quit");launch(id,n);if(runContext===old||!Object.isFrozen(runContext)||state!=="playing"||debris.length||particles.length||floaters.length||trails.length||coinFx.length||balloon!==null||wind!==null||balance!==0||swayX!==0||paused||dropPending!==0||widenNext||slowBlocks!==0||auraBlocks!==0||goldenNext||fever||nova||score!==0||runCoins!==0||reviveUsed||reviveOffered||runSettled)return false;}return true; })()'));
+check('S7 every major screen and mode renders at minimum portrait, standard portrait, and short landscape sizes', () => {
+  const g=makeGame({},true);
+  return g.run('(() => { const sizes=[[242,300],[320,480],[480,300]],modes=["practice","endless","pure","daily"];for(const [w,h] of sizes){W=w;H=h;relayout();state="home";modePicker=false;challengePicker=false;skyMap=false;renderHome();renderModePicker();renderChallengePicker();openSkyMap();renderSkyMap();skyMap=false;state="shop";renderShop();state="me";renderMe();for(const id of modes){mode=id;resetRun();state="playing";render();renderHUD(blocks.length);}for(const c of CHALLENGE_REGISTRY){startChallenge(c.id);renderHUD(blocks.length);}gameOver("quit");renderGameOver();if(HERO_CARD.x<0||HERO_CARD.x+HERO_CARD.w>W||MODE_BTN.y+MODE_BTN.h>=NAV_Y||CHALLENGE_ROWS.some(r=>r.x<0||r.x+r.w>W||r.y+r.h>=NAV_Y))return false;}return true; })()');
+});
+check('S7 corrupt optional-domain matrix boots and repairs every active save contract', () => {
+  const fields=['skystack-characters','skystack-bases','skystack-collections','skystack-challenge-records'];
+  const bad=[null,0,-1,true,'bad',[],[1,2],{owned:'bad',selected:9,mastery:[]}];
+  for(const key of fields)for(const value of bad){const g=makeGame({'skystack-save':JSON.stringify({version:2,data:{[key]:value}})}),data=JSON.parse(g.mem.get('skystack-save')).data;if(!g.run('booted===true')||!data[key]||typeof data[key]!=='object'||Array.isArray(data[key]))return false;}
+  return true;
+});
+check('S7 normalized save domains remain stable through three complete reboots', () => {
+  let raw=JSON.stringify({version:2,data:{'skystack-coins':321,'skystack-missions':[{key:'height',target:90,reward:30},{key:'score',target:500,reward:25},{key:'combo',target:5,reward:25}],'skystack-characters':{owned:['aurora','future-char'],selected:'future-char',mastery:{aurora:{xp:'9'}}},'skystack-bases':{owned:['natural','future-base'],selected:'future-base'},'skystack-collections':{unlocked:['future-set'],completed:['future-done']},'skystack-challenge-records':{'future-run':{clears:'2'}}}});
+  let stable=null;for(let i=0;i<3;i++){const g=makeGame({'skystack-save':raw});const data=JSON.parse(g.mem.get('skystack-save')).data,view=JSON.stringify({coins:data['skystack-coins'],characters:data['skystack-characters'],bases:data['skystack-bases'],collections:data['skystack-collections'],challenges:data['skystack-challenge-records']});if(stable!==null&&view!==stable)return false;stable=view;raw=g.mem.get('skystack-save');}return true;
+});
+check('S7 headless play/render loop stays inside the locked per-frame regression budget', () => {
+  const g=makeGame({},true),frames=180,start=process.hrtime.bigint();
+  g.run(`mode="endless";resetRun();state="playing";for(let i=0;i<${frames};i++){update(1);render();}`);
+  const ms=Number(process.hrtime.bigint()-start)/1e6;return ms/frames<g.run('MECHANICS_LOCK_TARGETS.technical.headlessFrameMsMax');
+});
+check('S7 PWA shell lists real local assets and keeps explicit network-first offline fallback', () => {
+  const sw7=fs.readFileSync(path.join(ROOT,'sw.js'),'utf8'),manifest=JSON.parse(fs.readFileSync(path.join(ROOT,'manifest.webmanifest'),'utf8')),
+    assets=[...sw7.matchAll(/'\.\/([^']*)'/g)].map(m=>m[1]).filter((x,i,a)=>x&&a.indexOf(x)===i);
+  return assets.every(a=>fs.existsSync(path.join(ROOT,a)))&&manifest.start_url&&['standalone','fullscreen'].includes(manifest.display)&&Array.isArray(manifest.icons)&&manifest.icons.every(i=>fs.existsSync(path.join(ROOT,i.src)))&&/fetch\(e\.request\)/.test(sw7)&&/caches\.match\(e\.request\)/.test(sw7)&&/caches\.match\('\.\/index\.html'\)/.test(sw7);
+});
+check('S7 removes the unused loadoutAllowed duplicate and keeps boostPermissions as the sole live owner', () =>
+  !/loadoutAllowed/.test(src) && fresh.run('(() => { const c=createRunContext({mode:"endless",campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{shield:true},characterId:"aurora",characterMastery:{}});return c.boostPermissions.allowed&&c.boostSnapshot.shield&&c.loadoutSnapshot.shield&&!Object.prototype.hasOwnProperty.call(c,"loadoutAllowed"); })()'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v84', () => /const CACHE = 'skystack-v84'/.test(sw));
+check('sw.js cache bumped to v85', () => /const CACHE = 'skystack-v85'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
