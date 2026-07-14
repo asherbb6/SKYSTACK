@@ -427,15 +427,20 @@ function transactCoins(delta, earned) {
   return true;
 }
 function canAfford(cost) { return coins>=coinAmount(cost); }
-function purchaseUnlock(item, ownedIds) {
+function unlockQuote(item, ownedIds, balance) {
   if (!item || !item.unlock || !Array.isArray(ownedIds)) return { ok:false, status:'invalid', charged:0 };
   if (ownedIds.indexOf(item.id)!==-1) return { ok:true, status:'owned', charged:0 };
   if (item.unlock.type!=='coins') return { ok:false, status:'locked', charged:0 };
   const cost=coinAmount(item.unlock.cost);
-  if (!canAfford(cost)) return { ok:false, status:'funds', charged:0 };
-  if (!transactCoins(-cost,false)) return { ok:false, status:'funds', charged:0 };
+  if ((Number.isFinite(+balance)?Math.max(0,Math.floor(+balance)):coins)<cost) return { ok:false, status:'funds', charged:0 };
+  return { ok:true, status:'purchase', charged:cost };
+}
+function purchaseUnlock(item, ownedIds) {
+  const quote=unlockQuote(item,ownedIds,coins);
+  if (!quote.ok || quote.status!=='purchase') return quote;
+  if (!transactCoins(-quote.charged,false)) return { ok:false, status:'funds', charged:0 };
   ownedIds.push(item.id);
-  return { ok:true, status:'purchased', charged:cost };
+  return { ok:true, status:'purchased', charged:quote.charged };
 }
 
 // ---------- seasonal events (local clock only, no network; ?event=<id> forces one for testing) ----------
@@ -1041,6 +1046,15 @@ const LOADOUT = [
   { id:'aura',   cost:30 },
   { id:'slow',   cost:20 }
 ];
+// One read-only S5 index makes every progression gate and spend surface auditable in one place.
+// Live systems retain their specialized registries; this catalog is the canonical cross-system map.
+const UNLOCK_CATALOG = deepFreeze({
+  characters:CHARACTER_REGISTRY.map(c=>({id:c.id,unlock:c.unlock})),
+  bases:BASE_REGISTRY.map(b=>({id:b.id,unlock:b.unlock})),
+  boosts:LOADOUT.map(b=>({id:b.id,unlock:{type:'run-consumable',cost:b.cost}})),
+  collections:COLLECTION_REGISTRY.map(c=>({id:c.id,unlock:{type:'collection',reward:c.reward}})),
+  achievements:ACH.map(a=>({id:a.id,unlock:{type:'achievement',tier:a.tier,reward:a.reward}}))
+});
 let loadout = { shield:false, aura:false, slow:false };
 let shopInfo = 'TAP A BOOST TO BUY IT';
 function seedForRun(modeId, entropy, day) {

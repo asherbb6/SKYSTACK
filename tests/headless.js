@@ -1067,6 +1067,10 @@ check('S4 modifier HUD renders telegraph, rule, duration, reward lane, and gust 
 // ---------- S5 progression, economy, missions, achievements + collections ----------
 check('S5 defines one frozen coin-only direct-purchase economy with no gacha or premium currency', () => fresh.run(
   'Object.isFrozen(ECONOMY_RULES)&&ECONOMY_RULES.currency==="coins"&&ECONOMY_RULES.directPurchase&&!ECONOMY_RULES.duplicates&&!ECONOMY_RULES.premiumCurrency&&Object.isFrozen(ECONOMY_RULES.achievementRewards)'));
+check('S5 exposes one frozen cross-system unlock catalog for Characters, Bases, boosts, Collections, and achievements', () => fresh.run(
+  'Object.isFrozen(UNLOCK_CATALOG)&&JSON.stringify(Object.keys(UNLOCK_CATALOG))===JSON.stringify(["characters","bases","boosts","collections","achievements"])&&UNLOCK_CATALOG.characters.length===CHARACTER_REGISTRY.length&&UNLOCK_CATALOG.bases.length===BASE_REGISTRY.length&&UNLOCK_CATALOG.boosts.length===LOADOUT.length&&UNLOCK_CATALOG.collections.length===COLLECTION_REGISTRY.length&&UNLOCK_CATALOG.achievements.length===ACH.length&&Object.values(UNLOCK_CATALOG).every(x=>Object.isFrozen(x)&&x.every(Object.isFrozen))'));
+check('S5 unlockQuote is pure and reports ownership, affordability, and exact direct cost', () => fresh.run(
+  '(() => { const ids=["natural"],before=JSON.stringify({ids,coins}),b=BASE_REGISTRY.find(x=>x.id==="runestone"),poor=unlockQuote(b,ids,20),ready=unlockQuote(b,ids,90),ownedQuote=unlockQuote(BASE_REGISTRY[0],ids,0);return poor.status==="funds"&&ready.status==="purchase"&&ready.charged===90&&ownedQuote.status==="owned"&&JSON.stringify({ids,coins})===before; })()'));
 check('S5 coin transactions are integer, persistent, overdraft-safe, and refunds never count as earnings', () => fresh.run(
   '(() => { coins=20;stats.coins=10;const bad=transactCoins(-21,false),spend=transactCoins(-7,false),refund=transactCoins(7,false),earn=transactCoins(5,true);return !bad&&spend&&refund&&earn&&coins===25&&stats.coins===15&&store.get("skystack-coins",0)===25&&store.get("skystack-stats",{}).coins===15; })()'));
 check('S5 shared purchase quotes charge a direct unlock exactly once and refuse insufficient funds', () => fresh.run(
@@ -1109,7 +1113,7 @@ check('S5 Player screen presents achievement and Collection progress without ove
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v82', () => /const CACHE = 'skystack-v82'/.test(sw));
+check('sw.js cache bumped to v83', () => /const CACHE = 'skystack-v83'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
