@@ -160,54 +160,98 @@ function txt(text, x, y, sc, color, align) {
 }
 
 // ---------- audio ----------
-let AC = null;
+let AC = null, AUDIO_MASTER = null, SFX_OUT = null, MUSIC_OUT = null;
 let muted = store.get('skystack-mute', false);
 let musicOn = store.get('skystack-music', true);
 let hapticsOn = store.get('skystack-hapt', true);
-function audio() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' }); } catch (e) {} } if (AC && AC.state === 'suspended') AC.resume(); return AC; }
+function audio() {
+  if (!AC) {
+    try {
+      AC = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+      AUDIO_MASTER = AC.createGain(); SFX_OUT = AC.createGain(); MUSIC_OUT = AC.createGain();
+      AUDIO_MASTER.gain.value = muted ? 0 : 0.9;
+      SFX_OUT.gain.value = 0.9; MUSIC_OUT.gain.value = musicOn ? 0.72 : 0;
+      SFX_OUT.connect(AUDIO_MASTER); MUSIC_OUT.connect(AUDIO_MASTER); AUDIO_MASTER.connect(AC.destination);
+    } catch (e) {}
+  }
+  if (AC && AC.state === 'suspended') AC.resume();
+  if (AUDIO_MASTER) AUDIO_MASTER.gain.setTargetAtTime(muted ? 0 : 0.9, AC.currentTime, 0.025);
+  return AC;
+}
 function tone(f, dur, type, vol, when) {
   const ac = audio(); if (!ac || muted) return;
-  const t = ac.currentTime + (when || 0), o = ac.createOscillator(), g = ac.createGain();
+  const t = ac.currentTime + (when || 0), o = ac.createOscillator(), g = ac.createGain(), flt = ac.createBiquadFilter();
   o.type = type || 'square'; o.frequency.value = f;
+  flt.type = 'lowpass'; flt.frequency.value = type === 'sawtooth' ? 2400 : 5200;
   g.gain.setValueAtTime(vol || 0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur + 0.02);
+  o.connect(flt); flt.connect(g); g.connect(SFX_OUT || ac.destination); o.start(t); o.stop(t + dur + 0.02);
 }
-function noise(dur, vol) {
+function sweep(f0, f1, dur, type, vol, when, lpf) {
+  const ac = audio(); if (!ac || muted) return;
+  const t = ac.currentTime + (when || 0), o = ac.createOscillator(), g = ac.createGain(), flt = ac.createBiquadFilter();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(Math.max(1,f0),t); o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),t+dur);
+  flt.type='lowpass'; flt.frequency.value=lpf||5000;
+  g.gain.setValueAtTime(vol||.1,t); g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  o.connect(flt); flt.connect(g); g.connect(SFX_OUT||ac.destination); o.start(t); o.stop(t+dur+.03);
+}
+function noise(dur, vol, when, lpf, hpf) {
   const ac = audio(); if (!ac || muted) return;
   const len = Math.floor(ac.sampleRate * dur), buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
   for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-  const s = ac.createBufferSource(), g = ac.createGain(); s.buffer = buf; g.gain.value = vol; s.connect(g); g.connect(ac.destination); s.start();
+  const s = ac.createBufferSource(), g = ac.createGain(), lo=ac.createBiquadFilter(), hi=ac.createBiquadFilter(), t=ac.currentTime+(when||0);
+  s.buffer = buf; lo.type='lowpass'; lo.frequency.value=lpf||7000; hi.type='highpass'; hi.frequency.value=hpf||20;
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  s.connect(hi); hi.connect(lo); lo.connect(g); g.connect(SFX_OUT||ac.destination); s.start(t); s.stop(t+dur+.02);
 }
 function hapt(m) { if (muted || !hapticsOn) return; try { navigator.vibrate && navigator.vibrate(m); } catch (e) {} }
 const sfx = {
-  land() { tone(110, .09, 'triangle', .22); tone(70, .12, 'sine', .18); hapt(12); },
-  slice() { noise(.09, .14); tone(180, .05, 'sawtooth', .05); },
-  perfect(c) { const f = 523 * Math.pow(2, Math.min(c, 16) / 12); tone(f, .09, 'square', .10); tone(f * 1.5, .12, 'square', .08, .07); hapt(18); },
-  milestone() { [523, 659, 784, 1047].forEach((n, i) => tone(n, .14, 'square', .10, i * .09)); hapt([20, 40, 30]); },
+  land() { sweep(125,72,.11,'triangle',.19); tone(58,.16,'sine',.14); noise(.045,.06,0,900,80); hapt(12); },
+  slice() { noise(.1,.11,0,5200,900); sweep(330,125,.08,'sawtooth',.045); },
+  perfect(c) { const f=523*Math.pow(2,Math.min(c,16)/12); tone(f,.1,'square',.09); tone(f*1.5,.15,'triangle',.075,.055); if(c>=5) tone(f*2,.18,'sine',.045,.11); hapt(18); },
+  milestone() { [392,523,659,784,1047].forEach((n,i)=>tone(n,.18,i<2?'triangle':'square',.085,i*.075)); tone(196,.45,'sine',.05); hapt([20,40,30]); },
   coin() { tone(988, .05, 'square', .07); tone(1319, .07, 'square', .06, .04); },
-  power() { [659, 880, 1175].forEach((n, i) => tone(n, .1, 'triangle', .1, i * .05)); hapt([12, 20]); },
+  power() { [523,659,880,1175].forEach((n,i)=>tone(n,.11,'triangle',.085,i*.045)); sweep(220,880,.22,'sine',.04); hapt([12,20]); },
   gift() { [784, 988].forEach((n, i) => tone(n, .08, 'square', .09, i * .06)); tone(1319, .12, 'triangle', .08, .12); hapt([12, 18]); },
-  pop() { noise(.05, .18); tone(880, .06, 'square', .1); tone(1175, .05, 'square', .07, .04); hapt(15); },
-  shield() { tone(300, .18, 'sawtooth', .12); tone(450, .2, 'square', .08, .05); hapt([20, 30, 40]); },
+  pop() { noise(.06,.14,0,7000,1200); sweep(520,1250,.08,'square',.085); hapt(15); },
+  shield() { sweep(180,620,.28,'sine',.11); tone(300,.24,'triangle',.08); tone(600,.22,'triangle',.06,.07); hapt([20,30,40]); },
   golden() { [1047, 1319, 1568].forEach((n, i) => tone(n, .12, 'triangle', .1, i * .06)); hapt([15, 15, 25]); },
-  fever() { [523, 659, 784, 1047, 1319].forEach((n, i) => tone(n, .15, 'square', .09, i * .06)); hapt([30, 20, 30, 20, 40]); },
+  fever() { [392,523,659,784,1047,1319].forEach((n,i)=>tone(n,.17,i%2?'square':'triangle',.075,i*.052)); sweep(130,520,.4,'sawtooth',.04); hapt([30,20,30,20,40]); },
+  supernova() { noise(.65,.13,0,9000,180); sweep(90,1800,.72,'sawtooth',.11); [262,330,392,523,659,784,1047,1568].forEach((n,i)=>tone(n,.3,i<3?'triangle':'square',.075,.08+i*.055)); tone(65,.9,'sine',.13); hapt([50,30,80,30,110]); },
+  skybreak() { sweep(55,880,.55,'triangle',.12); noise(.35,.11,.05,5000,90); [262,392,523,784,1047,1568].forEach((n,i)=>tone(n,.32,'triangle',.09,.12+i*.07)); hapt([40,30,90]); },
+  region(i) { const r=[131,147,165,175,196,220,247,262,294,330,392][clamp(i,0,10)]; [r,r*1.5,r*2].forEach((n,k)=>tone(n,.28,k?'triangle':'sine',.065,k*.11)); },
+  win() { [262,330,392,523,659,784,1047].forEach((n,i)=>tone(n,.24,i<3?'triangle':'square',.085,i*.075)); tone(131,.8,'sine',.07); hapt([20,30,20,30,60]); },
   unlock() { [392, 523, 659, 880].forEach((n, i) => tone(n, .13, 'triangle', .11, i * .08)); hapt([15, 30, 15, 30]); },
   mission() { [784, 988, 1319].forEach((n, i) => tone(n, .12, 'square', .1, i * .07)); hapt([15, 25]); },
   levelup() { [523, 659, 784, 1047, 1319, 1568].forEach((n, i) => tone(n, .12, 'triangle', .1, i * .05)); hapt([20, 20, 40]); },
   deny() { tone(196, .12, 'sawtooth', .1); tone(147, .14, 'sawtooth', .1, .1); hapt(40); },
-  topple() { tone(200, .5, 'sawtooth', .12); tone(120, .6, 'sawtooth', .12, .12); noise(.5, .1); hapt([60, 40, 100]); },
-  over() { tone(320, .15, 'sawtooth', .1); tone(220, .18, 'sawtooth', .1, .14); tone(140, .4, 'sawtooth', .12, .3); hapt([40, 60, 80]); },
+  topple() { sweep(240,48,.72,'sawtooth',.12); noise(.6,.105,0,1600,40); tone(55,.8,'sine',.12,.08); hapt([60,40,100]); },
+  over() { [330,262,196,147,110].forEach((n,i)=>tone(n,.28,i<2?'triangle':'sawtooth',.085,i*.12)); tone(55,.8,'sine',.08,.42); hapt([40,60,80]); },
   start() { tone(523, .07, 'square', .08); tone(784, .1, 'square', .08, .08); },
   tap() { tone(660, .05, 'square', .06); },
   pause() { tone(660, .06, 'triangle', .08); tone(440, .1, 'triangle', .07, .06); },      // settle down
   resume() { tone(440, .06, 'triangle', .07); tone(660, .1, 'triangle', .08, .06); },     // spin back up
-  wind() { tone(220, .5, 'sine', .04); noise(.5, .03); }
+  wind() { sweep(150,340,.7,'sine',.035); noise(.65,.025,0,3400,500); }
 };
 
-// ---------- music (procedural chiptune; tempo rises with tower height + streak) ----------
-const BASS = [110, 87.31, 130.81, 98];                    // A F C G
-const PENT = [220, 261.63, 293.66, 329.63, 392, 440];     // A minor pentatonic-ish
-let musicNext = 0, musicBar = 0, hatBuf = null, barT0 = 0, barDurCur = 0;
+// ---------- adaptive music: biome identity + mode arrangement + event escalation ----------
+const MUSIC_SCALE = [1,1.12246,1.18921,1.33484,1.49831,1.68179,1.88775,2];
+const MUSIC_THEMES = [
+  {name:'CAVE ECHOES',root:55,bpm:76,lead:'triangle',pad:'sine',lpf:1250,density:.48,drums:.34,mel:[0,2,1,4,2,1,0,5,0,3,2,5,4,2,1,0],bass:[0,0,3,1]},
+  {name:'FIRST LIGHT',root:65.41,bpm:94,lead:'square',pad:'triangle',lpf:2400,density:.68,drums:.55,mel:[0,2,4,5,4,2,1,2,0,3,5,6,5,3,2,1],bass:[0,4,3,4]},
+  {name:'LEAFBOUND',root:73.42,bpm:102,lead:'triangle',pad:'sine',lpf:2800,density:.72,drums:.58,mel:[0,2,4,2,5,4,2,1,0,3,5,3,6,5,3,2],bass:[0,3,4,2]},
+  {name:'HIGH ROADS',root:82.41,bpm:110,lead:'square',pad:'triangle',lpf:3200,density:.78,drums:.72,mel:[0,1,3,5,4,3,1,2,0,2,4,6,5,4,2,1],bass:[0,4,1,3]},
+  {name:'CLOUD PARADE',root:87.31,bpm:104,lead:'sine',pad:'triangle',lpf:3600,density:.64,drums:.5,mel:[0,3,5,4,2,4,6,5,0,2,5,3,1,3,5,6],bass:[0,3,5,3]},
+  {name:'TAILWIND',root:98,bpm:118,lead:'square',pad:'sine',lpf:4000,density:.82,drums:.82,mel:[0,2,5,4,6,5,3,2,1,3,6,5,7,6,4,3],bass:[0,4,5,3]},
+  {name:'THIN AIR',root:110,bpm:112,lead:'triangle',pad:'sine',lpf:4400,density:.7,drums:.62,mel:[0,4,2,6,4,7,5,3,1,5,3,7,6,4,2,5],bass:[0,5,3,4]},
+  {name:'AURORA HEART',root:61.74,bpm:88,lead:'sine',pad:'triangle',lpf:5200,density:.58,drums:.4,mel:[0,3,6,5,2,4,7,6,1,4,6,3,5,7,4,2],bass:[0,3,1,5]},
+  {name:'DEEP SKY',root:49,bpm:82,lead:'triangle',pad:'sine',lpf:3400,density:.52,drums:.36,mel:[0,5,3,6,2,7,4,1,0,4,6,3,7,5,2,4],bass:[0,1,5,3]},
+  {name:'ORBITAL PULSE',root:55,bpm:108,lead:'sawtooth',pad:'sine',lpf:3000,density:.76,drums:.7,mel:[0,2,6,4,7,5,3,1,0,3,7,5,6,4,2,5],bass:[0,5,4,3]},
+  {name:'GOLDEN SUMMIT',root:65.41,bpm:116,lead:'square',pad:'triangle',lpf:4600,density:.86,drums:.82,mel:[0,2,4,7,6,4,5,3,0,3,5,7,6,5,4,2],bass:[0,4,5,3]}
+];
+const MENU_THEME={name:'HOMEWARD',root:65.41,bpm:72,lead:'triangle',pad:'sine',lpf:2200,density:.42,drums:.12,mel:[0,2,4,2,1,3,5,3,0,3,4,6,4,2,1,2],bass:[0,3,4,3]};
+const WIN_THEME={name:'CLEAR SKIES',root:65.41,bpm:96,lead:'triangle',pad:'sine',lpf:4200,density:.72,drums:.38,mel:[0,2,4,7,6,5,4,2,0,3,5,7,6,4,5,7],bass:[0,4,3,5]};
+const LOSS_THEME={name:'FALLING STAR',root:55,bpm:58,lead:'triangle',pad:'sine',lpf:1500,density:.34,drums:.08,mel:[7,6,5,4,3,2,1,0,5,4,3,2,1,0,0,0],bass:[0,1,0,3]};
+let musicNext=0,musicBar=0,hatBuf=null,barT0=0,barDurCur=0,musicBus=null,musicKey='';
 function beatPulse() {   // 0..1, peaks on each music bar so UI breathes in time with the tune
   if (AC && AC.state === 'running' && !muted && musicOn && musicNext > 0 && barDurCur > 0) {
     let ph = ((AC.currentTime - barT0) / barDurCur) % 1;
@@ -216,67 +260,68 @@ function beatPulse() {   // 0..1, peaks on each music bar so UI breathes in time
   }
   return .5 + .5 * Math.sin(tick * .1);
 }
-function curBarDur() {
-  const playing = state === 'playing' || state === 'dropping';
-  let d = 1.85;                                                        // menus: calm
-  if (playing) d = clamp(1.62 - blocks.length * 0.004, 1.22, 1.62);   // runs: driving, faster as you climb
-  if (fever || nova) d *= 0.85;                                        // hotter in a streak
-  return d;
+function musicProfileFor(sceneName,biomeIndex,modeId,eventName) {
+  const source=sceneName==='menu'?MENU_THEME:sceneName==='win'?WIN_THEME:sceneName==='loss'?LOSS_THEME:MUSIC_THEMES[clamp(biomeIndex|0,0,MUSIC_THEMES.length-1)];
+  const p={...source,mel:source.mel.slice(),bass:source.bass.slice(),scene:sceneName,biome:biomeIndex|0,mode:modeId,event:eventName||'calm',gain:1,shimmer:0};
+  if(modeId==='practice'){p.bpm*=.82;p.density*=.72;p.drums*=.45;p.gain=.78;p.lead='sine';}
+  else if(modeId==='pure'){p.bpm*=1.04;p.drums*=.7;p.density*=.88;p.gain=.9;}
+  else if(modeId==='time'){p.bpm*=1.18;p.drums=Math.min(1,p.drums*1.28);p.density=Math.min(1,p.density*1.15);}
+  else if(modeId==='daily'){p.bpm*=1.02;p.bass=p.bass.slice(1).concat(p.bass[0]);p.gain=.94;}
+  if(eventName==='fever'){p.bpm*=1.08;p.density=Math.min(1,p.density+.18);p.drums=Math.min(1,p.drums+.2);p.shimmer=.55;}
+  if(eventName==='nova'){p.bpm*=1.15;p.density=1;p.drums=1;p.shimmer=1;p.gain=.96;}
+  p.bpm=Math.round(p.bpm); return p;
 }
-function scheduleBar(t, bar, dur) {
-  const ac = AC;
+function currentMusicContext(){
+  const playing=state==='playing'||state==='dropping';
+  const sceneName=state==='levelwin'?'win':(state==='gameover'||state==='levelfail')?'loss':playing?'play':'menu';
+  const bi=playing?clamp(tier|0,0,10):clamp(Math.min(prog,10),0,10);
+  const eventName=nova?'nova':fever?'fever':'calm';
+  return {sceneName,biome:bi,modeId:playing?mode:'menu',eventName};
+}
+function musicSignature(c){return [c.sceneName,c.biome,c.modeId,c.eventName].join(':');}
+function musicVoice(dest,t,f,type,vol,dur,lpf,attack){
+  const o=AC.createOscillator(),g=AC.createGain(),fl=AC.createBiquadFilter(); o.type=type||'triangle'; o.frequency.value=Math.max(1,f);
+  fl.type='lowpass';fl.frequency.value=lpf||3000;g.gain.setValueAtTime(.001,t);g.gain.linearRampToValueAtTime(vol,t+(attack||.008));g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  o.connect(fl);fl.connect(g);g.connect(dest);o.start(t);o.stop(t+dur+.03);
+}
+function switchMusic(profile,key){
+  const now=AC.currentTime,old=musicBus,fade=profile.scene==='play'?.85:1.35,bus=AC.createGain();
+  bus.gain.setValueAtTime(.001,now);bus.gain.linearRampToValueAtTime(profile.gain,now+fade);bus.connect(MUSIC_OUT||AC.destination);
+  if(old){old.gain.cancelScheduledValues(now);old.gain.setValueAtTime(Math.max(.001,old.gain.value||1),now);old.gain.exponentialRampToValueAtTime(.001,now+fade);setTimeout(()=>{try{old.disconnect();}catch(e){}},(fade+.5)*1000);}
+  musicBus=bus;musicKey=key;musicNext=now+.06;musicBar=0;
+}
+function musicFreq(p,degree,oct){const o=Math.floor(degree/7),d=((degree%7)+7)%7;return p.root*MUSIC_SCALE[d]*Math.pow(2,(oct||0)+o);}
+function scheduleBar(t,bar,dur,p) {
+  const ac=AC,dest=musicBus;if(!dest)return;
   barT0 = t; barDurCur = dur;
-  const playing = state === 'playing' || state === 'dropping';
-  const hot = fever || nova;
-  const SB = (typeof EV !== 'undefined' && EV && EV.music) ? EV.music.bass : BASS;
-  const SP = (typeof EV !== 'undefined' && EV && EV.music) ? EV.music.pent : PENT;
-  const bass = SB[bar % 4] * (nova ? 2 : 1);
-  if (playing) {
-    // pumping quarter-note bass
-    for (let q = 0; q < 4; q++) {
-      const tq = t + q * (dur/4);
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.type = 'triangle'; o.frequency.value = bass;
-      g.gain.setValueAtTime(0.05, tq); g.gain.exponentialRampToValueAtTime(0.001, tq + dur/4 * 0.9);
-      o.connect(g); g.connect(ac.destination); o.start(tq); o.stop(tq + dur/4);
-    }
-    // kick on the downbeats
-    for (const kq of [0, 2]) {
-      const tk = t + kq * (dur/4);
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.type = 'sine'; o.frequency.setValueAtTime(120, tk); o.frequency.exponentialRampToValueAtTime(45, tk + 0.09);
-      g.gain.setValueAtTime(0.13, tk); g.gain.exponentialRampToValueAtTime(0.001, tk + 0.11);
-      o.connect(g); g.connect(ac.destination); o.start(tk); o.stop(tk + 0.13);
-    }
-    // hi-hats: off-beats normally, every 8th when hot
-    if (!hatBuf) { const len = Math.floor(ac.sampleRate * 0.03); hatBuf = ac.createBuffer(1, len, ac.sampleRate); const d2 = hatBuf.getChannelData(0); for (let s2 = 0; s2 < len; s2++) d2[s2] = (Math.random()*2-1) * (1 - s2/len); }
-    for (let i = 0; i < 8; i++) {
-      if (i % 2 === 0 && !hot) continue;
-      const src = ac.createBufferSource(), g = ac.createGain();
-      src.buffer = hatBuf; g.gain.value = 0.05;
-      src.connect(g); g.connect(ac.destination); src.start(t + i * (dur/8));
-    }
-  } else {
-    // menu: soft sustained pad
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.type = 'triangle'; o.frequency.value = bass;
-    g.gain.setValueAtTime(0.035, t); g.gain.setValueAtTime(0.035, t + dur*0.8); g.gain.linearRampToValueAtTime(0.001, t + dur);
-    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur);
+  // warm pad dyad: long enough to glue neighboring bars and make crossfades seamless
+  musicVoice(dest,t,musicFreq(p,p.bass[bar%p.bass.length],0),p.pad,.018,dur*.98,p.lpf*.72,.18);
+  musicVoice(dest,t,musicFreq(p,p.bass[bar%p.bass.length]+4,0),p.pad,.011,dur*.96,p.lpf,.24);
+  for(let q=0;q<4;q++){const tq=t+q*dur/4,deg=p.bass[(bar+q)%p.bass.length];musicVoice(dest,tq,musicFreq(p,deg,0),'triangle',.038,dur*.21,p.lpf*.48,.01);}
+  if(p.drums>.1){
+    for(const q of [0,2]){const tk=t+q*dur/4,o=ac.createOscillator(),g=ac.createGain();o.type='sine';o.frequency.setValueAtTime(105,tk);o.frequency.exponentialRampToValueAtTime(42,tk+.1);g.gain.setValueAtTime(.095*p.drums,tk);g.gain.exponentialRampToValueAtTime(.001,tk+.13);o.connect(g);g.connect(dest);o.start(tk);o.stop(tk+.14);}
+    if(!hatBuf){const len=Math.floor(ac.sampleRate*.035);hatBuf=ac.createBuffer(1,len,ac.sampleRate);const d=hatBuf.getChannelData(0);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*(1-i/len);}
+    for(let i=1;i<8;i+=2){if(((bar*3+i)%10)/10>p.drums)continue;const src=ac.createBufferSource(),g=ac.createGain(),hp=ac.createBiquadFilter();src.buffer=hatBuf;hp.type='highpass';hp.frequency.value=3200;g.gain.value=.026*p.drums;src.connect(hp);hp.connect(g);g.connect(dest);src.start(t+i*dur/8);}
   }
-  for (let i = 0; i < 8; i++) {
-    if (!hot && (bar + i) % 4 === 3 && i % 2 === 1) continue;          // breathing room (none when hot)
-    const f = SP[(bar * 3 + i * 2 + (i > 4 ? 1 : 0)) % SP.length] * (i === 7 || hot ? 2 : 1);
-    const t2 = t + i * (dur / 8);
-    const o2 = ac.createOscillator(), g2 = ac.createGain();
-    o2.type = 'square'; o2.frequency.value = f;
-    g2.gain.setValueAtTime(hot ? 0.026 : playing ? 0.024 : 0.02, t2); g2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.14);
-    o2.connect(g2); g2.connect(ac.destination); o2.start(t2); o2.stop(t2 + 0.16);
+  for(let i=0;i<8;i++){
+    if(((bar*7+i*3)%10)/10>p.density)continue;
+    const mi=(bar*8+i)%p.mel.length,deg=p.mel[mi],oct=(i===7||p.event==='nova')?2:1;
+    musicVoice(dest,t+i*dur/8,musicFreq(p,deg,oct),p.lead,p.event==='nova'?.034:.027,dur*.105,p.lpf,.006);
+    if(p.shimmer&&i%2===0)musicVoice(dest,t+i*dur/8,musicFreq(p,deg+4,2),'sine',.012*p.shimmer,dur*.2,6500,.025);
   }
+  // quiet counter-arpeggio with a different phase prevents short obvious loops
+  for(let i=0;i<4;i++){const deg=p.mel[(bar*5+i*3+7)%p.mel.length];musicVoice(dest,t+(i+.5)*dur/4,musicFreq(p,deg,1),p.pad,.009,dur*.16,p.lpf*.8,.02);}
 }
 function musicStep() {
-  if (!AC || AC.state !== 'running' || muted || !musicOn) { musicNext = 0; return; }
-  if (musicNext === 0) musicNext = AC.currentTime + 0.1;
-  while (musicNext < AC.currentTime + 0.4) { const d = curBarDur(); scheduleBar(musicNext, musicBar, d); musicNext += d; musicBar++; }
+  if(!AC||AC.state!=='running'){musicNext=0;return;}
+  if(AUDIO_MASTER)AUDIO_MASTER.gain.setTargetAtTime(muted?0:.9,AC.currentTime,.025);
+  if(MUSIC_OUT)MUSIC_OUT.gain.setTargetAtTime(musicOn ? .72 : 0,AC.currentTime,.08);
+  if(muted||!musicOn){musicNext=0;return;}
+  const c=currentMusicContext(),key=musicSignature(c),p=musicProfileFor(c.sceneName,c.biome,c.modeId,c.eventName);
+  if(key!==musicKey||!musicBus)switchMusic(p,key);
+  if(!musicNext||musicNext<AC.currentTime-.5)musicNext=AC.currentTime+.08; // resume after a long pause without scheduling a backlog
+  const dur=240/p.bpm;
+  while(musicNext<AC.currentTime+.35){scheduleBar(musicNext,musicBar,dur,p);musicNext+=dur;musicBar++;}
 }
 
 // ---------- skins ----------
@@ -858,7 +903,7 @@ function land() {
         floaters.push({ text:'SUPERNOVA!', x:W/2, y:towerTopY()-BH-34, vy:-.5, life:1.8, color:'#FFFFFF' });
         burst(nx+nw/2, towerTopY()-BH, 40, {h:50}, true);
         shake = Math.max(shake, reduceMotion?3:7);
-        sfx.fever(); sfx.golden(); hapt([40, 30, 60]);
+        sfx.supernova(); hapt([40, 30, 60]);
       }
       novaT = 200;
     }
@@ -889,7 +934,7 @@ function land() {
     for (let bx2 = 8; bx2 < W; bx2 += 24) particles.push({ x:bx2, y:towerTopY(), vx:0, vy:-1.6-Math.random(), life:1, color:'#FFD75E' });
     shake = Math.max(shake, reduceMotion ? 3 : 6);
     mascot.hop = 1; setExpr('wow', 40);
-    sfx.fever(); hapt([30, 30, 60]);
+    sfx.skybreak(); hapt([30, 30, 60]);
     faller = null; squash = 1; cameraTarget = towerTopY() - (H - 100); state = 'playing';
     afterPlace(f, false);
     spawnSlider(); return;
@@ -995,7 +1040,7 @@ function levelComplete() {
   stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
   settleRun(20);
   setExpr('happy', 600);
-  sfx.milestone(); sfx.unlock(); hapt([20, 30, 20, 30, 40]);
+  sfx.win(); hapt([20, 30, 20, 30, 40]);
 }
 function gameOver(cause) {
   const m = curMode();
@@ -2555,6 +2600,7 @@ function drawBiomeDecor(cy) {
 function startRegionIntro(ti) {
   if (ti < 0 || ti >= TIERS.length) return;
   regionIntro = { ti, t: 0, dur: reduceMotion ? 55 : 100 };
+  if (state === 'playing' || state === 'dropping') sfx.region(ti);
 }
 const INTRO_TAGS = ['ESCAPE THE DEEP','INTO THE LIGHT','OVER THE CANOPY','ABOVE THE CITY','INTO THE CLOUDS','RIDE THE WIND','GOLDEN HOUR','POLAR LIGHTS','LEAVE THE SKY','ABOVE THE WORLD','THE SUMMIT'];
 // the per-region signature flourish (screen-space, procedural — no persistent particle arrays)

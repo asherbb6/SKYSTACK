@@ -24,7 +24,7 @@ function anyProxy() {
   return p;
 }
 
-function makeGame(storageSeed, reducedMotion) {
+function makeGame(storageSeed, reducedMotion, audioEnabled) {
   const mem = new Map(Object.entries(storageSeed || {}));
   const ctx2d = anyProxy();
   const canvas = {
@@ -36,8 +36,23 @@ function makeGame(storageSeed, reducedMotion) {
     setPointerCapture: () => {}, releasePointerCapture: () => {}
   };
   const noop = () => {};
+  const audioParam = () => ({ value: 0,
+    setValueAtTime(v) { this.value = v; }, linearRampToValueAtTime(v) { this.value = v; },
+    exponentialRampToValueAtTime(v) { this.value = v; }, setTargetAtTime(v) { this.value = v; },
+    cancelScheduledValues() {} });
+  const audioNode = () => ({ gain:audioParam(), frequency:audioParam(), type:'', buffer:null,
+    connect(n) { return n || this; }, disconnect() {}, start() {}, stop() {} });
+  class FakeAudioContext {
+    constructor() { this.state='running'; this.currentTime=1; this.sampleRate=44100; this.destination=audioNode(); this.created=0; }
+    resume() { this.state='running'; }
+    createGain() { return audioNode(); }
+    createOscillator() { this.created++; return audioNode(); }
+    createBiquadFilter() { return audioNode(); }
+    createBufferSource() { return audioNode(); }
+    createBuffer(ch,len) { const d=new Float32Array(len); return { getChannelData:()=>d }; }
+  }
   const sandbox = {
-    console, setTimeout, clearTimeout, setInterval, clearInterval,
+    console, setTimeout:audioEnabled?(fn=>{fn();return 1;}):setTimeout, clearTimeout, setInterval, clearInterval,
     performance: { now: () => 0 },
     requestAnimationFrame: () => 1,
     cancelAnimationFrame: noop,
@@ -58,7 +73,9 @@ function makeGame(storageSeed, reducedMotion) {
       setItem: (k, v) => mem.set(k, String(v)),
       removeItem: k => mem.delete(k)
     },
-    Math, JSON, Date
+    Math, JSON, Date,
+    AudioContext: audioEnabled ? FakeAudioContext : undefined,
+    webkitAudioContext: audioEnabled ? FakeAudioContext : undefined
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
@@ -393,6 +410,39 @@ check('a higher skill means a lower starting assist', () => {
   return lo.run('assist') > hi.run('assist');
 });
 
+// ---------- v67: adaptive biome/mode soundtrack + event sound design ----------
+const mus = makeGame({}, false, true);
+check('adaptive soundtrack defines one distinct theme per biome', () => mus.run(
+  'MUSIC_THEMES.length===TIERS.length && new Set(MUSIC_THEMES.map(t=>t.name)).size===TIERS.length && new Set(MUSIC_THEMES.map(t=>t.root+":"+t.bpm)).size>=9'));
+check('every biome theme has a complete playable arrangement', () => mus.run(
+  'MUSIC_THEMES.every(t=>t.root>0&&t.bpm>=58&&t.bpm<=130&&t.mel.length>=16&&t.bass.length>=4&&t.density>0&&t.drums>=0&&t.lead&&t.pad&&t.lpf>0)'));
+check('menu, victory, and loss have dedicated music identities', () => mus.run(
+  'MENU_THEME.name!==WIN_THEME.name && WIN_THEME.name!==LOSS_THEME.name && MENU_THEME.bpm!==LOSS_THEME.bpm'));
+check('Practice is calmer while Time mode is more urgent', () => mus.run(
+  '(() => { const b=musicProfileFor("play",4,"endless","calm"),p=musicProfileFor("play",4,"practice","calm"),t=musicProfileFor("play",4,"time","calm"); return p.bpm<b.bpm&&p.drums<b.drums&&p.gain<b.gain&&t.bpm>b.bpm&&t.drums>=b.drums; })()'));
+check('Pure and Daily keep biome identity but use different arrangements', () => mus.run(
+  '(() => { const b=musicProfileFor("play",6,"endless","calm"),p=musicProfileFor("play",6,"pure","calm"),d=musicProfileFor("play",6,"daily","calm"); return p.root===b.root&&d.root===b.root&&p.bpm!==b.bpm&&JSON.stringify(d.bass)!==JSON.stringify(b.bass); })()'));
+check('Fever and Supernova progressively intensify the active theme', () => mus.run(
+  '(() => { const c=musicProfileFor("play",8,"endless","calm"),f=musicProfileFor("play",8,"endless","fever"),n=musicProfileFor("play",8,"endless","nova"); return f.bpm>c.bpm&&f.density>c.density&&n.bpm>f.bpm&&n.density===1&&n.shimmer===1; })()'));
+check('music signatures change across biome, mode, scene, and event', () => mus.run(
+  'new Set([musicSignature({sceneName:"play",biome:0,modeId:"endless",eventName:"calm"}),musicSignature({sceneName:"play",biome:1,modeId:"endless",eventName:"calm"}),musicSignature({sceneName:"play",biome:1,modeId:"time",eventName:"calm"}),musicSignature({sceneName:"play",biome:1,modeId:"time",eventName:"nova"}),musicSignature({sceneName:"win",biome:1,modeId:"time",eventName:"calm"})]).size===5'));
+mus.run('audio(); state="playing"; mode="endless"; tier=0; musicStep(); globalThis.__bus0=musicBus; globalThis.__key0=musicKey;');
+check('music engine creates separate master, SFX, music, and crossfade buses', () => mus.run(
+  'AC&&AUDIO_MASTER&&SFX_OUT&&MUSIC_OUT&&musicBus&&musicKey==="play:0:endless:calm"'));
+check('music scheduler produces voices ahead of playback without per-frame creation', () => mus.run(
+  'AC.created>0 && musicNext>AC.currentTime && barDurCur>0'));
+check('biome change replaces the arrangement bus through a transition', () => mus.run(
+  '(() => { tier=1; AC.currentTime+=2; musicStep(); return musicBus!==__bus0&&musicKey!==__key0&&musicKey==="play:1:endless:calm"; })()'));
+check('long pause recovery skips stale music scheduling backlog', () => mus.run(
+  '(() => { musicNext=1; AC.currentTime=100; musicStep(); return musicNext>100&&musicNext<104; })()'));
+check('new cinematic event SFX run safely through the shared SFX bus', () => {
+  mus.run('sfx.supernova(); sfx.skybreak(); sfx.region(10); sfx.win();'); return true;
+});
+check('Supernova, Skybreak, region entry, and level win use dedicated hooks', () =>
+  /sfx\.supernova\(\)/.test(src) && /sfx\.skybreak\(\)/.test(src) && /sfx\.region\(ti\)/.test(src) && /sfx\.win\(\)/.test(src));
+check('music transitions use gain ramps rather than hard cuts', () =>
+  /function switchMusic\([\s\S]*linearRampToValueAtTime[\s\S]*exponentialRampToValueAtTime/.test(src));
+
 // ---------- in-game biome backdrop (matches the map per tier) ----------
 const bio = makeGame({ 'skystack-height': '300' });
 bio.run('mode = "endless"; resetRun(); state = "playing";');
@@ -691,7 +741,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v66', () => /const CACHE = 'skystack-v66'/.test(sw));
+check('sw.js cache bumped to v67', () => /const CACHE = 'skystack-v67'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
