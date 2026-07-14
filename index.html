@@ -476,8 +476,61 @@ if (new URLSearchParams(location.search).get('tour')) {
 if (EV) {
   RARE_COL.EVENT = EV.acc;
   SKINS.push(Object.assign({ rare:'EVENT', cost:0 }, EV.skin));
-  if (owned.indexOf(EV.skin.id) === -1) owned.push(EV.skin.id);   // free for the week, in-memory only
 }
+// ---------- characters + one-slot passives (S2) ----------
+// Existing SKINS remain the visual catalog and rollback surface. Character data layers identity,
+// unlock, mastery, and a single passive over those exact ids without replacing any saved cosmetic.
+const PASSIVE_REGISTRY = deepFreeze({
+  classic:  { id:'classic',  name:'CLASSIC',       benefit:'ORIGINAL RULES',       tradeoff:'NO ADVANTAGE',        effects:{} },
+  economy:  { id:'economy',  name:'LUCKY POCKET',  benefit:'+20% RUN COINS',       tradeoff:'-6% SCORE',           effects:{ runCoin:1.20, score:0.94 } },
+  precision:{ id:'precision',name:'SHARP FOCUS',   benefit:'+15% PERFECT WINDOW',  tradeoff:'+7% SLIDER SPEED',   effects:{ perfect:1.15, slider:1.07 } },
+  wind:     { id:'wind',     name:'CALM CORE',     benefit:'-25% WIND FORCE',       tradeoff:'-10% PERFECT WINDOW',effects:{ wind:0.75, perfect:0.90 } },
+  fever:    { id:'fever',    name:'HOT START',     benefit:'FEVER STARTS AT X9',   tradeoff:'-6% SCORE',           effects:{ feverAt:9, score:0.94 } },
+  recovery: { id:'recovery', name:'SOFT LANDING',  benefit:'-22% BALANCE LEAN',     tradeoff:'+8% SLIDER SPEED',   effects:{ balance:0.78, slider:1.08 } },
+  revive:   { id:'revive',   name:'SECOND WIND',   benefit:'-25% REVIVE COST',      tradeoff:'-10% RUN COINS',     effects:{ reviveCost:0.75, runCoin:0.90 } }
+});
+const CHARACTER_BLUEPRINTS = deepFreeze({
+  aurora:{ role:'PIONEER', passive:'classic' }, candy:{ role:'FORTUNE', passive:'economy' },
+  lava:{ role:'IGNITER', passive:'fever' }, mint:{ role:'RECOVERY', passive:'recovery' },
+  neon:{ role:'PRECISION', passive:'precision' }, mono:{ role:'WINDKEEPER', passive:'wind' },
+  gold:{ role:'SURVIVOR', passive:'revive' }, ocean:{ role:'WINDKEEPER', passive:'wind' },
+  sakura:{ role:'PRECISION', passive:'precision' }, void:{ role:'IGNITER', passive:'fever' },
+  royal:{ role:'RECOVERY', passive:'recovery' }, prism:{ role:'FORTUNE', passive:'economy' }
+});
+const MASTERY_RULES = deepFreeze({ xpPerLevel:500, fields:['xp','runs','blocks','perfects'] });
+const CHARACTER_REGISTRY = deepFreeze(SKINS.map(sk => {
+  const b=CHARACTER_BLUEPRINTS[sk.id] || { role:'EVENT GUEST', passive:'classic' };
+  return Object.assign({},sk,{ role:b.role, passiveId:b.passive,
+    unlock:sk.rare === 'EVENT' ? { type:'event', cost:0 } : sk.cost > 0 ? { type:'coins', cost:sk.cost } : { type:'starter', cost:0 },
+    mastery:{ fields:MASTERY_RULES.fields, xpPerLevel:MASTERY_RULES.xpPerLevel } });
+}));
+function characterById(id) { return CHARACTER_REGISTRY.find(c=>c.id===id) || CHARACTER_REGISTRY[0]; }
+function masteryEntry(v) {
+  const n=x=>Math.max(0,Number.isFinite(+x)?Math.floor(+x):0);
+  return { xp:n(v&&v.xp), runs:n(v&&v.runs), blocks:n(v&&v.blocks), perfects:n(v&&v.perfects) };
+}
+function normalizeCharacterState(v, legacyOwned, legacySelected) {
+  const src=v&&typeof v==='object'&&!Array.isArray(v)?v:{};
+  const list=stringList(Object.prototype.hasOwnProperty.call(src,'owned')?src.owned:legacyOwned);
+  for (const id of ['aurora','candy']) if (list.indexOf(id)<0) list.push(id);
+  if (EV && list.indexOf(EV.skin.id)<0) list.push(EV.skin.id);   // event ownership remains in-memory only
+  const wanted=typeof src.selected==='string'?src.selected:legacySelected;
+  const selected=CHARACTER_REGISTRY.some(c=>c.id===wanted)&&list.indexOf(wanted)>=0?wanted:'aurora';
+  const raw=src.mastery&&typeof src.mastery==='object'&&!Array.isArray(src.mastery)?src.mastery:{};
+  const mastery={}; for (const id of Object.keys(raw)) mastery[id]=masteryEntry(raw[id]);
+  return { owned:list, selected, mastery };
+}
+let characterState=normalizeCharacterState(store.get(FUTURE_SAVE_CONTRACTS.characters.key,null),owned,skinId);
+owned=characterState.owned; skinId=characterState.selected; let characterMastery=characterState.mastery;
+function masteryFor(id) { return masteryEntry(characterMastery[id]); }
+function masteryLevel(id) { return 1+Math.floor(masteryFor(id).xp/MASTERY_RULES.xpPerLevel); }
+function persistCharacters() {
+  const persistentOwned=owned.filter(id=>{const c=CHARACTER_REGISTRY.find(x=>x.id===id);return !c||c.rare!=='EVENT';});
+  characterState={owned:persistentOwned,selected:skinId,mastery:JSON.parse(JSON.stringify(characterMastery))};
+  store.set(FUTURE_SAVE_CONTRACTS.characters.key,characterState);
+  store.set('skystack-skins',persistentOwned); store.set('skystack-skin',skinId);   // rollback compatibility
+}
+persistCharacters();
 // event UI palette: theme accents + PLAY button per holiday (fallback = normal gold/mint)
 function hexRGB(h) { return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; }
 const UI_HEX = () => (EV && EV.pal) ? EV.pal.ui : '#FFD75E';
@@ -549,16 +602,16 @@ function drawEventFx(menu) {
 
 // ---------- modes ----------
 const MODE_REGISTRY = deepFreeze({
-  level:    { id:'level',    name:'LEVELS',   blurb:'CLIMB THE SKY',      desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:true  } },
-  practice: { id:'practice', name:'PRACTICE', blurb:'LEARN AT YOUR PACE', desc:'NO FAIL - GUIDED CLIMB',  wind:false,fail:false,practice:true,rules:{ lane:'practice', assist:'fixed',    rewards:false,records:false,loadout:false, pickups:false, progress:false, revive:false } },
-  endless:  { id:'endless',  name:'ENDLESS',  blurb:'CLIMB FOREVER',      desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:true  } },
-  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:false } },
-  pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, pickups:false, progress:true, revive:false } },
-  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, pickups:true, progress:true, revive:false } }
+  level:    { id:'level',    name:'LEVELS',   blurb:'CLIMB THE SKY',      desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  pickups:true,  progress:true,  revive:true  } },
+  practice: { id:'practice', name:'PRACTICE', blurb:'LEARN AT YOUR PACE', desc:'NO FAIL - GUIDED CLIMB',  wind:false,fail:false,practice:true,rules:{ lane:'practice', assist:'fixed',    rewards:false,records:false,loadout:false, passives:false, pickups:false, progress:false, revive:false } },
+  endless:  { id:'endless',  name:'ENDLESS',  blurb:'CLIMB FOREVER',      desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  pickups:true,  progress:true,  revive:true  } },
+  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  pickups:true,  progress:true,  revive:false } },
+  pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, pickups:false, progress:true, revive:false } },
+  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, pickups:true, progress:true, revive:false } }
 });
 const MODES = Object.freeze(['level','practice','endless','time','pure','daily'].map(id => MODE_REGISTRY[id]));
 const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
-const FEATURE_FLAGS = deepFreeze({ characters:false, bases:false, collections:false, modifiers:false, challenges:false });
+const FEATURE_FLAGS = deepFreeze({ characters:true, bases:false, collections:false, modifiers:false, challenges:false });
 const EXTRAS = MODES.filter(m => !m.hidden);   // the picker: side modes, not the main climb
 let mode = store.get('skystack-mode', 'endless');
 if (!MODES.find(m => m.id === mode) || mode === 'level') { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
@@ -789,6 +842,7 @@ function createRunContext(o) {
   const startingAltitude = Math.max(0, o.startingAltitude | 0);
   const p = PERMISSION_REGISTRY[m.id];
   const lane = laneForMode(m.id), levelSpec = campaignLevel >= 0 ? LEVEL_REGISTRY[campaignLevel] : null;
+  const char=characterById(o.characterId), passive=PASSIVE_REGISTRY[char.passiveId] || PASSIVE_REGISTRY.classic;
   const load = o.loadout || {};
   return deepFreeze({
     mode:m.id, campaignLevel, startingAltitude, seed:o.seed >>> 0,
@@ -798,6 +852,7 @@ function createRunContext(o) {
     rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards },
     recordPermissions:{ write:p.records && campaignLevel < 0 && startingAltitude === 0 },
     loadoutAllowed:p.loadout,
+    characterSnapshot:{ id:char.id, passiveId:passive.id, passiveEnabled:!!p.passives, mastery:masteryEntry(o.characterMastery) },
     difficultyProfile:{ lane:lane.id, assistEnvelope:lane.assist, startingAssist:startingAssist(m.id, o.skill), campaignLevel, levelSpeedScale:levelSpec ? levelSpec.speedCurve.campaignScale : 1, slider:BALANCE_REGISTRY.slider }
   });
 }
@@ -808,6 +863,18 @@ function canUseLoadout(ctx) {
   return !!(ctx && ctx.loadoutAllowed);
 }
 function canSpawnPickups(ctx) { return !!(ctx && ctx.rewardPermissions && ctx.rewardPermissions.pickups); }
+function activePassive(ctx) {
+  if (!ctx || !ctx.characterSnapshot || !ctx.characterSnapshot.passiveEnabled) return PASSIVE_REGISTRY.classic;
+  return PASSIVE_REGISTRY[ctx.characterSnapshot.passiveId] || PASSIVE_REGISTRY.classic;
+}
+function passiveEffect(ctx, key, fallback) {
+  const e=activePassive(ctx).effects;
+  return Object.prototype.hasOwnProperty.call(e,key)?e[key]:fallback;
+}
+function adjustedRunCoins(ctx,n) { return Math.max(0,Math.round(n*passiveEffect(ctx,'runCoin',1))); }
+function adjustedRunScore(ctx,n) { return Math.max(0,Math.round(n*passiveEffect(ctx,'score',1))); }
+function feverThreshold(ctx) { return passiveEffect(ctx,'feverAt',10); }
+function adjustedReviveCost(ctx,n) { return Math.max(1,Math.ceil(n*passiveEffect(ctx,'reviveCost',1))); }
 function difficultyAt(ctx, altitude, currentAssist, tierOverride) {
   const h = Math.max(0, altitude | 0), d = ctx.difficultyProfile, s = d.slider;
   const found = TIERS.findIndex(t => t.n > h);
@@ -815,7 +882,7 @@ function difficultyAt(ctx, altitude, currentAssist, tierOverride) {
   let speed = Math.min(s.base + h * s.perBlock, s.max);
   if (d.campaignLevel >= 0) speed = Math.min(speed * (1 + d.campaignLevel * s.campaignStep), s.campaignMax);
   speed *= 1 - clamp(currentAssist === undefined ? d.startingAssist : currentAssist, 0, 1) * s.assistSlow;
-  speed *= mat.spd * (d.levelSpeedScale || 1);
+  speed *= mat.spd * (d.levelSpeedScale || 1) * passiveEffect(ctx,'slider',1);
   return { altitude:h, tier:ti, material:mat, sliderSpeed:speed };
 }
 function fallFramesFor(distance) {
@@ -879,7 +946,7 @@ let demo = { n: 1, t: 0 };
 function towerTopY() { return GROUND_Y - blocks.length * BH; }
 function blockCol(i) { const s = skin(); return s.base(i, hueBase); }
 function setExpr(e, t) { mascot.expr = e; mascot.exprT = t; }
-function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assist); }
+function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assist) * passiveEffect(runContext,'perfect',1); }
 
 function resetRun() {
   const m = curMode();
@@ -887,7 +954,7 @@ function resetRun() {
   runLevel = m.id === 'level' ? pendingLevel : -1; pendingLevel = -1;
   runLaunch = runLevel >= 0 ? levelStartN(runLevel) : 0;
   const seed = m.daily ? seedForRun(m.id, 0) : seedForRun(m.id, Math.floor(Math.random() * 4294967296));
-  runContext = createRunContext({ mode:m.id, campaignLevel:runLevel, startingAltitude:runLaunch, seed, skill, loadout, modifiers:[] });
+  runContext = createRunContext({ mode:m.id, campaignLevel:runLevel, startingAltitude:runLaunch, seed, skill, loadout, characterId:skinId, characterMastery:masteryFor(skinId), modifiers:[] });
   rnd = mulberry32(runContext.seed); hueBase = rnd() * 360;
   blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
   for (let i = 1; i < runLaunch; i++) blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col: blockCol(i) });
@@ -969,6 +1036,7 @@ function schedulePickups() {
 function addCoins(n, x, y) {
   if (!canEarnRewards(runContext)) return;
   if (EV) n = Math.ceil(n * 1.25);   // event week: +25% coins
+  n = adjustedRunCoins(runContext,n);
   coins += n; runCoins += n; stats.coins += n; coinPop = 1;
   store.set('skystack-coins', coins);
   if (x !== undefined) for (let i = 0; i < n && i < 6; i++) coinFx.push({ x, y, t: 0, delay: i * 3 });
@@ -982,7 +1050,7 @@ function applyPower(type, cx, cy2, silent) {
   else if (type === 'slow') { slowBlocks = 4; if (!silent) sfx.power(); }
   else if (type === 'aura') { auraBlocks = 5; if (!silent) sfx.power(); }
   else if (type === 'gold') { goldenNext = true; if (slider) slider.golden = true; if (!silent) sfx.golden(); }
-  else if (type === 'fever') { combo += 4; if (!silent) sfx.power(); if (combo >= 10 && !fever) { enterFever(); } if (fever) feverT = 180; }
+  else if (type === 'fever') { combo += 4; if (!silent) sfx.power(); if (combo >= feverThreshold(runContext) && !fever) { enterFever(); } if (fever) feverT = 180; }
   floaters.push({ text: P.label, x: cx, y: cy2, vy: -.4, life: 1.2, color: P.c1 });
   if (type !== 'coin') for (let i = 0; i < 12; i++) particles.push({ x: cx, y: cy2, vx:(Math.random()-.5)*2.6, vy:(Math.random()-.5)*2.6, life: 1, color: P.c1 });
 }
@@ -1064,7 +1132,7 @@ function land() {
     flashT = 1; sfx.perfect(combo);
     // streak ladder: x7 BLAZING (2 coins) -> x10 FEVER (2x) -> x15 SUPERNOVA (3x)
     const streakMult = nova ? 3 : fever ? 2 : 1;
-    score += Math.round((10 + 5 * combo) * streakMult * goldMult * (m.mult || 1));
+    score += adjustedRunScore(runContext,(10 + 5 * combo) * streakMult * goldMult * (m.mult || 1));
     addCoins(combo >= 7 ? 2 : 1, W/2, towerTopY()-BH);
     floaters.push({ text:'PERFECT', x:W/2, y:towerTopY()-BH-6, vy:-.4, life:1, color:'#FFD75E' });
     if (combo > 1) floaters.push({ text:'X'+combo, x:W/2, y:towerTopY()-BH+6, vy:-.4, life:1.1, color:'#FFF6E8' });
@@ -1078,7 +1146,7 @@ function land() {
       floaters.push({ text:'COMBO GIFT', x:W/2, y:towerTopY()-BH-26, vy:-.4, life:1.3, color:'#FFF6E8' });
       sfx.gift();
     }
-    if (combo >= 10) { if (!fever) enterFever(); feverT = 180; }
+    if (combo >= feverThreshold(runContext)) { if (!fever) enterFever(); feverT = 180; }
     if (combo >= 15) {
       if (!nova) {
         nova = true; novaFlash = 1;
@@ -1093,7 +1161,7 @@ function land() {
   } else {
     combo = 0; fever = false; feverT = 0; nova = false; novaT = 0;
     if (dda) assist = Math.min(BALANCE_REGISTRY.assist.max, assist + BALANCE_REGISTRY.assist.sloppyStep);   // a sloppy drop: nudge the help up
-    score += Math.round(10 * goldMult * (m.mult || 1));
+    score += adjustedRunScore(runContext,10 * goldMult * (m.mult || 1));
     const cutW = f.w - overlap, cutX = offset > 0 ? oR : f.x;
     debris.push({ x:cutX, y:f.y, w:cutW, h:BH, vx:offset>0?.9:-.9, vy:-.4, rot:0, vr:(offset>0?1:-1)*(.06+Math.random()*.08), col:f.col });
     sfx.land(); sfx.slice(); setExpr('normal', 12);
@@ -1139,7 +1207,7 @@ function land() {
 function afterPlace(f, updateBalance, placedCenter) {
   const m = activeMode();
   if (canEarnRewards(runContext)) stats.blocks++;
-  if (updateBalance) { const p=BALANCE_REGISTRY.placement; balance = balance * p.balanceMemory + (placedCenter - W/2) * p.balanceOffset * (1 - assist * BALANCE_REGISTRY.assist.balanceForgiveness); }   // assist forgives lean
+  if (updateBalance) { const p=BALANCE_REGISTRY.placement; balance = balance * p.balanceMemory + (placedCenter - W/2) * p.balanceOffset * (1 - assist * BALANCE_REGISTRY.assist.balanceForgiveness) * passiveEffect(runContext,'balance',1); }   // assist/passive forgive lean
   const r = blocks.length - 1, b = blocks[r];
   for (const p of pickups) { if (p.got || p.row !== r) continue; if (p.x >= b.x && p.x <= b.x + b.w) collectPickup(p, p.x, towerTopY()); }
   schedulePickups();
@@ -1203,6 +1271,9 @@ function settleRun(xpBonus) {
   const placed = Math.max(0, blocks.length - runLaunch);
   const perf = clamp((Math.min(maxCombo, 12) / 12) * 0.6 + (Math.min(placed, 50) / 50) * 0.4, 0, 1);
   skill += (perf - skill) * 0.2; store.set('skystack-skill', +skill.toFixed(3));
+  const charId=runContext.characterSnapshot.id, cm=masteryFor(charId);
+  cm.xp+=xpThisRun; cm.runs++; cm.blocks+=placed; cm.perfects+=runPerfects;
+  characterMastery[charId]=cm; persistCharacters();
   saveStats();
 }
 // campaign level goal reached mid-run: freeze the run and celebrate
@@ -1257,7 +1328,7 @@ function gameOver(cause) {
   if (runLevel >= 0) { state = 'levelfail'; failT = 0; }    // campaign attempts get their own screen
 }
 // ---------- revive: one per run, paid in coins (button becomes WATCH AD TO REVIVE later) ----------
-function reviveCost() { return 25 + Math.min(tier, TIERS.length) * 5; }   // deeper runs pay more
+function reviveCost() { return adjustedReviveCost(runContext,25 + Math.min(tier, TIERS.length) * 5); }   // deeper runs pay more
 function canOfferRevive() {
   return !reviveUsed && !!(PERMISSION_REGISTRY[runContext.mode] && PERMISSION_REGISTRY[runContext.mode].revive) && overCause !== 'quit' && overCause !== 'time';
 }
@@ -1361,7 +1432,7 @@ function relayout() {
   SKIN_L = { x: Math.max(PAD, Math.round(W/2)-80), y:66, w:20, h:26 };   // arrows hug the preview, not the screen edge
   SKIN_R = { x: Math.min(W-PAD-20, Math.round(W/2)+60), y:66, w:20, h:26 };
   EQUIP_BTN = { x:W/2-46, y:138, w:92, h:18 };
-  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: 196, w: 52, h: 26, id: l.id, cost: l.cost }));
+  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: 210, w: 52, h: 26, id: l.id, cost: l.cost }));
   // me
   TOGGLES = ['sound','music','haptics'].map((id, i) => ({ id, x: W-PAD-30, y: 216 + i * 15, w: 30, h: 11 }));
   const meW = Math.min(W - PAD*2, 168), meX = Math.round((W - meW)/2);
@@ -1415,7 +1486,7 @@ function startRun() { resetRun(); startRegionIntro(tier); state = 'playing'; sfx
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
-    if (state !== t.id) { state = t.id; sfx.tap(); if (t.id === 'shop') { previewIdx = Math.max(0, SKINS.findIndex(s => s.id === skinId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
+    if (state !== t.id) { state = t.id; sfx.tap(); if (t.id === 'shop') { previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
     return true;
   }
   return true;
@@ -1490,14 +1561,14 @@ function pressDown(e) {
   } else if (state === 'shop') {
     if (!p) return;
     if (navHit(p)) return;
-    if (inR(p, SKIN_L, 6)) { previewIdx = (previewIdx+SKINS.length-1)%SKINS.length; demo.n=1; sfx.tap(); return; }
-    if (inR(p, SKIN_R, 6)) { previewIdx = (previewIdx+1)%SKINS.length; demo.n=1; sfx.tap(); return; }
+    if (inR(p, SKIN_L, 6)) { previewIdx = (previewIdx+CHARACTER_REGISTRY.length-1)%CHARACTER_REGISTRY.length; demo.n=1; sfx.tap(); return; }
+    if (inR(p, SKIN_R, 6)) { previewIdx = (previewIdx+1)%CHARACTER_REGISTRY.length; demo.n=1; sfx.tap(); return; }
     if (inR(p, EQUIP_BTN, 3)) {
-      const sk = SKINS[previewIdx];
+      const sk = CHARACTER_REGISTRY[previewIdx];
       if (owned.indexOf(sk.id) === -1) {
-        if (coins >= sk.cost) { coins -= sk.cost; owned.push(sk.id); store.set('skystack-coins', coins); store.set('skystack-skins', owned); skinId = sk.id; store.set('skystack-skin', skinId); sfx.unlock(); toast('UNLOCKED!'); }
+        if (coins >= sk.cost) { coins -= sk.cost; owned.push(sk.id); skinId = sk.id; persistCharacters(); store.set('skystack-coins', coins); sfx.unlock(); toast('UNLOCKED!'); }
         else { sfx.deny(); toast('NEED MORE COINS'); }
-      } else if (sk.id !== skinId) { skinId = sk.id; store.set('skystack-skin', skinId); sfx.tap(); toast('EQUIPPED'); }
+      } else if (sk.id !== skinId) { skinId = sk.id; persistCharacters(); sfx.tap(); toast('EQUIPPED'); }
       return;
     }
     if (canUseLoadout(mode)) for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
@@ -1557,7 +1628,7 @@ canvas.addEventListener('wheel', e => {
 addEventListener('keydown', e => {
   if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; if (paused) sfx.pause(); else sfx.resume(); e.preventDefault(); return; }
   if (paused) { if (e.code === 'Space' || e.code === 'Enter') { paused = false; sfx.resume(); e.preventDefault(); } return; }
-  if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { previewIdx = (previewIdx + (e.code==='ArrowLeft'?SKINS.length-1:1)) % SKINS.length; demo.n=1; sfx.tap(); e.preventDefault(); return; }
+  if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { previewIdx = (previewIdx + (e.code==='ArrowLeft'?CHARACTER_REGISTRY.length-1:1)) % CHARACTER_REGISTRY.length; demo.n=1; sfx.tap(); e.preventDefault(); return; }
   if (e.code==='Space'||e.code==='Enter'||e.code==='ArrowDown') {
     e.preventDefault();
     if (state === 'playing') drop(); else pressDown(null);
@@ -1613,7 +1684,7 @@ function update(dt) {
     const wf = matAt(tier).wind;                                            // region wind exposure: sheltered caves, howling jet stream
     windTimer -= dt;
     const wCfg=BALANCE_REGISTRY.wind;
-    if (!wind && windTimer <= 0 && blocks.length > wCfg.minStartBlocks && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(wCfg.minStrength+rnd()*wCfg.strengthRange)*wf, dur:wCfg.minDurationFrames+rnd()*wCfg.durationRangeFrames, t:0 }; sfx.wind(); }
+    if (!wind && windTimer <= 0 && blocks.length > wCfg.minStartBlocks && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(wCfg.minStrength+rnd()*wCfg.strengthRange)*wf*passiveEffect(runContext,'wind',1), dur:wCfg.minDurationFrames+rnd()*wCfg.durationRangeFrames, t:0 }; sfx.wind(); }
     if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (wCfg.minCooldownFrames + rnd()*wCfg.cooldownRangeFrames) / Math.max(0.5, wf); } }
   } else wind = null;
 
@@ -4043,9 +4114,11 @@ function renderModePicker() {
 // ---------- SHOP ----------
 function renderShop() {
   topBar('SHOP');
-  // skins section
-  txt('SKINS', W/2, 24, 1, UI_HEX(), 'center');
-  const sk = SKINS[previewIdx], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
+  // functional Character Select; current block skins are the temporary character art
+  txt('CHARACTER SELECT', W/2, 24, 1, UI_HEX(), 'center');
+  const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
+  const dotsW = CHARACTER_REGISTRY.length*6-2, ddx = Math.round(W/2 - dotsW/2);
+  for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 35, 4, 3); }
   for (let i = 0; i < Math.min(demo.n, 4); i++) {
     const col = sk.base(i, hueBase);
     const w2 = 50 - i*6;
@@ -4055,9 +4128,8 @@ function renderShop() {
   txt('<', SKIN_L.x+5, 72, 2, 'rgba(255,246,232,0.85)', 'left');
   txt('>', SKIN_R.x+5, 72, 2, 'rgba(255,246,232,0.85)', 'left');
   txt(sk.name, W/2, 108, 1, '#FFF6E8', 'center');
-  txt(sk.rare, W/2, 118, 1, RARE_COL[sk.rare], 'center');
-  const dotsW = SKINS.length*6-2, ddx = Math.round(W/2 - dotsW/2);
-  for (let i=0;i<SKINS.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 128, 4, 4); }
+  txt(sk.rare+' - '+sk.role, W/2, 118, 1, RARE_COL[sk.rare], 'center');
+  txt('MASTERY '+masteryLevel(sk.id), W/2, 128, 1, 'rgba(255,246,232,0.55)', 'center');
 
   if (isEquipped) {
     ctx.fillStyle = 'rgba(255,246,232,0.15)'; ctx.fillRect(EQUIP_BTN.x, EQUIP_BTN.y, EQUIP_BTN.w, EQUIP_BTN.h);
@@ -4074,17 +4146,21 @@ function renderShop() {
     drawCoin(W/2 + 8, EQUIP_BTN.y+5); txt(sk.cost, W/2 + 17, EQUIP_BTN.y+6, 1, ic, 'left');
   }
 
+  txt(passive.name, W/2, 162, 1, isEquipped ? '#62E8B5' : '#FFF6E8', 'center');
+  txt(passive.benefit, W/2, 172, 1, '#62E8B5', 'center');
+  txt(passive.tradeoff, W/2, 182, 1, passive.id==='classic'?'rgba(255,246,232,0.45)':'#FF9E5E', 'center');
+
   // divider
-  ctx.fillStyle = 'rgba(255,246,232,0.15)'; ctx.fillRect(PAD, 170, W-PAD*2, 1);
+  ctx.fillStyle = 'rgba(255,246,232,0.15)'; ctx.fillRect(PAD, 190, W-PAD*2, 1);
 
   // boosts section
-  txt('RUN BOOSTS', W/2, 180, 1, '#FFD75E', 'center');
+  txt('RUN BOOSTS', W/2, 198, 1, '#FFD75E', 'center');
   if (!canUseLoadout(mode) && mode === 'pure') {
-    txt('BOOSTS ARE OFF IN PURE', W/2, 210, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt('PURE IS SKILL ONLY - 1.5X SCORE', W/2, 222, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt('PASSIVES + BOOSTS OFF IN PURE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt('PURE IS SKILL ONLY - 1.5X SCORE', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
   } else if (!canUseLoadout(mode) && mode === 'practice') {
-    txt('BOOSTS ARE OFF IN PRACTICE', W/2, 210, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt('GUIDED RUNS NEVER SPEND BOOSTS', W/2, 222, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt('PASSIVES + BOOSTS OFF IN PRACTICE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt('GUIDED RUNS USE CLASSIC RULES', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
   } else if (canUseLoadout(mode)) {
     for (const c of LOAD_CHIPS) {
       const on = loadout[c.id], afford = coins >= c.cost;
@@ -4099,11 +4175,11 @@ function renderShop() {
       if (on) txt('OK', c.x+c.w/2, c.y+16, 1, '#08301F', 'center');
       else { drawCoin(c.x+14, c.y+15); txt(c.cost, c.x+23, c.y+16, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
     }
-    txt(shopInfo, W/2, 232, 1, 'rgba(255,246,232,0.6)', 'center');
-    txt('BOOSTS APPLY TO YOUR NEXT RUN', W/2, 244, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt(shopInfo, W/2, 242, 1, 'rgba(255,246,232,0.6)', 'center');
+    txt('CHARACTER + BOOSTS LOCK AT RUN START', W/2, 254, 1, 'rgba(255,246,232,0.4)', 'center');
   } else {
-    txt('BOOSTS ARE OFF IN DAILY', W/2, 210, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt('EVERYONE GETS THE SAME FAIR RUN', W/2, 222, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt('PASSIVES + BOOSTS OFF IN DAILY', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt('EVERYONE GETS THE SAME FAIR RUN', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
   }
 }
 

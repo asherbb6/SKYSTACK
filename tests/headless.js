@@ -891,8 +891,8 @@ check('S0 level registry is index-aligned with every v75 tier boundary', () => f
   'LEVEL_REGISTRY.length === TIERS.length && LEVEL_REGISTRY.every((l,i) => l.id === i && l.goalAltitude === TIERS[i].n && l.startAltitude === (i ? TIERS[i-1].n : 0) && l.name === TIERS[i].name && l.color === TIERS[i].c)'));
 check('S0 balance registry aliases the live v75 physics constants', () => fresh.run(
   'BALANCE_REGISTRY.physics.blockHeight === BH && BALANCE_REGISTRY.physics.baseWidth === BASE_W && BALANCE_REGISTRY.physics.metersPerBlock === METERS_PER && BALANCE_REGISTRY.physics.topple === TOPPLE && BALANCE_REGISTRY.physics.perfectPx === PERFECT_PX'));
-check('S0 future feature flags are centralized and all remain inactive', () => fresh.run(
-  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && Object.values(FEATURE_FLAGS).every(v => v === false)'));
+check('S0 feature flags remain centralized; only shipped Characters are active', () => fresh.run(
+  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && FEATURE_FLAGS.characters === true && Object.entries(FEATURE_FLAGS).filter(([k])=>k!=="characters").every(([,v])=>v===false)'));
 
 const s0ctx = makeGame();
 s0ctx.run('mode="endless"; loadout={shield:true,aura:false,slow:true}; resetRun(); globalThis.__ctx=runContext; globalThis.__seed=runContext.seed; globalThis.__speed=difficultyAt(runContext,40,assist,2).sliderSpeed;');
@@ -914,8 +914,8 @@ check('owned non-Daily seeds reproduce the same run RNG stream', () => fresh.run
 check('permission helpers preserve reward, record, loadout, and checkpoint rules', () => fresh.run(
   '(() => { const mk=(m,l=-1,a=0)=>createRunContext({mode:m,campaignLevel:l,startingAltitude:a,seed:1,skill:.35,loadout:{},modifiers:[]}); return !canEarnRewards(mk("practice")) && !canWriteRecords(mk("practice")) && !canUseLoadout(mk("practice")) && canEarnRewards(mk("pure")) && canWriteRecords(mk("pure")) && !canUseLoadout(mk("pure")) && canEarnRewards(mk("daily")) && canWriteRecords(mk("daily")) && !canUseLoadout(mk("daily")) && canUseLoadout(mk("endless")) && !canWriteRecords(mk("level",2,44)) && !canWriteRecords(mk("endless",-1,44)); })()'));
 
-check('future save-v2 contracts are frozen, optional, and non-activating', () => fresh.run(
-  'Object.isFrozen(FUTURE_SAVE_CONTRACTS) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.characters.defaults) && Object.values(FUTURE_SAVE_CONTRACTS).every(c => !Object.prototype.hasOwnProperty.call(SAVE.data,c.key))'));
+check('future save-v2 contracts stay frozen; only the shipped Character field activates', () => fresh.run(
+  'Object.isFrozen(FUTURE_SAVE_CONTRACTS) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.characters.defaults) && Object.prototype.hasOwnProperty.call(SAVE.data,FUTURE_SAVE_CONTRACTS.characters.key) && Object.entries(FUTURE_SAVE_CONTRACTS).filter(([id])=>id!=="characters").every(([,c])=>!Object.prototype.hasOwnProperty.call(SAVE.data,c.key))'));
 check('future save-v2 migration normalizes only present fields and preserves current data', () => fresh.run(
   '(() => { const src={keep:7,"skystack-characters":{owned:["pilot",4,"pilot"],selected:9,mastery:null},"skystack-bases":null,"skystack-collections":{unlocked:["ore","ore"],completed:"bad"},"skystack-challenge-records":[1]}; const out=migrateFutureSaveV2(src); return out!==src && out.keep===7 && JSON.stringify(out["skystack-characters"])===JSON.stringify({owned:["pilot"],selected:null,mastery:{}}) && JSON.stringify(out["skystack-bases"])===JSON.stringify({owned:[],selected:null}) && JSON.stringify(out["skystack-collections"])===JSON.stringify({unlocked:["ore"],completed:[]}) && JSON.stringify(out["skystack-challenge-records"])==="{}" && src["skystack-characters"].owned.length===3; })()'));
 
@@ -948,9 +948,52 @@ check('S1 final pace scale is campaign-only and leaves all free modes at v76 spe
 check('S1 physics registry preserves the live drop, balance, wind, and star constants', () => fresh.run(
   'BALANCE_REGISTRY.drop.graceFrames===5 && BALANCE_REGISTRY.drop.spawnGap===24 && BALANCE_REGISTRY.drop.initialVelocity===2.6 && BALANCE_REGISTRY.drop.gravity===.9 && fallFramesFor()===5 && BALANCE_REGISTRY.placement.balanceMemory===.5 && BALANCE_REGISTRY.placement.balanceOffset===.5 && BALANCE_REGISTRY.wind.firstDelayFrames===260 && BALANCE_REGISTRY.wind.minStartBlocks===25 && LEVEL_REGISTRY.every(l=>l.starObjectives.silverPerfectRatio===.20 && l.starObjectives.goldPerfectRatio===.45)'));
 
+// ---------- S2 characters + one-slot passives ----------
+check('S2 promotes every persistent skin into an immutable Character with matching visual and unlock data', () => fresh.run(
+  'CHARACTER_REGISTRY.length===SKINS.length && Object.isFrozen(CHARACTER_REGISTRY) && CHARACTER_REGISTRY.every((c,i)=>Object.isFrozen(c) && c.id===SKINS[i].id && c.name===SKINS[i].name && c.rare===SKINS[i].rare && c.cost===SKINS[i].cost && c.style===SKINS[i].style && c.base===SKINS[i].base && c.role && PASSIVE_REGISTRY[c.passiveId] && c.unlock.cost===c.cost)'));
+check('S2 defines all approved passive families with explicit benefit and trade-off text', () => fresh.run(
+  'JSON.stringify(Object.keys(PASSIVE_REGISTRY))===JSON.stringify(["classic","economy","precision","wind","fever","recovery","revive"]) && Object.values(PASSIVE_REGISTRY).every(p=>Object.isFrozen(p)&&p.name&&p.benefit&&p.tradeoff&&Object.isFrozen(p.effects))'));
+check('S2 first boot activates Character save from legacy cosmetic ownership and selection', () => {
+  const g=makeGame({'skystack-skins':JSON.stringify(['aurora','candy','lava']),'skystack-skin':JSON.stringify('lava')});
+  const c=saved(g,'skystack-characters');
+  return g.run('skinId==="lava" && owned.includes("lava")') && c.selected==='lava' && c.owned.includes('aurora') && c.owned.includes('candy') && c.owned.includes('lava') && JSON.stringify(c.mastery)==='{}';
+});
+check('S2 Character save normalization repairs invalid fields without dropping unknown owned ids', () => {
+  const g=makeGame({'skystack-save':JSON.stringify({version:2,data:{'skystack-characters':{owned:['lava','future-id','lava',8],selected:'missing',mastery:{lava:{xp:'501',runs:-2,blocks:4.9,perfects:'bad'}}}}})});
+  const c=saved(g,'skystack-characters');
+  return g.run('skinId==="aurora" && owned.includes("future-id")') && c.selected==='aurora' && c.owned.filter(x=>x==='lava').length===1 && c.owned.includes('aurora') && c.owned.includes('candy') && JSON.stringify(c.mastery.lava)===JSON.stringify({xp:501,runs:0,blocks:4,perfects:0});
+});
+check('S2 equip writes the Character contract and both rollback cosmetic fields together', () => {
+  const g=makeGame({'skystack-coins':'500'});
+  g.run('state="shop"; previewIdx=CHARACTER_REGISTRY.findIndex(c=>c.id==="lava"); relayout(); var __p={x:EQUIP_BTN.x+2,y:EQUIP_BTN.y+2}; pos=()=>__p; pressDown({});');
+  const c=saved(g,'skystack-characters');
+  return c.selected==='lava' && c.owned.includes('lava') && saved(g,'skystack-skin')==='lava' && saved(g,'skystack-skins').includes('lava') && saved(g,'skystack-coins')===380;
+});
+
+check('S2 RunContext deeply snapshots selected Character, passive, and mastery at run start', () => fresh.run(
+  '(() => { skinId="neon"; characterMastery.neon={xp:700,runs:2,blocks:80,perfects:20}; mode="endless"; resetRun(); const snap=runContext.characterSnapshot,before=JSON.stringify(snap); skinId="aurora"; characterMastery.neon.xp=9999; try{snap.id="void";}catch(e){} try{snap.mastery.xp=0;}catch(e){} return snap.id==="neon" && snap.passiveId==="precision" && snap.passiveEnabled && snap.mastery.xp===700 && Object.isFrozen(snap) && Object.isFrozen(snap.mastery) && JSON.stringify(snap)===before; })()'));
+check('S2 passives are enabled only for campaign, Endless, and Time', () => fresh.run(
+  '(() => { const mk=m=>createRunContext({mode:m,campaignLevel:m==="level"?0:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},characterId:"candy",characterMastery:{},modifiers:[]}); return ["level","endless","time"].every(m=>mk(m).characterSnapshot.passiveEnabled) && ["practice","pure","daily"].every(m=>!mk(m).characterSnapshot.passiveEnabled && activePassive(mk(m)).id==="classic"); })()'));
+check('S2 passive helpers apply each benefit/trade-off and preserve neutral Classic parity', () => fresh.run(
+  '(() => { const mk=(id,m="endless")=>createRunContext({mode:m,campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},characterId:id,characterMastery:{},modifiers:[]}), a=mk("aurora"), e=mk("candy"), p=mk("neon"), w=mk("mono"), f=mk("lava"), r=mk("mint"), v=mk("gold"); return adjustedRunCoins(a,10)===10 && adjustedRunScore(a,100)===100 && adjustedReviveCost(a,25)===25 && adjustedRunCoins(e,10)===12 && adjustedRunScore(e,100)===94 && passiveEffect(p,"perfect",1)===1.15 && passiveEffect(p,"slider",1)===1.07 && passiveEffect(w,"wind",1)===.75 && passiveEffect(w,"perfect",1)===.9 && feverThreshold(f)===9 && passiveEffect(r,"balance",1)===.78 && adjustedReviveCost(v,25)===19 && adjustedRunCoins(v,10)===9; })()'));
+check('S2 Pure and Daily ignore the selected Character in every calculation hook', () => fresh.run(
+  '(() => { const mk=m=>createRunContext({mode:m,campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},characterId:"neon",characterMastery:{},modifiers:[]}); return ["pure","daily"].every(m=>{const c=mk(m);return adjustedRunCoins(c,10)===10&&adjustedRunScore(c,100)===100&&adjustedReviveCost(c,25)===25&&feverThreshold(c)===10&&passiveEffect(c,"perfect",1)===1&&passiveEffect(c,"slider",1)===1&&passiveEffect(c,"wind",1)===1&&passiveEffect(c,"balance",1)===1;}); })()'));
+check('S2 live precision and recovery hooks affect perfect window, slider speed, and balance only in eligible runs', () => fresh.run(
+  '(() => { skinId="neon"; mode="endless"; resetRun(); const base=PERFECT_PX*(1+assist), wide=effPerfect(), fast=slider.speed; skinId="aurora"; resetRun(); const neutral=slider.speed; skinId="mint"; resetRun(); balance=0; afterPlace({x:0,w:96,col:"#fff"},true,W/2+20); const recovered=balance; skinId="aurora"; resetRun(); balance=0; afterPlace({x:0,w:96,col:"#fff"},true,W/2+20); return Math.abs(wide-base*1.15)<1e-9 && fast>neutral && Math.abs(recovered)<Math.abs(balance); })()'));
+check('S2 mastery settles once per rewarded run and never advances in Practice', () => {
+  const g=makeGame();
+  g.run('skinId="candy"; mode="endless"; resetRun(); while(blocks.length<6)blocks.push({x:0,w:96,col:"#fff"}); runPerfects=3; score=100; gameOver("quit"); finalizeRun(); finalizeRun();');
+  const once=saved(g,'skystack-characters').mastery.candy;
+  g.run('skinId="candy"; mode="practice"; resetRun(); while(blocks.length<5)blocks.push({x:0,w:96,col:"#fff"}); gameOver("quit"); finalizeRun();');
+  const after=saved(g,'skystack-characters').mastery.candy;
+  return once.runs===1 && once.blocks===6 && once.perfects===3 && once.xp>0 && JSON.stringify(after)===JSON.stringify(once);
+});
+check('S2 Character Select renders and keeps controls above navigation on a 242x300 screen', () => fresh.run(
+  '(() => { W=242; H=300; relayout(); state="shop"; previewIdx=11; renderShop(); return EQUIP_BTN.x>=0 && EQUIP_BTN.x+EQUIP_BTN.w<=W && EQUIP_BTN.y+EQUIP_BTN.h<NAV_Y && LOAD_CHIPS.every(c=>c.x>=0&&c.x+c.w<=W&&c.y+c.h<NAV_Y); })()'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v77', () => /const CACHE = 'skystack-v77'/.test(sw));
+check('sw.js cache bumped to v78', () => /const CACHE = 'skystack-v78'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
