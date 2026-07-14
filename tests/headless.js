@@ -522,18 +522,34 @@ check('cave suite renders across the whole underground without throwing', () => 
 check('cave geology deterministically provides dirt, stone, clay, and gravel', () => bio.run(
   '(() => { const a = [], b = []; for (let r = 0; r <= Math.round(SURF_A*BH/4); r++) for (const s of [0,1]) { a.push(caveWallMat(r,s)); b.push(caveWallMat(r,s)); } ' +
   'return a.join(",") === b.join(",") && new Set(a).size === 4 && a.every(m => m >= 0 && m < 4); })()'));
+check('Deep Cave and Main Cave are deterministic altitude subzones with a smooth transition', () => bio.run(
+  '(() => { const d=caveZoneAtA(0), mid=caveZoneAtA((CAVE_DEEP_END_A+CAVE_MAIN_FULL_A)/2), m=caveZoneAtA(SURF_A-2); ' +
+  'if(d.name!=="DEEP CAVE"||d.main!==0||m.name!=="MAIN CAVE"||m.main!==1||Math.abs(mid.main-.5)>.001)return false; ' +
+  'let prev=-1; for(let a=0;a<=SURF_A;a+=.25){const x=caveMainMixAtA(a);if(x<prev||x<0||x>1)return false;prev=x;} return true; })()'));
+check('Main Cave chambers open broader on roomy screens (portrait lane remains separately guarded)', () => bio.run(
+  '(() => { const oldW=W;try{W=420;const bw=Math.round(W*.17),limit=SURF_A*BH/4-7*BH/4;let d=0,dn=0,m=0,mn=0;for(let row=0;row<limit;row++){const lane=W-caveWallW(row,0,bw)-caveWallW(row,1,bw),mix=caveMainMixAtRow(row);if(lane<caveLaneMin()-1)return false;if(mix<.1){d+=lane;dn++;}if(mix>.9){m+=lane;mn++;}}return dn>8&&mn>8&&m/mn>d/dn+5;}finally{W=oldW;}})()'));
 check('cave material atlas contains four cached original procedural textures', () => bio.run(
   'CAVE_MAT_TEX.length === 4 && CAVE_MAT_TEX.every(t => t && t.width === CAVETEX_W && t.height === CAVETEX_H)'));
+check('cave detail atlases include a cached continuous fine-grain rear wall', () => bio.run(
+  'caveTexBack && caveTexBack.width===CAVETEX_W && caveTexBack.height===CAVETEX_H && CAVE_GEO_W>=36'));
 check('cave detail placement is deterministic and bounded', () => bio.run(
   '(() => { for (let r=-20;r<180;r++) for (const s of [0,1]) { const a=caveDetailKind(r,s), b=caveDetailKind(r,s); if (a!==b || a<0 || a>5) return false; } return true; })()'));
+check('Deep/Main ledge identities are deterministic and remain surface-valid prop kinds', () => bio.run(
+  '(() => { for(let r=-20;r<180;r++)for(const s of [0,1]){const a=caveDetailKindForZone(r,s),b=caveDetailKindForZone(r,s);if(a!==b||a<0||a>5)return false;}return true;})()'));
 check('cave texture stamping uses varied deterministic source windows', () => bio.run(
   '(() => { const a=[], b=[]; for(let x=0;x<CAVE_STAMP_W*6;x+=CAVE_STAMP_W){a.push(caveStampSourceX(123,x));b.push(caveStampSourceX(123,x));} return a.join(",")===b.join(",") && new Set(a).size>2 && a.every(x=>x>=0&&x<=CAVETEX_W-CAVE_STAMP_W); })()'));
+check('cave atlas columns stay vertically continuous instead of re-rolling every render band', () => bio.run(
+  '(() => { for(let x=0;x<CAVE_STAMP_W*6;x+=CAVE_STAMP_W)if(caveStampSourceX(0,x)!==caveStampSourceX(999,x))return false;return true;})()'));
+check('two-dimensional cave geology pockets are deterministic and non-flat', () => bio.run(
+  '(() => { const a=[],b=[];for(let r=0;r<120;r+=3)for(let x=0;x<W;x+=CAVE_GEO_W){a.push(caveWallMatAt(r,0,x));b.push(caveWallMatAt(r,0,x));}return a.join(",")===b.join(",")&&new Set(a).size===4;})()'));
 check('cave texture stamping explicitly disables image smoothing', () =>
   /function blitCaveTex[\s\S]{0,320}ctx\.imageSmoothingEnabled = false/.test(src));
 check('ledge props are emitted only from detected upward-facing wall ledges', () =>
   /if \(prevW >= 0 && w > prevW \+ 3\)[\s\S]{0,700}drawCaveLedgeProp\(/.test(src));
 check('torches derive their x position from the current anchored wall edge', () =>
   /wallRow = Math\.round\(\(gy - ty\) \/ 4\)[\s\S]{0,260}caveWallW\(wallRow[\s\S]{0,220}W - wallW \+ 2 : wallW - 2/.test(src));
+check('Main Cave has more fixed torch slots than Deep Cave without screen-seeded placement', () => bio.run(
+  '(() => { let d=0,m=0;for(let r=-100;r<100;r++){if(caveTorchPresent(r,0))d++;if(caveTorchPresent(r,1))m++;}return m>d*1.35;})()'));
 // the cave walls/backdrop/ground must be WORLD-anchored like the floor: a known camera shift
 // must translate every band rigidly by the same screen amount, keeping the SAME source texture
 // row + width (i.e. geometry+texture come from stable world coords, not from screen slots that
@@ -751,7 +767,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v68', () => /const CACHE = 'skystack-v68'/.test(sw));
+check('sw.js cache bumped to v69', () => /const CACHE = 'skystack-v69'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
