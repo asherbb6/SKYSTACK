@@ -40,7 +40,7 @@ function makeGame(storageSeed, reducedMotion, audioEnabled) {
     setValueAtTime(v) { this.value = v; }, linearRampToValueAtTime(v) { this.value = v; },
     exponentialRampToValueAtTime(v) { this.value = v; }, setTargetAtTime(v) { this.value = v; },
     cancelScheduledValues() {} });
-  const audioNode = () => ({ gain:audioParam(), frequency:audioParam(), type:'', buffer:null,
+  const audioNode = () => ({ gain:audioParam(), frequency:audioParam(), Q:audioParam(), type:'', buffer:null,
     connect(n) { return n || this; }, disconnect() {}, start() {}, stop() {} });
   class FakeAudioContext {
     constructor() { this.state='running'; this.currentTime=1; this.sampleRate=44100; this.destination=audioNode(); this.created=0; }
@@ -414,6 +414,12 @@ check('a higher skill means a lower starting assist', () => {
 const mus = makeGame({}, false, true);
 check('adaptive soundtrack defines one distinct theme per biome', () => mus.run(
   'MUSIC_THEMES.length===TIERS.length && new Set(MUSIC_THEMES.map(t=>t.name)).size===TIERS.length && new Set(MUSIC_THEMES.map(t=>t.root+":"+t.bpm)).size>=9'));
+check('cave theme is an audible dark medieval-dungeon arrangement', () => mus.run(
+  '(() => { const c=MUSIC_THEMES[0]; return c.name==="DUNGEON BELOW"&&c.dungeon===true&&c.gain>=1.2&&c.bpm<=70&&c.density>=.65&&c.drums>=.6&&c.pad==="sawtooth"; })()'));
+check('cave uses D harmonic minor with a flat sixth and raised seventh', () => mus.run(
+  '(() => { const c=musicProfileFor("play",0,"endless","calm"); return Math.abs(c.scale[5]-1.5874)<.0001&&Math.abs(c.scale[6]-1.88775)<.0001&&Math.abs(musicFreq(c,5,0)/c.root-1.5874)<.0001; })()'));
+check('cave remains prominent in Practice and Supernova arrangements', () => mus.run(
+  '(() => { const p=musicProfileFor("play",0,"practice","calm"),n=musicProfileFor("play",0,"endless","nova"); return p.gain>1&&n.gain>=1.28&&n.gain<=1.32; })()'));
 check('every biome theme has a complete playable arrangement', () => mus.run(
   'MUSIC_THEMES.every(t=>t.root>0&&t.bpm>=58&&t.bpm<=130&&t.mel.length>=16&&t.bass.length>=4&&t.density>0&&t.drums>=0&&t.lead&&t.pad&&t.lpf>0)'));
 check('menu, victory, and loss have dedicated music identities', () => mus.run(
@@ -431,6 +437,10 @@ check('music engine creates separate master, SFX, music, and crossfade buses', (
   'AC&&AUDIO_MASTER&&SFX_OUT&&MUSIC_OUT&&musicBus&&musicKey==="play:0:endless:calm"'));
 check('music scheduler produces voices ahead of playback without per-frame creation', () => mus.run(
   'AC.created>0 && musicNext>AC.currentTime && barDurCur>0'));
+check('cave-only scheduler adds drone, lute, bell, and war-drum voices immediately', () => mus.run(
+  '(() => { const p=musicProfileFor("play",0,"endless","calm"),before=AC.created; scheduleDungeonLayer(AC.currentTime+.1,0,240/p.bpm,p,musicBus); return AC.created-before>=9; })()'));
+check('cave chain/rattle texture uses one cached buffer', () => mus.run(
+  '(() => { const p=musicProfileFor("play",0,"endless","calm"); dungeonBuf=null; scheduleDungeonLayer(AC.currentTime+.1,1,240/p.bpm,p,musicBus); const first=dungeonBuf; scheduleDungeonLayer(AC.currentTime+.2,1,240/p.bpm,p,musicBus); return first&&dungeonBuf===first; })()'));
 check('biome change replaces the arrangement bus through a transition', () => mus.run(
   '(() => { tier=1; AC.currentTime+=2; musicStep(); return musicBus!==__bus0&&musicKey!==__key0&&musicKey==="play:1:endless:calm"; })()'));
 check('long pause recovery skips stale music scheduling backlog', () => mus.run(
@@ -741,7 +751,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v67', () => /const CACHE = 'skystack-v67'/.test(sw));
+check('sw.js cache bumped to v68', () => /const CACHE = 'skystack-v68'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
