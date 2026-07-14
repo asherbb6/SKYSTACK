@@ -549,12 +549,12 @@ function drawEventFx(menu) {
 
 // ---------- modes ----------
 const MODE_REGISTRY = deepFreeze({
-  level:    { id:'level',    name:'LEVELS',   blurb:'CLIMB THE SKY',      desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true, rules:{ assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:true  } },
-  practice: { id:'practice', name:'PRACTICE', blurb:'LEARN AT YOUR PACE', desc:'NO FAIL - GUIDED CLIMB',  wind:false,fail:false,practice:true,rules:{ assist:'fixed',    rewards:false,records:false,loadout:false, pickups:false, progress:false, revive:false } },
-  endless:  { id:'endless',  name:'ENDLESS',  blurb:'CLIMB FOREVER',      desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true, rules:{ assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:true  } },
-  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600, rules:{ assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:false } },
-  pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ assist:'off', rewards:true, records:true, loadout:false, pickups:false, progress:true, revive:false } },
-  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ assist:'off', rewards:true, records:true, loadout:false, pickups:true, progress:true, revive:false } }
+  level:    { id:'level',    name:'LEVELS',   blurb:'CLIMB THE SKY',      desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:true  } },
+  practice: { id:'practice', name:'PRACTICE', blurb:'LEARN AT YOUR PACE', desc:'NO FAIL - GUIDED CLIMB',  wind:false,fail:false,practice:true,rules:{ lane:'practice', assist:'fixed',    rewards:false,records:false,loadout:false, pickups:false, progress:false, revive:false } },
+  endless:  { id:'endless',  name:'ENDLESS',  blurb:'CLIMB FOREVER',      desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:true  } },
+  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:false } },
+  pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, pickups:false, progress:true, revive:false } },
+  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, pickups:true, progress:true, revive:false } }
 });
 const MODES = Object.freeze(['level','practice','endless','time','pure','daily'].map(id => MODE_REGISTRY[id]));
 const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
@@ -650,7 +650,6 @@ const TIERS = [
   { n:360, name:'ORBIT',        c:'#FFD75E' },
   { n:540, name:'THE STARS',    c:'#FFF6E8' }
 ];
-const LEVEL_REGISTRY = deepFreeze(TIERS.map((t, i) => ({ id:i, tier:i, goalAltitude:t.n, startAltitude:i <= 0 ? 0 : TIERS[i-1].n, name:t.name, color:t.c })));
 prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed unlocks from lifetime best
 // per-region block material — affects FEEL (fair + subtle, tune freely):
 // spd = slider-speed multiplier, wob = drift-wobble amount, wind = local wind exposure.
@@ -670,9 +669,45 @@ const MATERIALS = [
 const BALANCE_REGISTRY = deepFreeze({
   physics:{ blockHeight:14, baseWidth:96, metersPerBlock:3, topple:34, perfectPx:2.6 },
   slider:{ base:1.1, perBlock:0.020, max:2.8, campaignStep:0.03, campaignMax:3.1, assistSlow:0.30 },
-  assist:{ practice:0.85, startBase:0.5, skillScale:0.55, maxStart:0.5, floorScale:0.4, max:0.85 },
+  drop:{ graceFrames:5, spawnGap:24, initialVelocity:2.6, gravity:0.9 },
+  assist:{ practice:0.85, startBase:0.5, skillScale:0.55, maxStart:0.5, floorScale:0.4, max:0.85, missStep:0.15, sloppyStep:0.10, perfectStep:0.05, balanceForgiveness:0.4 },
+  placement:{ balanceMemory:0.5, balanceOffset:0.5, silverPerfectRatio:0.20, goldPerfectRatio:0.45 },
+  wind:{ firstDelayFrames:260, minStartBlocks:25, minStrength:0.16, strengthRange:0.30, minDurationFrames:100, durationRangeFrames:80, minCooldownFrames:280, cooldownRangeFrames:320 },
+  harness:{ fps:60, corridorWidth:220, ordinaryTimingFactor:1.18, perfectEvery:3 },
   seed:{ dailyXor:0x9E3779B9 }, materials:MATERIALS
 });
+const DIFFICULTY_LANES = deepFreeze({
+  practice:{ id:'practice', modes:['practice'], fail:false, assist:{ policy:'fixed', min:BALANCE_REGISTRY.assist.practice, max:BALANCE_REGISTRY.assist.practice }, recovery:'AUTO SAVE' },
+  assisted:{ id:'assisted', modes:['level','endless','time'], fail:true, assist:{ policy:'adaptive', min:0, max:BALANCE_REGISTRY.assist.max }, recovery:'ASSIST + SHIELD/REVIVE' },
+  unassisted:{ id:'unassisted', modes:['pure','daily'], fail:true, assist:{ policy:'off', min:0, max:0 }, recovery:'NONE' }
+});
+const LEVEL_BLUEPRINTS = deepFreeze([
+  { identity:'FOUNDATION',      focus:'STEADY STONE',       duration:{min:90,target:110,max:130}, difficulty:1,  pace:'INTRO',    speedScale:1 },
+  { identity:'FIRST LIGHT',     focus:'OPENING WIND',       duration:{min:18,target:24,max:32},   difficulty:2,  pace:'QUICK',    speedScale:1 },
+  { identity:'CANOPY RHYTHM',   focus:'WOOD PRECISION',     duration:{min:25,target:31,max:40},   difficulty:3,  pace:'QUICK',    speedScale:1 },
+  { identity:'OPEN AIR',        focus:'READABLE DRIFT',     duration:{min:27,target:33,max:42},   difficulty:4,  pace:'QUICK',    speedScale:1 },
+  { identity:'SOFT FOOTING',    focus:'CLOUD WOBBLE',       duration:{min:32,target:40,max:50},   difficulty:5,  pace:'QUICK',    speedScale:1 },
+  { identity:'CROSSWIND',       focus:'FAST STEEL + WIND',  duration:{min:36,target:44,max:55},   difficulty:6,  pace:'QUICK',    speedScale:1 },
+  { identity:'THIN AIR',        focus:'GLASS CONTROL',      duration:{min:38,target:47,max:58},   difficulty:7,  pace:'QUICK',    speedScale:1 },
+  { identity:'ICE TEMPO',       focus:'QUICK RECOVERY',     duration:{min:43,target:52,max:65},   difficulty:8,  pace:'QUICK',    speedScale:1 },
+  { identity:'LOW GRAVITY',     focus:'COSMIC WOBBLE',      duration:{min:80,target:95,max:115},  difficulty:9,  pace:'STANDARD', speedScale:1 },
+  { identity:'ORBITAL ENDURANCE',focus:'LONG-FORM CONTROL', duration:{min:150,target:175,max:210},difficulty:10, pace:'LONG',     speedScale:1 },
+  { identity:'SUMMIT RUN',      focus:'FINAL PRECISION',    duration:{min:210,target:240,max:270},difficulty:11, pace:'SUMMIT',   speedScale:1.25 }
+]);
+const LEVEL_REGISTRY = deepFreeze(TIERS.map((t, i) => {
+  const b=LEVEL_BLUEPRINTS[i], start=i <= 0 ? 0 : TIERS[i-1].n, mat=MATERIALS[i];
+  return { id:i, tier:i, name:t.name, color:t.c, identity:b.identity, focus:b.focus,
+    startAltitude:start, goalAltitude:t.n, blocksRequired:t.n-start,
+    targetDurationSeconds:b.duration, difficultyRating:b.difficulty, pace:b.pace,
+    assistEnvelope:{ lane:'assisted', policy:'adaptive', min:0, max:BALANCE_REGISTRY.assist.max },
+    speedCurve:{ campaignScale:b.speedScale, base:BALANCE_REGISTRY.slider.base, perBlock:BALANCE_REGISTRY.slider.perBlock, max:BALANCE_REGISTRY.slider.campaignMax },
+    windCurve:{ exposure:mat.wind, firstEligibleAltitude:Math.max(start, BALANCE_REGISTRY.wind.minStartBlocks + 1) },
+    material:{ name:mat.name, speed:mat.spd, wobble:mat.wob, wind:mat.wind },
+    starObjectives:{ complete:true, silverPerfectRatio:BALANCE_REGISTRY.placement.silverPerfectRatio, goldPerfectRatio:BALANCE_REGISTRY.placement.goldPerfectRatio },
+    unlock:{ requiresLevel:i > 0 ? i-1 : null }
+  };
+}));
+function laneForMode(modeId) { const p=PERMISSION_REGISTRY[modeId] || PERMISSION_REGISTRY.endless; return DIFFICULTY_LANES[p.lane] || DIFFICULTY_LANES.assisted; }
 const matAt = t => MATERIALS[clamp(t | 0, 0, MATERIALS.length - 1)];
 const levelStartN = i => LEVEL_REGISTRY[clamp(i | 0, 0, LEVEL_REGISTRY.length - 1)].startAltitude; // level i climbs start -> goal
 function startLevel(i) { pendingLevel = i; mode = 'level'; startRun(); }
@@ -705,7 +740,8 @@ let PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
 // Higher assist = slower blocks + a wider perfect window. Off in PURE/DAILY (kept pure).
 let skill = clamp(store.get('skystack-skill', 0.35), 0, 1);
 let assist = 0;
-function assistFloor() { const a=BALANCE_REGISTRY.assist; return clamp((a.startBase - skill * a.skillScale) * a.floorScale, 0, a.maxStart); }
+function assistFloorFor(skillValue) { const a=BALANCE_REGISTRY.assist; return clamp((a.startBase - clamp(skillValue,0,1) * a.skillScale) * a.floorScale, 0, a.maxStart); }
+function assistFloor() { return assistFloorFor(skill); }
 let state = 'splash';             // splash | home | shop | me | playing | dropping | gameover
 let blocks = [], slider = null, faller = null;
 let debris = [], particles = [], floaters = [], trails = [], coinFx = [], pickups = [];
@@ -720,7 +756,7 @@ let score = 0;
 let bannerText = '', bannerT = 0;
 let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
 let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false;
-let wind = null, windTimer = 260;
+let wind = null, windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
 let nextPickupRow = 8;
 let previewIdx = 0, completedThisRun = [], achThisRun = [], levelUpsThisRun = 0, xpThisRun = 0;
 let overCause = '';
@@ -752,6 +788,7 @@ function createRunContext(o) {
   const campaignLevel = Number.isInteger(o.campaignLevel) ? o.campaignLevel : -1;
   const startingAltitude = Math.max(0, o.startingAltitude | 0);
   const p = PERMISSION_REGISTRY[m.id];
+  const lane = laneForMode(m.id), levelSpec = campaignLevel >= 0 ? LEVEL_REGISTRY[campaignLevel] : null;
   const load = o.loadout || {};
   return deepFreeze({
     mode:m.id, campaignLevel, startingAltitude, seed:o.seed >>> 0,
@@ -761,7 +798,7 @@ function createRunContext(o) {
     rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards },
     recordPermissions:{ write:p.records && campaignLevel < 0 && startingAltitude === 0 },
     loadoutAllowed:p.loadout,
-    difficultyProfile:{ startingAssist:startingAssist(m.id, o.skill), campaignLevel, slider:BALANCE_REGISTRY.slider }
+    difficultyProfile:{ lane:lane.id, assistEnvelope:lane.assist, startingAssist:startingAssist(m.id, o.skill), campaignLevel, levelSpeedScale:levelSpec ? levelSpec.speedCurve.campaignScale : 1, slider:BALANCE_REGISTRY.slider }
   });
 }
 function canEarnRewards(ctx) { return !!(ctx && ctx.rewardPermissions && ctx.rewardPermissions.earn); }
@@ -778,8 +815,35 @@ function difficultyAt(ctx, altitude, currentAssist, tierOverride) {
   let speed = Math.min(s.base + h * s.perBlock, s.max);
   if (d.campaignLevel >= 0) speed = Math.min(speed * (1 + d.campaignLevel * s.campaignStep), s.campaignMax);
   speed *= 1 - clamp(currentAssist === undefined ? d.startingAssist : currentAssist, 0, 1) * s.assistSlow;
-  speed *= mat.spd;
+  speed *= mat.spd * (d.levelSpeedScale || 1);
   return { altitude:h, tier:ti, material:mat, sliderSpeed:speed };
+}
+function fallFramesFor(distance) {
+  const p=BALANCE_REGISTRY.drop; let y=0, vy=p.initialVelocity, frames=0, goal=distance === undefined ? p.spawnGap : Math.max(0,distance);
+  while (y < goal && frames < 120) { vy += p.gravity; y += vy; frames++; }
+  return frames;
+}
+function levelBalanceReport(levelId, laneId, skillValue) {
+  const spec=LEVEL_REGISTRY[clamp(levelId|0,0,LEVEL_REGISTRY.length-1)], lane=DIFFICULTY_LANES[laneId] || DIFFICULTY_LANES.assisted;
+  const sk=clamp(skillValue === undefined ? 0.35 : skillValue,0,1), aCfg=BALANCE_REGISTRY.assist, hCfg=BALANCE_REGISTRY.harness;
+  const startAssist=lane.assist.policy === 'fixed' ? lane.assist.max : lane.assist.policy === 'off' ? 0 : startingAssist('level',sk);
+  const probe={difficultyProfile:{startingAssist:startAssist,campaignLevel:spec.id,levelSpeedScale:spec.speedCurve.campaignScale,slider:BALANCE_REGISTRY.slider}};
+  let curAssist=startAssist, minAssist=curAssist, maxAssist=curAssist, ideal=0, speedSum=0, speedMin=Infinity, speedMax=0, windowSum=0, windSum=0;
+  const mats=[]; const travel=(hCfg.corridorWidth + BALANCE_REGISTRY.physics.baseWidth)/2, impact=(BALANCE_REGISTRY.drop.graceFrames + fallFramesFor())/hCfg.fps;
+  for (let h=spec.startAltitude, step=0; h<spec.goalAltitude; h++,step++) {
+    const ti=clamp(TIERS.findIndex(t=>t.n>h),0,TIERS.length-1), d=difficultyAt(probe,h,curAssist,ti), win=BALANCE_REGISTRY.physics.perfectPx*(1+curAssist);
+    ideal += travel/(d.sliderSpeed*hCfg.fps) + impact; speedSum += d.sliderSpeed; speedMin=Math.min(speedMin,d.sliderSpeed); speedMax=Math.max(speedMax,d.sliderSpeed); windowSum+=win; windSum+=d.material.wind;
+    if (mats.indexOf(d.material.name)<0) mats.push(d.material.name);
+    if (lane.assist.policy === 'adaptive') curAssist = step % hCfg.perfectEvery === 0 ? Math.max(assistFloorFor(sk),curAssist-aCfg.perfectStep) : Math.min(aCfg.max,curAssist+aCfg.sloppyStep);
+    minAssist=Math.min(minAssist,curAssist); maxAssist=Math.max(maxAssist,curAssist);
+  }
+  const n=spec.blocksRequired, round2=v=>+v.toFixed(2), round1=v=>+v.toFixed(1), ordinary=ideal*hCfg.ordinaryTimingFactor;
+  return { level:spec.id, identity:spec.identity, lane:lane.id, blocks:n, difficultyRating:spec.difficultyRating,
+    durationSeconds:{ ideal:round1(ideal), ordinary:round1(ordinary), target:spec.targetDurationSeconds.target, range:[spec.targetDurationSeconds.min,spec.targetDurationSeconds.max] },
+    sliderSpeed:{ min:round2(speedMin), average:round2(speedSum/n), max:round2(speedMax) }, perfectWindowPx:round2(windowSum/n),
+    assist:{ start:round2(startAssist), min:round2(minAssist), max:round2(maxAssist), end:round2(curAssist) },
+    windExposure:round2(windSum/n), materials:mats, toppleTolerance:BALANCE_REGISTRY.physics.topple, recovery:lane.recovery,
+    starObjectives:spec.starObjectives };
 }
 function activeMode() { return runContext ? MODE_REGISTRY[runContext.mode] : curMode(); }
 // onboarding: replayed in PRACTICE, shown once everywhere else
@@ -833,7 +897,7 @@ function resetRun() {
   tier = TIERS.findIndex(t => t.n > blocks.length); if (tier < 0) tier = TIERS.length;   // skip pre-stacked tiers
   runCoins = 0; runPerfects = 0; runPowerups = 0; runFevers = 0; runBalloons = 0; bannerT = 0;
   shield = 0; widenNext = false; slowBlocks = 0; auraBlocks = 0; goldenNext = false;
-  wind = null; windTimer = 260;
+  wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
   nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
   reviveUsed = false; reviveOffered = false; runSettled = false;
@@ -877,17 +941,17 @@ function spawnSlider() {
   if (slowBlocks > 0) { speed *= 0.55; slowBlocks--; }
   if (auraBlocks > 0) auraBlocks--;
   const SR = slideRange();
-  slider = { w: top.w, x: fromLeft ? SR.l - top.w : SR.r, dir: fromLeft ? 1 : -1, speed, y: towerTopY() - BH - 24, golden: goldenNext, wob: mat.wob };
+  slider = { w: top.w, x: fromLeft ? SR.l - top.w : SR.r, dir: fromLeft ? 1 : -1, speed, y: towerTopY() - BH - BALANCE_REGISTRY.drop.spawnGap, golden: goldenNext, wob: mat.wob };
   goldenNext = false;
 }
 function drop() {
   if (!slider || dropPending > 0) return;
-  dropPending = 5;                                     // ~85ms grace: the block keeps sliding briefly
+  dropPending = BALANCE_REGISTRY.drop.graceFrames;     // ~85ms grace: the block keeps sliding briefly
 }
 function releaseBlock() {
   if (!slider) return;
   // launch with downward velocity so the tap reads as instant, not delayed
-  faller = { x: slider.x, w: slider.w, y: slider.y, vy: 2.6, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
+  faller = { x: slider.x, w: slider.w, y: slider.y, vy: BALANCE_REGISTRY.drop.initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
   slider = null; state = 'dropping';
   if (tutStep === 0) tutStep = 1;
 }
@@ -972,7 +1036,7 @@ function land() {
   if (overlap <= 1) {
     if (shield > 0 || !m.fail) {
       if (shield > 0) shield--;
-      if (dda) assist = Math.min(0.85, assist + 0.15);   // a total miss: lean in with more help
+      if (dda) assist = Math.min(BALANCE_REGISTRY.assist.max, assist + BALANCE_REGISTRY.assist.missStep);   // a total miss: lean in with more help
       combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; setExpr('dizzy', 40);
       let nw = Math.max(top.w * 0.6, 26), nx = clamp(f.x, 0, W - nw);
       if (Math.abs(nx - top.x) > top.w) nx = clamp(top.x + (f.x < top.x ? -8 : 8), 0, W - nw);
@@ -992,7 +1056,7 @@ function land() {
   if (isPerfect) {
     nx = top.x; nw = Math.min(f.w, top.w);
     combo++; runPerfects++; maxCombo = Math.max(maxCombo, combo);
-    if (dda) assist = Math.max(assistFloor(), assist - 0.05);   // you've got this: ease the help back down
+    if (dda) assist = Math.max(assistFloor(), assist - BALANCE_REGISTRY.assist.perfectStep);   // you've got this: ease the help back down
     const grow = combo >= 8 ? 8 : combo >= 5 ? 5 : combo >= 3 ? 3 : 1;
     const cap = combo >= 5 ? W : BASE_W;
     nw = Math.min(nw + grow, cap);
@@ -1028,7 +1092,7 @@ function land() {
     }
   } else {
     combo = 0; fever = false; feverT = 0; nova = false; novaT = 0;
-    if (dda) assist = Math.min(0.85, assist + 0.10);   // a sloppy drop: nudge the help up
+    if (dda) assist = Math.min(BALANCE_REGISTRY.assist.max, assist + BALANCE_REGISTRY.assist.sloppyStep);   // a sloppy drop: nudge the help up
     score += Math.round(10 * goldMult * (m.mult || 1));
     const cutW = f.w - overlap, cutX = offset > 0 ? oR : f.x;
     debris.push({ x:cutX, y:f.y, w:cutW, h:BH, vx:offset>0?.9:-.9, vy:-.4, rot:0, vr:(offset>0?1:-1)*(.06+Math.random()*.08), col:f.col });
@@ -1075,7 +1139,7 @@ function land() {
 function afterPlace(f, updateBalance, placedCenter) {
   const m = activeMode();
   if (canEarnRewards(runContext)) stats.blocks++;
-  if (updateBalance) balance = balance * 0.5 + (placedCenter - W/2) * 0.5 * (1 - assist * 0.4);   // assist forgives lean
+  if (updateBalance) { const p=BALANCE_REGISTRY.placement; balance = balance * p.balanceMemory + (placedCenter - W/2) * p.balanceOffset * (1 - assist * BALANCE_REGISTRY.assist.balanceForgiveness); }   // assist forgives lean
   const r = blocks.length - 1, b = blocks[r];
   for (const p of pickups) { if (p.got || p.row !== r) continue; if (p.x >= b.x && p.x <= b.x + b.w) collectPickup(p, p.x, towerTopY()); }
   schedulePickups();
@@ -1148,7 +1212,8 @@ function levelComplete() {
   faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; paused = false; dropPending = 0;
   const placed = Math.max(1, blocks.length - runLaunch);
   const ratio = runPerfects / placed;                       // stars reward precision, not luck
-  winStars = 1 + (ratio >= .2 ? 1 : 0) + (ratio >= .45 ? 1 : 0);
+  const stars=LEVEL_REGISTRY[i].starObjectives;
+  winStars = 1 + (ratio >= stars.silverPerfectRatio ? 1 : 0) + (ratio >= stars.goldPerfectRatio ? 1 : 0);
   winFirst = i + 1 > prog;
   if (winFirst) { prog = i + 1; store.set('skystack-tiers', prog); }
   if (winStars > (levelStars[i] || 0)) { levelStars[i] = winStars; store.set('skystack-levelstars', levelStars); }
@@ -1207,7 +1272,7 @@ function doRevive() {
   if (!reviveOffered || coins < reviveCost()) { sfx.deny(); return; }
   coins -= reviveCost(); store.set('skystack-coins', coins);
   reviveUsed = true; reviveOffered = false;
-  debris = []; balance = 0; swayX = 0; wind = null; windTimer = 260;   // scrub the death state
+  debris = []; balance = 0; swayX = 0; wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;   // scrub the death state
   faller = null; dropPending = 0; overCause = ''; overLock = 0; shake = 0;
   shield = Math.min(shield + 1, 2);            // a shield so the comeback can breathe
   mascot.expr = 'normal'; mascot.exprT = 0;
@@ -1547,8 +1612,9 @@ function update(dt) {
   if (playing && m.wind) {
     const wf = matAt(tier).wind;                                            // region wind exposure: sheltered caves, howling jet stream
     windTimer -= dt;
-    if (!wind && windTimer <= 0 && blocks.length > 25 && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(.16+rnd()*.30)*wf, dur:100+rnd()*80, t:0 }; sfx.wind(); }
-    if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (280 + rnd()*320) / Math.max(0.5, wf); } }
+    const wCfg=BALANCE_REGISTRY.wind;
+    if (!wind && windTimer <= 0 && blocks.length > wCfg.minStartBlocks && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(wCfg.minStrength+rnd()*wCfg.strengthRange)*wf, dur:wCfg.minDurationFrames+rnd()*wCfg.durationRangeFrames, t:0 }; sfx.wind(); }
+    if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (wCfg.minCooldownFrames + rnd()*wCfg.cooldownRangeFrames) / Math.max(0.5, wf); } }
   } else wind = null;
 
   if (balloon && (state === 'playing' || state === 'dropping')) {
@@ -1581,7 +1647,7 @@ function update(dt) {
     }
   }
   if (faller && state === 'dropping') {
-    faller.vy += .9*dt; faller.y += faller.vy*dt;
+    faller.vy += BALANCE_REGISTRY.drop.gravity*dt; faller.y += faller.vy*dt;
     if (!reduceMotion && tick % 2 < dt) trails.push({ x:faller.x, y:faller.y, w:faller.w, life:.6, h:faller.col.h });
     if (faller.y >= towerTopY() - BH) { faller.y = towerTopY() - BH; land(); }
   }
