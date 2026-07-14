@@ -980,6 +980,16 @@ check('S2 Pure and Daily ignore the selected Character in every calculation hook
   '(() => { const mk=m=>createRunContext({mode:m,campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},characterId:"neon",characterMastery:{},modifiers:[]}); return ["pure","daily"].every(m=>{const c=mk(m);return adjustedRunCoins(c,10)===10&&adjustedRunScore(c,100)===100&&adjustedReviveCost(c,25)===25&&feverThreshold(c)===10&&passiveEffect(c,"perfect",1)===1&&passiveEffect(c,"slider",1)===1&&passiveEffect(c,"wind",1)===1&&passiveEffect(c,"balance",1)===1;}); })()'));
 check('S2 live precision and recovery hooks affect perfect window, slider speed, and balance only in eligible runs', () => fresh.run(
   '(() => { skinId="neon"; mode="endless"; resetRun(); const base=PERFECT_PX*(1+assist), wide=effPerfect(), fast=slider.speed; skinId="aurora"; resetRun(); const neutral=slider.speed; skinId="mint"; resetRun(); balance=0; afterPlace({x:0,w:96,col:"#fff"},true,W/2+20); const recovered=balance; skinId="aurora"; resetRun(); balance=0; afterPlace({x:0,w:96,col:"#fff"},true,W/2+20); return Math.abs(wide-base*1.15)<1e-9 && fast>neutral && Math.abs(recovered)<Math.abs(balance); })()'));
+check('S2 Fever copy clearly describes a threshold, not an initial x9 combo', () => fresh.run(
+  'PASSIVE_REGISTRY.fever.name==="QUICK IGNITION" && PASSIVE_REGISTRY.fever.benefit==="FEVER AT X9 COMBO"'));
+check('S2 live Economy hook awards more run coins and applies its score trade-off', () => fresh.run(
+  '(() => { skinId="candy"; mode="endless"; resetRun(); coins=0; runCoins=0; stats.coins=0; addCoins(10); const coinOk=coins===12&&runCoins===12; score=0; combo=0; const top=blocks[blocks.length-1]; faller={x:top.x,y:towerTopY()-BH,w:top.w,col:"#fff",vy:0,golden:false}; state="dropping"; land(); return coinOk && combo===1 && score===14; })()'));
+check('S2 live Campaign Fever hook ignites Lava at x9 while Classic waits for x10', () => fresh.run(
+  '(() => { const place=()=>{const top=blocks[blocks.length-1];faller={x:top.x,y:towerTopY()-BH,w:top.w,col:"#fff",vy:0,golden:false};state="dropping";land();}; skinId="lava";startLevel(0);combo=8;fever=false;place();const lava=runContext.mode==="level"&&combo===9&&fever&&runFevers===1;skinId="aurora";startLevel(0);combo=8;fever=false;place();return lava&&runContext.mode==="level"&&combo===9&&!fever&&runFevers===0; })()'));
+check('S2 live Wind hook reduces generated wind force by exactly 25 percent', () => fresh.run(
+  '(() => { const spawn=id=>{skinId=id;mode="endless";resetRun();while(blocks.length<=BALANCE_REGISTRY.wind.minStartBlocks)blocks.push({x:0,w:96,col:"#fff"});tier=5;wind=null;windTimer=0;rnd=()=>.5;update(1);return wind&&wind.str;};const calm=spawn("mono"),classic=spawn("aurora");return calm>0&&classic>0&&Math.abs(calm/classic-.75)<1e-9; })()'));
+check('S2 live Revive hook charges Gold 25 percent less and applies its run-coin trade-off', () => fresh.run(
+  '(() => { skinId="gold";mode="endless";resetRun();tier=0;coins=100;runCoins=0;stats.coins=0;addCoins(10);const coinOk=coins===109&&runCoins===9;gameOver("fall");const cost=reviveCost(),offered=reviveOffered;doRevive();return coinOk&&offered&&cost===19&&coins===90&&reviveUsed&&shield>0&&state==="playing"; })()'));
 check('S2 mastery settles once per rewarded run and never advances in Practice', () => {
   const g=makeGame();
   g.run('skinId="candy"; mode="endless"; resetRun(); while(blocks.length<6)blocks.push({x:0,w:96,col:"#fff"}); runPerfects=3; score=100; gameOver("quit"); finalizeRun(); finalizeRun();');
@@ -993,7 +1003,7 @@ check('S2 Character Select renders and keeps controls above navigation on a 242x
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v78', () => /const CACHE = 'skystack-v78'/.test(sw));
+check('sw.js cache bumped to v79', () => /const CACHE = 'skystack-v79'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
