@@ -76,6 +76,12 @@ function check(name, fn) {
     results.push([false, name, 'THREW: ' + e.message]);
   }
 }
+// read a value out of the consolidated v2 save object (all writes land there since v64)
+function saved(g, k) {
+  const raw = g.mem.get('skystack-save');
+  if (raw === undefined) return undefined;
+  return JSON.parse(raw).data[k];
+}
 
 // ---------- fresh-profile context ----------
 const fresh = makeGame();
@@ -110,7 +116,7 @@ lv.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
 check('reaching the goal wins the level', () => lv.run('state === "levelwin"'));
 check('level win: stage unlocked (prog=1)', () => lv.run('prog === 1 && winFirst === true'));
 check('level win: 3 stars for a near-perfect run', () => lv.run('winStars === 3'));
-check('level win: stars persisted', () => lv.run('levelStars[0] === 3') && lv.mem.get('skystack-levelstars') === '[3]');
+check('level win: stars persisted', () => lv.run('levelStars[0] === 3') && JSON.stringify(saved(lv, 'skystack-levelstars')) === '[3]');
 check('level win: coins rewarded', () => lv.run('winReward > 0 && coins >= winReward'));
 check('level win: no endless records written', () => lv.run('best === 0 && bestHeight === 0'));
 check('renderLevelWin runs without throwing', () => { lv.run('winT = 60; renderLevelWin()'); return true; });
@@ -154,7 +160,7 @@ vet.run('score = 99999; while (blocks.length < 45) blocks.push({x:0,w:96,col:"#f
 vet.run('gameOver("fall")');
 check('level gameOver: best score untouched', () => vet.run('best === 900'));
 check('level gameOver: best height untouched', () => vet.run('bestHeight === 60'));
-check('level gameOver: stored best not polluted', () => vet.mem.get('skystack-best') === '900' ? true : 'stored: ' + vet.mem.get('skystack-best'));
+check('level gameOver: stored best not polluted', () => saved(vet, 'skystack-best') === 900 ? true : 'stored: ' + saved(vet, 'skystack-best'));
 check('level gameOver: lands on the fail screen', () => vet.run('state === "levelfail"'));
 
 // free modes: ground runs update records normally
@@ -181,7 +187,7 @@ lc.run('while (blocks.length < TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"});')
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
 check('endless first reach of stage 1: LEVEL CLEAR banner', () => lc.run('bannerText === "LEVEL CLEAR - CAVES"'));
 check('endless first reach of stage 1: prog -> 1', () => lc.run('prog === 1'));
-check('prog persisted to storage', () => lc.mem.get('skystack-tiers') === '1' ? true : 'stored: ' + lc.mem.get('skystack-tiers'));
+check('prog persisted to storage', () => saved(lc, 'skystack-tiers') === 1 ? true : 'stored: ' + saved(lc, 'skystack-tiers'));
 lc.run('resetRun(); while (blocks.length < TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
 check('endless re-reaching a cleared stage: plain milestone banner', () => lc.run('bannerText === (TIERS[0].n*METERS_PER) + "M - " + TIERS[0].name'));
@@ -252,7 +258,7 @@ check('renderGameOver with the offer runs without throwing', () => { rv.run('ren
 rv.run('var __c0 = coins; doRevive()');
 check('revive: coins spent, run resumes, shield granted', () => rv.run(
   'state === "playing" && coins === __c0 - 30 && shield >= 1 && reviveUsed === true'));
-check('revive: coin spend persisted', () => rv.mem.get('skystack-coins') === '170' ? true : 'stored: ' + rv.mem.get('skystack-coins'));
+check('revive: coin spend persisted', () => saved(rv, 'skystack-coins') === 170 ? true : 'stored: ' + saved(rv, 'skystack-coins'));
 check('revive: death state scrubbed, new block sliding', () => rv.run(
   'balance === 0 && debris.length === 0 && faller === null && slider !== null && overCause === ""'));
 rv.run('score = 500; while (blocks.length < 20) blocks.push({x:0,w:96,col:"#fff"});');
@@ -348,7 +354,7 @@ sk.run('mode = "endless"; resetRun(); state = "playing"; globalThis.__s0 = skill
 sk.run('maxCombo = 12; score = 800; while (blocks.length < 40) blocks.push({x:0,w:96,col:"#fff"});');
 sk.run('gameOver("fall"); finalizeRun();');   // die, then decline the revive -> settle
 check('a strong run raises the personal skill estimate', () => sk.run('skill > __s0'));
-check('skill persists to storage', () => sk.mem.has('skystack-skill') && Math.abs(parseFloat(sk.mem.get('skystack-skill')) - sk.run('skill')) < 1e-6);
+check('skill persists to storage', () => typeof saved(sk, 'skystack-skill') === 'number' && Math.abs(saved(sk, 'skystack-skill') - sk.run('skill')) < 1e-6);
 check('a higher skill means a lower starting assist', () => {
   const lo = makeGame({ 'skystack-skill': '0.1' }), hi = makeGame({ 'skystack-skill': '0.9' });
   lo.run('mode="endless"; resetRun();'); hi.run('mode="endless"; resetRun();');
@@ -538,9 +544,84 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
   return bl.run('(() => { const A = blocks.length; const ti = TIERS.findIndex(t => A < t.n); return TIERS[ti].name === "AURORA"; })()');
 });
 
+// ---------- save schema v2 + migration (v64) ----------
+// fresh profile: a valid v2 container is created, and nothing is ever written to v1 keys
+const sv = makeGame();
+check('fresh boot creates a valid v2 save container', () => {
+  const s = JSON.parse(sv.mem.get('skystack-save'));
+  return s.version === 2 && s.data && typeof s.data === 'object';
+});
+check('fresh boot writes nothing to the v1 keys', () =>
+  [...sv.mem.keys()].every(k => k === 'skystack-save'));
+check('store.get returns independent copies (mutations cannot leak into the save)', () => sv.run(
+  '(() => { store.set("skystack-modebests", {a:{score:1}}); const m1 = store.get("skystack-modebests", {}); m1.a.score = 999; const m2 = store.get("skystack-modebests", {}); return m2.a.score === 1; })()'));
+check('store.set stores an independent copy (later caller mutations cannot leak in)', () => sv.run(
+  '(() => { const o = {a:{score:5}}; store.set("skystack-modebests", o); o.a.score = 777; return store.get("skystack-modebests", {}).a.score === 5; })()'));
+
+// veteran v1 profile: every key migrates once into v2, values visible in-game, v1 left as rollback backup
+const V1 = {
+  'skystack-coins': '345',
+  'skystack-skins': '["aurora","candy","void"]',
+  'skystack-skin': '"void"',
+  'skystack-mode': '"pure"',
+  'skystack-modebests': '{"endless":{"score":1200,"blocks":40}}',
+  'skystack-daily': '{"lastPlayed":"20260713","streak":4,"best":800}',
+  'skystack-stats': '{"games":58,"blocks":2100,"coins":900,"maxCombo":14,"skybreaks":2,"balloons":9,"streakBest":4}',
+  'skystack-lv': '{"level":7,"xp":40}',
+  'skystack-best': '4321',
+  'skystack-height': '123',
+  'skystack-tiers': '5',
+  'skystack-levelstars': '[3,2,3,1,2]',
+  'skystack-missions': '[{"key":"height","target":90,"reward":30},{"key":"perfects","target":8,"reward":25},{"key":"blocks","target":40,"reward":25}]',
+  'skystack-skill': '0.62',
+  'skystack-ach': '["first","m150"]',
+  'skystack-tut': 'true',
+  'skystack-mute': 'true',
+  'skystack-music': 'false',
+  'skystack-hapt': 'false'
+};
+const mig = makeGame(V1);
+check('v1 migration: every v1 key lands in the v2 save', () => {
+  const s = JSON.parse(mig.mem.get('skystack-save'));
+  return s.version === 2 && Object.keys(V1).every(k => s.data[k] !== undefined);
+});
+check('migrated: economy + cosmetics intact', () => mig.run(
+  'coins === 345 && owned.length === 3 && owned.indexOf("void") >= 0 && skinId === "void"'));
+check('migrated: records + campaign intact', () => mig.run(
+  'best === 4321 && bestHeight === 123 && prog === Math.max(5, TIERS.filter(t => 123 >= t.n).length) && levelStars.length === 5 && levelStars[0] === 3'));
+check('migrated: mode/daily/stats/player level intact', () => mig.run(
+  'mode === "pure" && daily.streak === 4 && daily.lastPlayed === "20260713" && stats.games === 58 && stats.maxCombo === 14 && lvl.level === 7 && lvl.xp === 40'));
+check('migrated: skill/achievements/tutorial/settings intact', () => mig.run(
+  'Math.abs(skill - 0.62) < 1e-9 && achDone.length === 2 && tutDone === true && muted === true && musicOn === false && hapticsOn === false'));
+check('migrated: mode bests intact', () => mig.run(
+  'bestScoreFor("endless") === 1200 && bestBlocksFor("endless") === 40'));
+check('migrated: missions preserved, not regenerated', () => mig.run(
+  'missions.length === 3 && missions[0].key === "height" && missions[0].target === 90'));
+check('migration leaves the v1 keys untouched (v63 rollback stays safe)', () =>
+  Object.keys(V1).every(k => mig.mem.get(k) === V1[k]));
+check('after migration, writes go to v2 only (v1 keys frozen)', () => {
+  mig.run('coins = 400; store.set("skystack-coins", coins)');
+  return mig.mem.get('skystack-coins') === '345' && saved(mig, 'skystack-coins') === 400;
+});
+
+// migration runs once: an existing v2 save always wins over stale v1 keys
+const dual = makeGame({
+  'skystack-coins': '111',
+  'skystack-save': JSON.stringify({ version: 2, data: { 'skystack-coins': 999 } })
+});
+check('an existing v2 save wins over stale v1 keys (migration runs once)', () => dual.run('booted === true && coins === 999'));
+
+// resilience: corrupt saves never crash the boot
+const cor1 = makeGame({ 'skystack-save': '{oops', 'skystack-coins': '77' });
+check('corrupt v2 JSON: boots and re-migrates from v1', () => cor1.run('booted === true && coins === 77'));
+const cor2 = makeGame({ 'skystack-save': '42', 'skystack-coins': '88' });
+check('wrong-shape v2 save: boots and re-migrates from v1', () => cor2.run('booted === true && coins === 88'));
+const cor3 = makeGame({ 'skystack-coins': '{bad', 'skystack-best': '555' });
+check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted === true && coins === 0 && best === 555'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v63', () => /const CACHE = 'skystack-v63'/.test(sw));
+check('sw.js cache bumped to v64', () => /const CACHE = 'skystack-v64'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

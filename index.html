@@ -84,9 +84,44 @@ let deferredPrompt = null;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; });
 addEventListener('appinstalled', () => { deferredPrompt = null; });
 
+// ---------- save schema v2 ----------
+// One versioned object 'skystack-save' = { version, data } replaces the v1 per-key saves.
+// First boot migrates every v1 key into data (existing players keep all progress); the v1
+// keys are left untouched as a frozen backup so rolling back to v63 stays safe.
+const SAVE_KEY = 'skystack-save';
+const SAVE_VER = 2;
+const V1_KEYS = ['skystack-coins','skystack-skins','skystack-skin','skystack-mode','skystack-modebests',
+  'skystack-daily','skystack-stats','skystack-lv','skystack-best','skystack-height','skystack-tiers',
+  'skystack-levelstars','skystack-missions','skystack-skill','skystack-ach','skystack-tut',
+  'skystack-mute','skystack-music','skystack-hapt'];
+function loadSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw !== null) {
+      const s = JSON.parse(raw);
+      if (s && typeof s === 'object' && typeof s.version === 'number' && s.data && typeof s.data === 'object') return s;
+    }
+  } catch (e) {}
+  const s = { version: SAVE_VER, data: {} };
+  for (const k of V1_KEYS) {
+    try { const v = localStorage.getItem(k); if (v !== null) s.data[k] = JSON.parse(v); } catch (e) {}
+  }
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) {}
+  return s;
+}
+const SAVE = loadSave();
+// get/set keep v1 semantics: every get is an independent copy (JSON round-trip), so caller
+// mutations never leak into the save; set persists the whole object (quota errors swallowed).
 const store = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  get(k, d) {
+    if (!Object.prototype.hasOwnProperty.call(SAVE.data, k)) return d;
+    const v = SAVE.data[k];
+    return (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : v;
+  },
+  set(k, v) {
+    try { SAVE.data[k] = (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : v; } catch (e) { return; }
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) {}
+  }
 };
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 let rnd = Math.random;
