@@ -1832,6 +1832,65 @@ function cloudDensityAt(A) {
   if (A < s1)       return 0.28 * (1 - (A - (j1 - 10)) / (s1 - (j1 - 10)));            // sparse high cirrus
   return 0;
 }
+// One continuous final-act profile, anchored to the authored tier thresholds. Earth is first
+// glimpsed while leaving the atmosphere, dominates low orbit, then falls away as restrained
+// gold fragments and the distant summit world take over. Nothing here changes collision or
+// camera state; renderers consume these stable 0..1 values only.
+function finalJourneyAt(A) {
+  const space0 = TIERS[7].n, orbit0 = TIERS[8].n, stars0 = TIERS[9].n, gateA = TIERS[10].n;
+  const earthIn = clamp((A - (space0 + 16)) / Math.max(1, orbit0 - space0 - 16), 0, 1);
+  const earthOut = clamp((stars0 + 42 - A) / 62, 0, 1);
+  const gold = clamp((A - (orbit0 + 44)) / Math.max(1, stars0 - (orbit0 + 44)), 0, 1);
+  const summit = clamp((A - stars0) / Math.max(1, gateA - stars0), 0, 1);
+  return { earth: earthIn * earthOut, gold, summit, gateA };
+}
+function drawEarthLimb(A, a) {
+  const q = finalJourneyAt(A), vis = q.earth * a; if (vis <= 0.01) return;
+  const rise = clamp((A - TIERS[7].n) / Math.max(1, TIERS[8].n - TIERS[7].n), 0, 1);
+  const recede = clamp((A - TIERS[8].n) / Math.max(1, TIERS[9].n - TIERS[8].n), 0, 1);
+  const horizon = Math.round(lerp(H*.92, H*.58, rise) + recede*H*.36);
+  for (let x = 0; x < W; x += 2) {
+    const t = (x - W/2)/W, top = horizon + Math.round(t*t*(78 + recede*34));
+    if (top >= H) continue;
+    ctx.globalAlpha = .58*vis; ctx.fillStyle = '#102D58'; ctx.fillRect(x, top, 2, H-top);
+    ctx.globalAlpha = .52*vis; ctx.fillStyle = '#245892'; ctx.fillRect(x, top, 2, 3);
+    ctx.globalAlpha = .32*vis; ctx.fillStyle = '#86BDF4'; ctx.fillRect(x, top-3, 2, 3);
+  }
+  ctx.globalAlpha = .34*vis;
+  for (let k = 0; k < 5; k++) { const cx = Math.round(bhash(k*19+7)*W), t = (cx-W/2)/W, top = horizon + Math.round(t*t*(78+recede*34));
+    if (top < H-3) pixDisc(cx, top + 11 + k*5, 6 + (k%3)*3, k&1 ? '#1D4778' : '#286044'); }
+  ctx.globalAlpha = 1;
+}
+function drawGoldFragments(A, a, ph) {
+  const q = finalJourneyAt(A), amount = q.gold * a; if (amount <= 0.01) return;
+  const count = 4 + Math.round(10*q.summit);
+  for (let k = 0; k < count; k++) {
+    const side = k&1, lane = 20 + bhash(k*37+11)*Math.max(16, W*.22), x = Math.round(side ? W-lane : lane);
+    const y = Math.round(18 + bhash(k*53+17)*(H-36) + (reduceMotion ? 0 : Math.sin(ph*.018+k)*3));
+    const tw = reduceMotion ? .72 : .45 + .4*(.5+.5*Math.sin(ph*.07+k*1.7));
+    ctx.globalAlpha = amount*tw; ctx.fillStyle = k%3 ? '#D9A938' : '#FFF0A8';
+    ctx.fillRect(x, y-2, 2, 5); ctx.fillRect(x-2, y, 5, 2); ctx.fillStyle = '#FFF8D8'; ctx.fillRect(x, y, 1, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+// The summit is a real world-coordinate landmark at 540 blocks. Its pillars stay at the far
+// sides and its bridge is translucent whenever it crosses the stacking lane.
+function drawFinalGate(cy, a, ph) {
+  const A = screenA(cy), q = finalJourneyAt(A), gy = Math.round(GROUND_Y - q.gateA*BH - cy);
+  if (gy < -92 || gy > H + 44) return;
+  const lx = Math.round(W*.13), rx = Math.round(W*.87), top = gy-54, pulse = reduceMotion ? .72 : .62+.18*Math.sin(ph*.05);
+  ctx.globalAlpha = .10*a*pulse; pixDisc(Math.round(W/2), gy-30, Math.round(W*.34), '#D7A52E');
+  ctx.globalAlpha = .72*a; ctx.fillStyle = '#5C4213';
+  ctx.fillRect(lx-7, top+10, 14, 57); ctx.fillRect(rx-7, top+10, 14, 57);
+  ctx.fillStyle = '#B98524'; ctx.fillRect(lx-5, top+8, 10, 58); ctx.fillRect(rx-5, top+8, 10, 58);
+  ctx.fillStyle = '#F0C85C'; ctx.fillRect(lx-3, top+10, 2, 52); ctx.fillRect(rx-3, top+10, 2, 52);
+  ctx.fillStyle = '#8B641C';
+  for (let y = top+16; y < gy+8; y += 10) { ctx.fillRect(lx-7, y, 14, 2); ctx.fillRect(rx-7, y, 14, 2); }
+  ctx.globalAlpha = .48*a; ctx.fillStyle = '#D6A83C'; ctx.fillRect(lx, top, rx-lx, 7);
+  ctx.globalAlpha = .72*a; ctx.fillStyle = '#FFE28A'; ctx.fillRect(lx+5, top+2, rx-lx-10, 2);
+  for (let k = 0; k < 5; k++) { const sx = Math.round(lerp(lx+12,rx-12,k/4)); ctx.globalAlpha = a*(reduceMotion?.65:.42+.35*(.5+.5*Math.sin(ph*.08+k))); ctx.fillStyle='#FFF6C8'; ctx.fillRect(sx-1,top-2,3,3); }
+  ctx.globalAlpha = 1;
+}
 function drawCloudNineBg(cy, a, ph) {   // fluffy animated cloud banks at two depths + soft sun shafts
   const A = screenA(cy), dens = cloudDensityAt(A);
   const c0 = TIERS[3].n, c1 = TIERS[4].n;
@@ -1926,7 +1985,8 @@ function drawAuroraBg(cy, a, ph) {   // bold waving aurora curtains + big floati
     ctx.globalAlpha = .6*a; ctx.fillStyle = '#FFFFFF'; ctx.fillRect(cx, cyy-2, 1, 4);
   }
 }
-function drawSpaceBg(cy, a, ph) {   // deep cosmos — colour nebulae, spiral galaxies + drifting asteroids
+function drawSpaceBg(cy, a, ph) {   // deep cosmos — the last atmosphere gives way to galaxies and a first Earth glimpse
+  const A = screenA(cy), q = finalJourneyAt(A);
   const ns = cy*.16, NP = 360, noff = ((ns % NP) + NP) % NP;                            // soft colour nebula clouds (depth + richness)
   for (let y = -noff - NP; y < H + NP; y += NP) {
     const row = Math.round((y+ns)/NP), nx = Math.round(bhash(row*11)*W), ny = Math.round(y + bhash(row*17)*80), hue = row&1;
@@ -1944,32 +2004,28 @@ function drawSpaceBg(cy, a, ph) {   // deep cosmos — colour nebulae, spiral ga
   for (let y = -aoff; y < H; y += AP) { const row = Math.round((y+as)/AP), ax = Math.round(bhash(row*3+1)*W + (reduceMotion?0:Math.sin(ph*.02+row)*6)), ay = Math.round(y);
     ctx.globalAlpha = .5*a; pixDisc(ax, ay, 3, '#5A5468'); ctx.fillStyle = '#3A3648'; ctx.fillRect(ax-1, ay, 2, 1); ctx.fillRect(ax+1, ay-1, 1, 1);
   }
+  drawEarthLimb(A, a);
+  if (q.gold > 0) drawGoldFragments(A, a*.35, ph);
 }
 function drawOrbitBg(cy, a, ph) {   // low orbit — a huge planet limb below, satellites + debris crossing above it
-  const horizon = Math.round(H*0.60 + clamp((cy*.05) % 60, -30, 60));                 // planet curve drifts gently as you climb
-  for (let x = 0; x < W; x += 2) { const t = (x - W/2)/W, top = horizon + Math.round(t*t*90);
-    ctx.globalAlpha = .55*a; ctx.fillStyle = '#183566'; ctx.fillRect(x, top, 2, H-top);
-    ctx.globalAlpha = .55*a; ctx.fillStyle = '#2E5A9E'; ctx.fillRect(x, top, 2, 3);                 // sunlit surface
-    ctx.globalAlpha = .22*a; ctx.fillStyle = '#8FC0FF'; ctx.fillRect(x, top-3, 2, 3);               // atmosphere glow
-  }
-  ctx.globalAlpha = .4*a; ctx.fillStyle = '#22508A';                                   // continents
-  for (let k = 0; k < 4; k++) { const cx = Math.round(bhash(k*13)*W), t = (cx - W/2)/W, top = horizon + Math.round(t*t*90); pixDisc(cx, top + 14 + (k*7), 8 + (k&3), '#22508A'); }
+  const A = screenA(cy), q = finalJourneyAt(A);
+  drawEarthLimb(A, a);
   const ss = cy*.8, SP = 140, soff = ((ss % SP) + SP) % SP;                            // satellites + debris streaking across
-  for (let y = -soff; y < horizon; y += SP) {
+  for (let y = -soff; y < H*.72; y += SP) {
     const row = Math.round((y+ss)/SP), dir = (row & 1) ? 1 : -1, prog = reduceMotion ? bhash(row*3) : ((ph*.6 + row*90) % (W+80))/(W+80);
     const sx = Math.round(dir > 0 ? -40 + prog*(W+80) : W+40 - prog*(W+80)), sy = Math.round(y);
     ctx.globalAlpha = .7*a; ctx.fillStyle = '#C7CFE6'; ctx.fillRect(sx-1, sy-1, 3, 3);
     ctx.fillStyle = '#8FB8FF'; ctx.fillRect(sx-6, sy, 4, 2); ctx.fillRect(sx+3, sy, 4, 2);
   }
+  if (q.gold > 0) drawGoldFragments(A, a*.62, ph);
+  const planet = clamp((A - (TIERS[8].n + 54)) / 36, 0, 1);                           // distant summit world arrives late in orbit
+  if (planet > 0) { const px=Math.round(W*.18), py=Math.round(H*.22);
+    ctx.globalAlpha=.34*a*planet; pixDisc(px,py,13,'#6B4B8F'); pixDisc(px-3,py-3,9,'#A578C7');
+    ctx.fillStyle='#D9B66C'; ctx.fillRect(px-21,py,15,2); ctx.fillRect(px+8,py,15,2); }
 }
 function drawStarsBg(cy, a, ph) {   // the summit — a radiant golden gate, huge twinkling stars, a ringed planet
-  skyWash([[0,'rgba(150,100,26,0.55)'],[0.4,'rgba(70,44,14,0)'],[1,'rgba(0,0,0,0)']], a);   // warm golden glow spilling from the gate up top
-  const gx = Math.round(W/2), gy = 46;                                                 // radiant golden gate — glowing orb, halo, light spokes
-  ctx.globalAlpha = .10*a; pixDisc(gx, gy, 34, '#6A4A12');
-  ctx.globalAlpha = .16*a; pixDisc(gx, gy, 22, '#9A6E1A');
-  if (!reduceMotion) { ctx.fillStyle = '#FFE9A0'; for (let k = 0; k < 8; k++) { const ang = k*0.785 + ph*.01; ctx.globalAlpha = (.10 + .06*Math.sin(ph*.06 + k))*a;
-    for (let d = 10; d < 34; d += 3) ctx.fillRect(Math.round(gx + Math.cos(ang)*d), Math.round(gy + Math.sin(ang)*d), 1, 1); } }
-  ctx.globalAlpha = .55*a; pixDisc(gx, gy, 8, '#FFE28A'); ctx.globalAlpha = .8*a; pixDisc(gx, gy, 4, '#FFF6E8');
+  const A = screenA(cy), q = finalJourneyAt(A);
+  skyWash([[0,'rgba(150,100,26,'+(0.12+q.summit*.28)+')'],[0.48,'rgba(70,44,14,0)'],[1,'rgba(0,0,0,0)']], a);
   const s = cy*.4, P = 168, off = ((s % P) + P) % P;                                    // huge twinkling 4-point stars
   for (let y = -off; y < H; y += P) { const row = Math.round((y+s)/P), sx = Math.round(bhash(row*7)*W), sy = Math.round(y + bhash(row*3)*50), tw = reduceMotion ? 1 : Math.sin(ph*.06 + row)*.5 + .5;
     ctx.globalAlpha = (.4 + .5*tw)*a; ctx.fillStyle = '#FFF0C0'; ctx.fillRect(sx-1, sy-6, 2, 13); ctx.fillRect(sx-6, sy-1, 13, 2); ctx.fillRect(sx-3, sy-3, 7, 5);
@@ -1980,6 +2036,8 @@ function drawStarsBg(cy, a, ph) {   // the summit — a radiant golden gate, hug
     ctx.globalAlpha = .6*a; pixDisc(px, py, 10, '#D8A63E'); pixDisc(px-2, py-2, 7, '#F2C766');
     ctx.globalAlpha = .5*a; ctx.fillStyle = 'rgba(255,246,232,0.85)'; ctx.fillRect(px-16, py, 12, 1); ctx.fillRect(px+6, py, 12, 1); ctx.fillRect(px-15, py-1, 10, 1); ctx.fillRect(px+7, py+1, 10, 1);
   }
+  drawGoldFragments(A, a, ph);
+  drawFinalGate(cy, a, ph);
 }
 
 // ---- animated per-tier weather (screen-anchored particles) ----

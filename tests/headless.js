@@ -782,6 +782,31 @@ check('stratosphere aircraft stay in the lower half of the tier', () =>
 check('the aurora glow dies away into space over the last blocks of the tier', () =>
   /const glow = clamp\(\(TIERS\[7\]\.n - A\) \/ 12, 0, 1\)/.test(src));
 
+// ---------- v75: Orbit + The Stars / Final Gate continuity ----------
+const fw2 = makeGame({ 'skystack-height': '600' });
+fw2.run('mode = "endless"; resetRun(); state = "playing";');
+check('finalJourneyAt is threshold-anchored and progresses Earth -> gold -> summit', () => fw2.run(
+  '(() => { const s=TIERS[7].n,o=TIERS[8].n,t=TIERS[9].n,g=TIERS[10].n;' +
+  'const a=finalJourneyAt(s), b=finalJourneyAt(o), c=finalJourneyAt(t), d=finalJourneyAt(g);' +
+  'return a.earth===0 && b.earth>0.7 && c.gold>0.8 && c.summit===0 && d.summit===1 && d.gateA===g; })()'));
+check('final journey factors stay deterministic and inside 0..1 across the whole final act', () => fw2.run(
+  '(() => { for(let A=TIERS[7].n-20;A<=TIERS[10].n+20;A++){const q=finalJourneyAt(A),q2=finalJourneyAt(A);' +
+  'if(JSON.stringify(q)!==JSON.stringify(q2)||q.earth<0||q.earth>1||q.gold<0||q.gold>1||q.summit<0||q.summit>1)return false;}return true;})()'));
+check('Orbit and Stars backdrops render across the final climb without throwing', () => {
+  fw2.run('for(let A=210;A<=570;A+=6){const cy2=GROUND_Y-A*BH-(H-100);drawSpaceBg(cy2,1,44);drawOrbitBg(cy2,1,44);drawStarsBg(cy2,1,44);}');
+  return true;
+});
+check('reduced-motion final backdrops render statically without throwing', () => {
+  const rm4 = makeGame({ 'skystack-height': '600' }, true);
+  rm4.run('for(let A=220;A<=560;A+=12){const cy2=GROUND_Y-A*BH-(H-100);drawSpaceBg(cy2,1,0);drawOrbitBg(cy2,1,0);drawStarsBg(cy2,1,0);}');
+  return true;
+});
+check('final gate uses the summit world coordinate and keeps its pillars on the side walls', () =>
+  /function drawFinalGate[\s\S]{0,220}GROUND_Y - q\.gateA\*BH - cy/.test(src) &&
+  /const lx = Math\.round\(W\*\.13\), rx = Math\.round\(W\*\.87\)/.test(src));
+check('Orbit Earth no longer uses a repeating camera modulo', () =>
+  !/function drawOrbitBg[\s\S]{0,240}\(cy\*\.05\) % 60/.test(src));
+
 // ---------- save schema v2 + migration (v64) ----------
 // fresh profile: a valid v2 container is created, and nothing is ever written to v1 keys
 const sv = makeGame();
@@ -859,7 +884,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v74', () => /const CACHE = 'skystack-v74'/.test(sw));
+check('sw.js cache bumped to v75', () => /const CACHE = 'skystack-v75'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
