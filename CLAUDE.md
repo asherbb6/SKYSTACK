@@ -20,6 +20,35 @@ At the start of every session that will touch SKYSTACK:
 7. Inspect THIS repository's real state before making changes: current branch, HEAD commit, `git status`, and working-tree diff.
 8. Truth rules: this repository and its git history are the factual source of CODE state; the vault is the source of decisions, goals, rejected approaches, visual direction, and the exact continuation point. Where they disagree, trust the repository and resolve the vault afterwards.
 
+## Active-session checkpoint — WHILE material work is in progress (do not wait for the end)
+
+Continuity must not depend on reaching the final response — a session can be cut off at any time
+(usage limit, crash, disconnect). Preserve context continuously in the vault so any later Claude or
+Codex session can resume exactly where this one stopped.
+
+1. When material work BEGINS (anything beyond a trivial one-liner), create
+   `AI-CONTEXT/PROJECTS/SKYSTACK/RECOVERY_CHECKPOINT.md`, commit it, and push AI-CONTEXT `main`
+   BEFORE making large edits. It records, at minimum:
+   - the objective;
+   - work completed so far;
+   - files and functions being changed (and any current uncommitted SKYSTACK diff);
+   - the confirmed SKYSTACK repo state (branch, HEAD, `git status`);
+   - tests/commands run and their results;
+   - unresolved / remaining work;
+   - the EXACT next action.
+2. Update and push that checkpoint again after each meaningful milestone — a working increment, a
+   passing test run, a SKYSTACK commit, or a deploy. Keep it current; never let it go stale mid-task.
+3. Recovering interrupted work: before changing anything, inspect the REAL SKYSTACK repo — `git status`,
+   the full working-tree `git diff`, branch and HEAD — and treat any uncommitted diff as valuable
+   unfinished work to understand and finish, not to discard. The repo + its git history are the truth
+   for code state (see bootstrap truth rules); the checkpoint tells you the intent and the next action.
+4. Never commit or push BROKEN or untested SKYSTACK code just to checkpoint. Checkpoint progress lives
+   in the AI-CONTEXT vault, not in half-finished `index.html` commits. Push SKYSTACK `main` only when the
+   game parses, `node tests/headless.js` passes, and the deploy rules below are met — because pushing
+   `main` deploys. When in doubt, checkpoint to the vault and leave SKYSTACK code uncommitted locally.
+5. At close-out, fold the checkpoint into the state/handoff/session-log and delete
+   `RECOVERY_CHECKPOINT.md` (its presence signals that a recovery is still in progress).
+
 ## Continuity close-out — before declaring material SKYSTACK work complete
 
 1. Update `AI-CONTEXT/PROJECTS/SKYSTACK/CURRENT_STATE.md` and replace `CURRENT_HANDOFF.md` with a precise continuation handoff.
