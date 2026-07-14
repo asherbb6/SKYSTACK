@@ -595,6 +595,15 @@ const UI_HEX = () => (EV && EV.pal) ? EV.pal.ui : '#FFD75E';
 const PLAY_HEX = () => (EV && EV.pal) ? EV.pal.play : '#62E8B5';
 const uiA = a => { const c = hexRGB(UI_HEX()); return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; };
 const playA = a => { const c = hexRGB(PLAY_HEX()); return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; };
+// Visual-production foundation (v86). Mechanics stay in their existing registries; this frozen
+// canvas system owns only presentation rhythm, surfaces, hierarchy, and motion timing.
+const VISUAL_SYSTEM = deepFreeze({
+  palette:{ink:'#0B0E1A',cave:'#17151D',surface:'#24212B',paper:'#FFF6E8',muted:'#A9A1A5',gold:'#FFD75E',mint:'#62E8B5'},
+  spacing:[4,8,12,16,24,32],
+  type:{micro:1,title:4},
+  frame:{cut:3,shadow:2},
+  motion:{quick:12,reveal:24,settle:38,reducedStatic:true}
+});
 
 // decorations: falling pixel-art sprites + party lights + optional firework bursts (behind all UI)
 // sprite rects: [dx, dy, w, h, color] — null color takes the flake's color from EV.cols
@@ -1782,7 +1791,7 @@ function shareScore() {
 
 // ---------- layout constants ----------
 const PAD = 6;
-const NAV_H = 20;
+const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN;
@@ -1798,8 +1807,8 @@ function relayout() {
   // home: the campaign is the hero — one big next-level card with PLAY inside,
   // MAP + EXTRAS demoted to a secondary row underneath it
   const heroW = Math.min(W - 24, 240);
-  HERO_CARD = { x: Math.round((W-heroW)/2), y:62, w:heroW, h:76 };
-  PLAY_BTN = { x: HERO_CARD.x+12, y: HERO_CARD.y+46, w: heroW-24, h:22 };
+  HERO_CARD = { x: Math.round((W-heroW)/2), y:62, w:heroW, h:82 };
+  PLAY_BTN = { x: HERO_CARD.x+12, y: HERO_CARD.y+56, w: heroW-24, h:20 };
   const halfW = Math.floor((heroW - 6) / 2);
   MAP_BTN  = { x: HERO_CARD.x, y: HERO_CARD.y + HERO_CARD.h + 6, w: halfW, h:18 };
   MODE_BTN = { x: HERO_CARD.x + heroW - halfW, y: MAP_BTN.y, w: halfW, h:18 };
@@ -2300,13 +2309,51 @@ function panel(x, y, w, h) {
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(x, y, w, h);
   ctx.fillStyle = uiA(0.4); ctx.fillRect(x, y, w, 1);
 }
+// Stepped frame: clipped corners, two-depth surface, and inset keyline. It reads as built pixel
+// craft rather than a rounded web card and becomes the shared grammar for production UI surfaces.
+function pixelFrame(x,y,w,h,fill,accent,strong) {
+  const cut=VISUAL_SYSTEM.frame.cut,shadow=VISUAL_SYSTEM.frame.shadow;
+  ctx.fillStyle='rgba(0,0,0,'+(strong?'.42':'.30')+')';
+  ctx.fillRect(x+cut,y+h,w-cut*2,shadow);ctx.fillRect(x+w,y+cut,shadow,h-cut*2);
+  ctx.fillStyle=fill||'rgba(11,14,26,0.72)';
+  ctx.fillRect(x+cut,y,w-cut*2,h);ctx.fillRect(x,y+cut,w,h-cut*2);
+  ctx.fillStyle='rgba(255,246,232,'+(strong?'.20':'.12')+')';
+  ctx.fillRect(x+cut,y,w-cut*2,1);ctx.fillRect(x,y+cut,1,h-cut*2);
+  ctx.fillStyle='rgba(0,0,0,0.32)';
+  ctx.fillRect(x+cut,y+h-1,w-cut*2,1);ctx.fillRect(x+w-1,y+cut,1,h-cut*2);
+  if(accent){ctx.fillStyle=accent;ctx.fillRect(x,y+cut,2,h-cut*2);ctx.fillRect(x+cut,y,w-cut,1);}
+}
+function pixelButton(r,label,primary) {
+  const accent=primary?PLAY_HEX():UI_HEX(),pulse=primary?beatPulse():0;
+  pixelFrame(r.x,r.y,r.w,r.h,primary?playA(.68+pulse*.22):'rgba(11,14,26,0.62)',accent,primary);
+  const sc=primary&&label.length*12-2<=r.w-12?2:1;
+  txt(label,r.x+r.w/2,r.y+Math.floor((r.h-7*sc)/2),sc,primary?'#08301F':VISUAL_SYSTEM.palette.paper,'center');
+}
+function drawNavGlyph(id,cx,y,col) {
+  ctx.fillStyle=col;
+  if(id==='home') { ctx.fillRect(cx-5,y+4,11,2);ctx.fillRect(cx-3,y+2,7,2);ctx.fillRect(cx-1,y,3,2); }
+  else if(id==='shop') { ctx.fillRect(cx-4,y+1,9,7);ctx.fillStyle=VISUAL_SYSTEM.palette.ink;ctx.fillRect(cx-2,y+3,5,1);ctx.fillRect(cx,y+1,1,7); }
+  else { ctx.fillRect(cx-3,y+1,7,6);ctx.fillRect(cx-2,y,5,8);ctx.fillStyle=VISUAL_SYSTEM.palette.ink;ctx.fillRect(cx-1,y+2,1,2);ctx.fillRect(cx+2,y+2,1,2); }
+}
+function drawJourneyRail(active) {
+  const top=22,bottom=Math.max(top+44,MISS_PANEL.y-8),span=bottom-top,gap=2;
+  ctx.fillStyle='rgba(11,14,26,0.48)';ctx.fillRect(4,top-3,8,span+6);
+  for(let i=0;i<TIERS.length;i++){
+    const y=top+Math.round(i*span/TIERS.length),h=Math.max(2,Math.round(span/TIERS.length)-gap),on=i===active,done=i<active;
+    ctx.globalAlpha = on ? 1 : (done ? .55 : .18); ctx.fillStyle=TIERS[i].c;ctx.fillRect(on?4:6,y,on?8:4,h);
+  }
+  ctx.globalAlpha=1;
+}
 function drawNav() {
-  ctx.fillStyle = 'rgba(11,14,26,0.58)'; ctx.fillRect(0, NAV_Y, W, NAV_H);
-  ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, NAV_Y, W, 1);
+  ctx.fillStyle = 'rgba(7,8,15,0.90)'; ctx.fillRect(0, NAV_Y, W, NAV_H);
+  ctx.fillStyle = 'rgba(255,246,232,0.16)'; ctx.fillRect(0, NAV_Y, W, 1);
   for (const t of NAV_TABS) {
     const active = state === t.id;
-    if (active) { ctx.fillStyle = UI_HEX(); ctx.fillRect(t.x + 10, NAV_Y, t.w - 20, 2); }
-    txt(t.label, t.x + t.w/2, NAV_Y + 7, 1, active ? UI_HEX() : 'rgba(255,246,232,0.55)', 'center');
+    const col=active?UI_HEX():'rgba(255,246,232,0.46)',cx=Math.round(t.x+t.w/2);
+    if(active){ctx.fillStyle=uiA(.12);ctx.fillRect(t.x+3,NAV_Y+2,t.w-6,NAV_H-3);ctx.fillStyle=UI_HEX();ctx.fillRect(t.x+12,NAV_Y,t.w-24,2);ctx.fillRect(cx-7,NAV_Y+21,14,1);}
+    drawNavGlyph(t.id,cx,NAV_Y+3,col);
+    txt(t.label,cx,NAV_Y+14,1,col,'center');
+    if(t!==NAV_TABS[NAV_TABS.length-1]){ctx.fillStyle='rgba(255,246,232,0.07)';ctx.fillRect(t.x+t.w-1,NAV_Y+5,1,NAV_H-10);}
   }
 }
 function topBar(title) {
@@ -3894,48 +3941,47 @@ function titleShine(str, y, scale) {
 function renderHome() {
   const shadow = 'rgba(0,0,0,0.35)';
   topBar('');
-  const bob = Math.sin(tick*.04)*2;
-  txt('SKYSTACK', W/2+1, 27+bob, 3, shadow, 'center');
-  txt('SKYSTACK', W/2, 26+bob, 3, '#FFF6E8', 'center');
-  titleShine('SKYSTACK', 26+bob, 3);
+  const nl = Math.min(prog, TIERS.length - 1), nt = TIERS[nl], conquered = prog >= TIERS.length;
+  drawJourneyRail(nl);
+  const bob = reduceMotion?0:Math.sin(tick*.04)*1.5,titleScale=W>=220?4:3,titleY=titleScale===4?18:26;
+  // A quiet dark mast behind the wordmark keeps it authored and legible through every moving sky.
+  ctx.fillStyle='rgba(11,14,26,0.30)';ctx.fillRect(Math.round(W/2-(titleScale===4?102:78)),titleY-5, titleScale===4?204:156,36);
+  ctx.fillStyle=nt.c;ctx.fillRect(Math.round(W/2-18),titleY-8,36,1);
+  txt('SKYSTACK', W/2+1, titleY+1+bob, titleScale, shadow, 'center');
+  txt('SKYSTACK', W/2, titleY+bob, titleScale, VISUAL_SYSTEM.palette.paper, 'center');
+  titleShine('SKYSTACK', titleY+bob, titleScale);
   const tag = EV ? (Math.floor(tick/180)%2 ? '+25% COINS ALL WEEK' : EV.name) : 'STACK TO THE STARS';
   if (EV) {   // dark ribbon so the event title reads on any sky
     const tw = tag.length * 6 - 1;
-    ctx.fillStyle = 'rgba(11,14,26,0.66)'; ctx.fillRect(Math.round(W/2 - tw/2) - 5, 49+bob, tw + 10, 12);
-    ctx.fillStyle = uiA(0.85); ctx.fillRect(Math.round(W/2 - tw/2) - 5, 49+bob, tw + 10, 1);
-    ctx.fillStyle = uiA(0.85); ctx.fillRect(Math.round(W/2 - tw/2) - 5, 60+bob, tw + 10, 1);
+    ctx.fillStyle = 'rgba(11,14,26,0.66)'; ctx.fillRect(Math.round(W/2 - tw/2) - 5, 50+bob, tw + 10, 11);
+    ctx.fillStyle = uiA(0.85); ctx.fillRect(Math.round(W/2 - tw/2) - 5, 50+bob, tw + 10, 1);
   }
-  txt(tag, W/2, 52+bob, 1, EV ? EV.acc : '#FFD75E', 'center');
+  txt(tag, W/2, 52+bob, 1, EV ? EV.acc : VISUAL_SYSTEM.palette.gold, 'center');
 
   // the campaign hero card: the whole card is the PLAY target (tap anywhere on it)
-  const nl = Math.min(prog, TIERS.length - 1), nt = TIERS[nl];
-  const conquered = prog >= TIERS.length;
   const hc = HERO_CARD;
-  plate3D(hc.x, hc.y, hc.w, hc.h, 'rgba(11,14,26,0.55)', nt.c);
-  txt('THE CLIMB', W/2, hc.y + 6, 1, 'rgba(255,246,232,0.5)', 'center');
+  pixelFrame(hc.x,hc.y,hc.w,hc.h,'rgba(17,17,25,0.82)',nt.c,true);
+  ctx.fillStyle=nt.c;ctx.globalAlpha=.12;ctx.fillRect(hc.x+3,hc.y+3,hc.w-6,21);ctx.globalAlpha=1;
+  txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, hc.y + 7, 1, 'rgba(255,246,232,0.55)', 'left');
+  txt((nl+1)+' / '+TIERS.length,hc.x+hc.w-8,hc.y+7,1,nt.c,'right');
   if (conquered) {
-    txt('SKY CONQUERED!', W/2, hc.y + 15, 1, '#FFD75E', 'center');
-    txt('REPLAY ANY LEVEL ON THE MAP', W/2, hc.y + 24, 1, 'rgba(255,246,232,0.6)', 'center');
+    txt('SKY CONQUERED!', W/2, hc.y + 18, 2, VISUAL_SYSTEM.palette.gold, 'center');
+    txt('REPLAY THE JOURNEY', W/2, hc.y + 36, 1, 'rgba(255,246,232,0.6)', 'center');
   } else {
-    txt('LEVEL ' + (nl+1) + ' - ' + nt.name, W/2, hc.y + 15, 1, nt.c, 'center');
+    txt(nt.name, W/2, hc.y + 18, 2, nt.c, 'center');
     const starSum = levelStars.reduce((a,b)=>a+(b||0),0);
-    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? ' - STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, hc.y + 24, 1, 'rgba(255,246,232,0.6)', 'center');
+    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, hc.y + 36, 1, 'rgba(255,246,232,0.62)', 'center');
   }
   // this level's stars flanked by its biome art
-  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, hc.y + 37, 1, k < (levelStars[nl] || 0));
-  drawStageDecoScaled(nl, hc.x + 18, hc.y + 37, 2);
-  drawStageDecoScaled(nl, hc.x + hc.w - 18, hc.y + 37, 2);
+  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, hc.y + 48, 1, k < (levelStars[nl] || 0));
+  drawStageDecoScaled(nl, hc.x + 18, hc.y + 47, 2);
+  drawStageDecoScaled(nl, hc.x + hc.w - 18, hc.y + 47, 2);
 
-  const pulse = beatPulse();   // PLAY breathes on the music's bar
-  plate3D(PLAY_BTN.x, PLAY_BTN.y, PLAY_BTN.w, PLAY_BTN.h, playA(.55+pulse*.35));
-  txt('PLAY', W/2, PLAY_BTN.y+4, 2, EV ? '#141414' : '#08301F', 'center');
+  pixelButton(PLAY_BTN,conquered?'REPLAY':'BEGIN CLIMB',true);
 
   // secondary row: SKY MAP + EXTRAS live under the climb, not above it
-  plate3D(MAP_BTN.x, MAP_BTN.y, MAP_BTN.w, MAP_BTN.h, 'rgba(0,0,0,0.32)', uiA(0.6));
-  txt('SKY MAP', MAP_BTN.x + MAP_BTN.w/2, MAP_BTN.y + 6, 1, UI_HEX(), 'center');
-  plate3D(MODE_BTN.x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h, 'rgba(0,0,0,0.32)', uiA(0.6));
-  txt('EXTRA MODES', MODE_BTN.x + MODE_BTN.w/2 - 3, MODE_BTN.y + 6, 1, UI_HEX(), 'center');
-  txt('>', MODE_BTN.x + MODE_BTN.w - 8, MODE_BTN.y + 6, 1, 'rgba(255,246,232,0.7)', 'left');
+  pixelButton(MAP_BTN,'SKY MAP',false);
+  pixelButton(MODE_BTN,'EXTRA MODES',false);
   // armed boosts indicator (centered icons under the secondary row)
   const armed = LOADOUT.filter(l => loadout[l.id]);
   if (armed.length && mode !== 'daily' && mode !== 'practice') {
@@ -3944,11 +3990,14 @@ function renderHome() {
     for (const a of armed) { drawIcon(a.id, ix, MODE_BTN.y + MODE_BTN.h + 6); ix += 12; }
   }
 
-  panel(MISS_PANEL.x, MISS_PANEL.y, MISS_PANEL.w, MISS_PANEL.h);
-  txt('MISSIONS', MISS_PANEL.x + 4, MISS_PANEL.y + 4, 1, UI_HEX(), 'left');
+  pixelFrame(MISS_PANEL.x,MISS_PANEL.y,MISS_PANEL.w,MISS_PANEL.h,'rgba(17,17,25,0.78)',UI_HEX(),false);
+  txt('CLIMB ORDERS', MISS_PANEL.x + 7, MISS_PANEL.y + 5, 1, UI_HEX(), 'left');
+  txt(missions.length+' ACTIVE',MISS_PANEL.x+MISS_PANEL.w-7,MISS_PANEL.y+5,1,'rgba(255,246,232,0.42)','right');
+  ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(MISS_PANEL.x+6,MISS_PANEL.y+14,MISS_PANEL.w-12,1);
   for (let i=0;i<missions.length;i++) {
-    const mm = missions[i], rowY = MISS_PANEL.y + 14 + i*10;
-    txt('* '+MDEF[mm.key].text(mm.target), MISS_PANEL.x + 4, rowY, 1, 'rgba(255,246,232,0.85)', 'left');
+    const mm = missions[i], rowY = MISS_PANEL.y + 17 + i*9;
+    ctx.fillStyle=i===0?UI_HEX():'rgba(255,246,232,0.28)';ctx.fillRect(MISS_PANEL.x+7,rowY+2,2,2);
+    txt(MDEF[mm.key].text(mm.target), MISS_PANEL.x + 13, rowY, 1, 'rgba(255,246,232,0.82)', 'left');
     drawCoin(MISS_PANEL.x + MISS_PANEL.w - 24, rowY - 1);
     txt(mm.reward, MISS_PANEL.x + MISS_PANEL.w - 4, rowY, 1, '#FFD75E', 'right');
   }

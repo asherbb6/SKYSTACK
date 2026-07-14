@@ -378,7 +378,7 @@ check('home: next-level card shows the next level', () => {
   home.run('mode = "endless"; state = "home";');
   home.run('var __texts = []; var __txt0 = txt; txt = function(t,...a){ __texts.push(String(t)); return __txt0(t,...a); };');
   home.run('renderHome()');
-  return home.run('__texts.some(t => t === ("LEVEL " + (prog+1) + " - " + TIERS[prog].name)) && __texts.some(t => t === "EXTRA MODES")');
+  return home.run('__texts.some(t => t === ("CHAPTER " + (prog+1))) && __texts.some(t => t === TIERS[prog].name) && __texts.some(t => t === "EXTRA MODES")');
 });
 check('home PLAY starts the next level', () => home.run(
   '(() => { const p = {x: PLAY_BTN.x + 5, y: PLAY_BTN.y + 5}; pos = () => p; pressDown({}); return state === "playing" && runLevel === prog && runLaunch === TIERS[prog-1].n; })()'));
@@ -1205,9 +1205,17 @@ check('S7 PWA shell lists real local assets and keeps explicit network-first off
 check('S7 removes the unused loadoutAllowed duplicate and keeps boostPermissions as the sole live owner', () =>
   !/loadoutAllowed/.test(src) && fresh.run('(() => { const c=createRunContext({mode:"endless",campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{shield:true},characterId:"aurora",characterMastery:{}});return c.boostPermissions.allowed&&c.boostSnapshot.shield&&c.loadoutSnapshot.shield&&!Object.prototype.hasOwnProperty.call(c,"loadoutAllowed"); })()'));
 
+// ---------- visual production foundation ----------
+check('visual production freezes a coherent canvas palette, rhythm, frame, type, and motion system', () => fresh.run(
+  'Object.isFrozen(VISUAL_SYSTEM)&&Object.isFrozen(VISUAL_SYSTEM.palette)&&Object.isFrozen(VISUAL_SYSTEM.spacing)&&Object.isFrozen(VISUAL_SYSTEM.motion)&&VISUAL_SYSTEM.palette.ink==="#0B0E1A"&&VISUAL_SYSTEM.spacing.join(",")==="4,8,12,16,24,32"&&VISUAL_SYSTEM.frame.cut===3&&VISUAL_SYSTEM.type.title===4&&VISUAL_SYSTEM.motion.reducedStatic'));
+check('production Home and stepped global navigation render safely across the locked viewport set', () => fresh.run(
+  '(() => { for(const [w,h] of [[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";prog=0;renderHome();drawNav();prog=TIERS.length;renderHome();if(NAV_H!==24||HERO_CARD.x<0||HERO_CARD.x+HERO_CARD.w>W||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y+MAP_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=NAV_Y)return false;}return true; })()'));
+check('production UI keeps presentation ownership separate from locked mechanics', () =>
+  /function pixelFrame\(/.test(src) && /function drawJourneyRail\(/.test(src) && /function drawNavGlyph\(/.test(src) && fresh.run('mechanicsLockReport().ready&&MECHANICS_LOCK_TARGETS.weeklySeeded===false'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v85', () => /const CACHE = 'skystack-v85'/.test(sw));
+check('sw.js cache bumped to v86', () => /const CACHE = 'skystack-v86'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
