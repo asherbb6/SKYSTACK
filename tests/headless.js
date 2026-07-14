@@ -92,7 +92,7 @@ check('TIERS names are the 11-stage continuous world', () => fresh.run(
 check('every tier has a theme color', () => fresh.run(`TIERS.every(t => /^#[0-9A-F]{6}$/i.test(t.c))`));
 check('fresh profile: prog=0, no active level', () => fresh.run('prog === 0 && runLevel === -1'));
 check('extras picker excludes the campaign mode', () => fresh.run(
-  `EXTRAS.length === 4 && !EXTRAS.some(m => m.id === 'level')`));
+  `EXTRAS.length === 5 && !EXTRAS.some(m => m.id === 'level') && EXTRAS.some(m => m.id === 'practice')`));
 check('skyMapNodes: 11 pts + start + gate', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.pts.length === 11 && L.start && L.gate; })()'));
 check('skyMapNodes: badge rows evenly spaced in altitude', () => fresh.run(
@@ -322,6 +322,38 @@ nx.run('state = "home"; mode = "time"; resetRun(); state = "playing"; gameOver("
 check('running out of time never offers revive', () => nx.run('reviveOffered === false'));
 nx.run('state = "home"; mode = "endless"; resetRun(); state = "playing"; gameOver("quit")');
 check('quitting never offers revive', () => nx.run('reviveOffered === false'));
+
+// ---------- v66: no-fail PRACTICE + guided onboarding ----------
+const pr = makeGame();
+pr.run('mode = "practice"; loadout = {shield:true,aura:true,slow:true}; resetRun(); state = "playing";');
+check('PRACTICE is no-fail, wind-free, and explicitly guided', () => pr.run(
+  'curMode().practice === true && curMode().fail === false && curMode().wind === false'));
+check('PRACTICE keeps maximum assist and never consumes equipped boosts', () => pr.run(
+  'assist === 0.85 && shield === 0 && auraBlocks === 0 && slowBlocks === 0'));
+check('PRACTICE schedules no pickups or balloons', () => pr.run(
+  '(() => { schedulePickups(); maybeSpawnBalloon(); return pickups.length === 0 && balloon === null; })()'));
+check('PRACTICE total miss is saved and the run continues', () => pr.run(
+  '(() => { const n = blocks.length; faller = {x:W+80,y:towerTopY()-BH,w:40,col:blockCol(n),golden:false}; slider=null; state="dropping"; land(); return state === "playing" && blocks.length === n+1 && slider !== null; })()'));
+check('PRACTICE auto-steadies a topple instead of ending the run', () => pr.run(
+  '(() => { balance = TOPPLE*3; const top=blocks[blocks.length-1]; faller={x:top.x,y:towerTopY()-BH,w:top.w,col:blockCol(blocks.length),golden:false}; slider=null; state="dropping"; land(); return state === "playing" && Math.abs(balance) < TOPPLE && slider !== null && floaters.some(f=>f.text==="STEADIED!"); })()'));
+check('PRACTICE never offers a revive', () => pr.run(
+  '(() => { gameOver("quit"); return reviveOffered === false; })()'));
+
+const prSafe = makeGame({ 'skystack-coins':'120', 'skystack-best':'900', 'skystack-height':'80', 'skystack-tiers':'2' });
+prSafe.run('mode="practice"; resetRun(); state="playing"; globalThis.__ps={coins,best,bestHeight,prog,games:stats.games,blocks:stats.blocks}; addCoins(50); score=9999; while(blocks.length<40) blocks.push({x:0,w:W,col:blockCol(blocks.length)}); tier=0; afterPlace({x:0,w:W,col:blockCol(40)},false,W/2); gameOver("quit");');
+check('PRACTICE cannot change coins, records, campaign unlocks, or lifetime stats', () => prSafe.run(
+  'coins===__ps.coins && best===__ps.best && bestHeight===__ps.bestHeight && prog===__ps.prog && stats.games===__ps.games && stats.blocks===__ps.blocks'));
+
+const tut = makeGame({ 'skystack-tut':'true' });
+tut.run('mode="practice"; resetRun();');
+check('PRACTICE replays onboarding even after the first-run tutorial was completed', () => tut.run('tutDone === true && tutStep === 0'));
+check('onboarding teaches drop, perfect, fever, supernova, balance, and Skybreak', () => tut.run(
+  '(() => { const s=TUT_LESSONS.map(x=>x.title+" "+x.body).join(" "); return /DROP/.test(s)&&/PERFECT/.test(s)&&/FEVER/.test(s)&&/SUPERNOVA/.test(s)&&/BALANCE/.test(s)&&/SKYBREAK/.test(s); })()'));
+check('onboarding advances deterministically and persists completion', () => {
+  tut.run('tutStep=1; advanceTutorial(2); advanceTutorial(3); advanceTutorial(5); advanceTutorial(8);');
+  return tut.run('tutStep === -1 && tutDone === true') && saved(tut, 'skystack-tut') === true;
+});
+check('PRACTICE lesson HUD renders without throwing', () => { tut.run('mode="practice"; resetRun(); state="playing"; renderHUD(blocks.length)'); return true; });
 
 // ---------- home screen ----------
 const home = makeGame({ 'skystack-height': '60' });
@@ -570,6 +602,10 @@ check('home layout stays inside the canvas on a narrow portrait screen', () => {
   const g = makeGame();
   return g.run('(() => { const oW = W, oH = H; try { W = 242; H = 300; relayout(); return HERO_CARD.x >= 0 && HERO_CARD.x + HERO_CARD.w <= W && MODE_BTN.x + MODE_BTN.w <= W && MAP_BTN.x >= 0 && MODE_BTN.y + MODE_BTN.h < MISS_PANEL.y; } finally { W = oW; H = oH; relayout(); } })()');
 });
+check('five-row mode picker fits and renders on a 242x300 portrait screen', () => {
+  const g = makeGame();
+  return g.run('(() => { const oW=W,oH=H; try { W=242; H=300; relayout(); renderModePicker(); const last=PICK_ROWS[PICK_ROWS.length-1]; return PICK_ROWS.length===5 && PICK_ROWS.every((r,i)=>r.x>=0&&r.x+r.w<=W&&r.h>=32&&(i===0||r.y>PICK_ROWS[i-1].y+PICK_ROWS[i-1].h)) && last.y+last.h+12<=H; } finally { W=oW; H=oH; relayout(); } })()');
+});
 check('renderHome (hero card) runs for fresh, veteran and conquered profiles', () => {
   for (const seed of [{}, { 'skystack-height': '60' }, { 'skystack-height': '900', 'skystack-tiers': '11' }]) {
     const g = makeGame(seed);
@@ -655,7 +691,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v65', () => /const CACHE = 'skystack-v65'/.test(sw));
+check('sw.js cache bumped to v66', () => /const CACHE = 'skystack-v66'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

@@ -440,6 +440,7 @@ function drawEventFx(menu) {
 // ---------- modes ----------
 const MODES = [
   { id:'level',   name:'LEVELS',  blurb:'CLIMB THE SKY',       desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true },
+  { id:'practice',name:'PRACTICE',blurb:'LEARN AT YOUR PACE',  desc:'NO FAIL - GUIDED CLIMB',  wind:false, fail:false, practice:true },
   { id:'endless', name:'ENDLESS', blurb:'CLIMB FOREVER',       desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true },
   { id:'time',    name:'TIME 60', blurb:'RUSH 60 SECONDS',     desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600 },
   { id:'pure',    name:'PURE',    blurb:'SKILL ONLY - 1.5X',   desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5 },
@@ -617,9 +618,25 @@ const LOADOUT = [
 ];
 let loadout = { shield:false, aura:false, slow:false };
 let shopInfo = 'TAP A BOOST TO BUY IT';
-// tutorial
+// onboarding: replayed in PRACTICE, shown once everywhere else
 let tutDone = store.get('skystack-tut', false);
 let tutStep = 0;
+const TUT_LESSONS = [
+  { title:'DROP',     body:'TAP WHEN THE BLOCK IS CENTERED' },
+  { title:'PERFECT',  body:'MATCH EDGES TO RESTORE WIDTH' },
+  { title:'COMBO',    body:'X10 FEVER - X15 SUPERNOVA' },
+  { title:'BALANCE',  body:'OFFSET DROPS LEAN THE TOWER' },
+  { title:'SKYBREAK', body:'GROW TO FULL WIDTH FOR +50' }
+];
+function advanceTutorial(h) {
+  if (tutStep < 0) return;
+  if (tutStep === 1) tutStep = 2;
+  else if (tutStep === 2 && h >= 3) tutStep = 3;
+  else if (tutStep === 3 && h >= 5) tutStep = 4;
+  else if (tutStep === 4 && h >= 8) {
+    tutStep = -1; tutDone = true; store.set('skystack-tut', true);
+  }
+}
 
 const stars = []; for (let i = 0; i < 80; i++) stars.push({ x: Math.random()*W, y: Math.random()*5000-4600, tw: Math.random()*6.28, sz: Math.random()<.2?2:1 });
 const clouds = []; for (let i = 0; i < 6; i++) clouds.push({ x: Math.random()*W, y: Math.random()*1100-850, s:.05+Math.random()*.1, w:20+Math.random()*24 });
@@ -659,10 +676,10 @@ function resetRun() {
   balance = 0; swayX = 0; paused = false; dropPending = 0;
   timeLeft = m.time || 0;
   PERFECT_PX = 2.6;
-  assist = (m.pure || m.daily) ? 0 : clamp(0.5 - skill * 0.55, 0, 0.5);   // struggling players start with help
+  assist = m.practice ? 0.85 : (m.pure || m.daily) ? 0 : clamp(0.5 - skill * 0.55, 0, 0.5);   // PRACTICE stays deliberately forgiving
   mascot.hop = 0; mascot.expr = 'normal'; mascot.exprT = 0;
-  tutStep = tutDone ? -1 : 0;
-  if (!m.daily && !m.pure) {
+  tutStep = m.practice ? 0 : (tutDone ? -1 : 0);
+  if (!m.daily && !m.pure && !m.practice) {
     if (loadout.shield) shield = 1;
     if (loadout.aura) auraBlocks = 5;
     if (loadout.slow) slowBlocks = 4;
@@ -712,7 +729,7 @@ function releaseBlock() {
 }
 
 function schedulePickups() {
-  if (curMode().pure) return;                       // PURE: zero power-ups, pure skill
+  if (curMode().pure || curMode().practice) return; // PRACTICE stays focused and cannot farm rewards
   while (nextPickupRow < blocks.length + 16) {
     const type = pick(['coin','coin','coin','wide','slow','shield','aura','gold','fever']);
     const SR = slideRange();                          // always reachable: spawn inside the block corridor
@@ -722,6 +739,7 @@ function schedulePickups() {
   }
 }
 function addCoins(n, x, y) {
+  if (curMode().practice) return;                   // guided runs never alter the economy
   if (EV) n = Math.ceil(n * 1.25);   // event week: +25% coins
   coins += n; runCoins += n; stats.coins += n; coinPop = 1;
   store.set('skystack-coins', coins);
@@ -755,7 +773,7 @@ function enterFever() {
   shake = Math.max(shake, reduceMotion?2:5); sfx.fever();
 }
 function maybeSpawnBalloon() {
-  if (curMode().pure) return;
+  if (curMode().pure || curMode().practice) return;
   if (balloon || blocks.length < 8) return;
   if (blocks.length - lastBalloonRow < 8) return;
   if (rnd() > 0.5) { lastBalloonRow = blocks.length; return; }
@@ -777,7 +795,7 @@ function land() {
   const oL = Math.max(f.x, top.x), oR = Math.min(f.x + f.w, top.x + top.w), overlap = oR - oL;
   const offset = f.x - top.x;
   const m = curMode();
-  const dda = !m.pure && !m.daily;   // dynamic difficulty adjusts only in the assisted modes
+  const dda = !m.pure && !m.daily && !m.practice;   // PRACTICE keeps its fixed generous assist
 
   if (balloon && !balloon.away && Math.abs((GROUND_Y - balloon.row * BH) - (towerTopY() - BH)) < BH &&
       balloon.x >= f.x - 4 && balloon.x <= f.x + f.w + 4) {
@@ -811,7 +829,6 @@ function land() {
     nx = top.x; nw = Math.min(f.w, top.w);
     combo++; runPerfects++; maxCombo = Math.max(maxCombo, combo);
     if (dda) assist = Math.max(assistFloor(), assist - 0.05);   // you've got this: ease the help back down
-    if (tutStep === 2) { tutStep = -1; tutDone = true; store.set('skystack-tut', true); }
     const grow = combo >= 8 ? 8 : combo >= 5 ? 5 : combo >= 3 ? 3 : 1;
     const cap = combo >= 5 ? W : BASE_W;
     nw = Math.min(nw + grow, cap);
@@ -848,7 +865,6 @@ function land() {
   } else {
     combo = 0; fever = false; feverT = 0; nova = false; novaT = 0;
     if (dda) assist = Math.min(0.85, assist + 0.10);   // a sloppy drop: nudge the help up
-    if (tutStep === 1) tutStep = 2;
     score += Math.round(10 * goldMult * (m.mult || 1));
     const cutW = f.w - overlap, cutX = offset > 0 ? oR : f.x;
     debris.push({ x:cutX, y:f.y, w:cutW, h:BH, vx:offset>0?.9:-.9, vy:-.4, rot:0, vr:(offset>0?1:-1)*(.06+Math.random()*.08), col:f.col });
@@ -868,7 +884,7 @@ function land() {
     blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col:f.col });
     bannerText = 'SKYBREAK! +50'; bannerT = 1;
     addCoins(50, W/2, towerTopY());
-    balance = 0; stats.skybreaks++; skybreakT = 1;
+    balance = 0; if (!m.practice) stats.skybreaks++; skybreakT = 1;
     burst(W/2, towerTopY(), 36, f.col, true);
     for (let bx2 = 8; bx2 < W; bx2 += 24) particles.push({ x:bx2, y:towerTopY(), vx:0, vy:-1.6-Math.random(), life:1, color:'#FFD75E' });
     shake = Math.max(shake, reduceMotion ? 3 : 6);
@@ -882,12 +898,19 @@ function land() {
   blocks.push({ x:nx, w:nw, col:f.col });
   faller = null; squash = 1; cameraTarget = towerTopY() - (H - 100); state = 'playing';
   afterPlace(f, true, nx + nw/2);
-  if (Math.abs(balance) > TOPPLE) { setExpr('dizzy', 999); gameOver('topple'); return; }
+  if (Math.abs(balance) > TOPPLE) {
+    if (m.practice) {
+      balance *= 0.2; swayX *= 0.2; setExpr('happy', 28);
+      floaters.push({ text:'STEADIED!', x:W/2, y:towerTopY()-BH-8, vy:-.4, life:1.3, color:'#62E8B5' });
+      shake = Math.max(shake, reduceMotion ? 2 : 4); sfx.shield();
+    } else { setExpr('dizzy', 999); gameOver('topple'); return; }
+  }
   spawnSlider();
 }
 
 function afterPlace(f, updateBalance, placedCenter) {
-  stats.blocks++;
+  const m = curMode();
+  if (!m.practice) stats.blocks++;
   if (updateBalance) balance = balance * 0.5 + (placedCenter - W/2) * 0.5 * (1 - assist * 0.4);   // assist forgives lean
   const r = blocks.length - 1, b = blocks[r];
   for (const p of pickups) { if (p.got || p.row !== r) continue; if (p.x >= b.x && p.x <= b.x + b.w) collectPickup(p, p.x, towerTopY()); }
@@ -895,22 +918,25 @@ function afterPlace(f, updateBalance, placedCenter) {
   maybeSpawnBalloon();
   if (balloon && !balloon.away && blocks.length > balloon.row + 1) balloon.away = 0.01;   // missed — it escapes upward
   const h = blocks.length;
+  advanceTutorial(h);
   if (runLevel >= 0 && h >= TIERS[runLevel].n) { levelComplete(); return; }   // campaign goal reached
   if (tier < TIERS.length && h >= TIERS[tier].n) {
     const t = TIERS[tier]; bannerText = t.n*METERS_PER + 'M - ' + t.name; bannerT = 1;
     let reward = 5 + tier * 3;
-    if (tier + 1 > prog) {                                    // first time this stage is reached: LEVEL CLEAR
+    if (!m.practice && tier + 1 > prog) {                     // guided runs never unlock campaign levels
       prog = tier + 1; store.set('skystack-tiers', prog);
       bannerText = 'LEVEL CLEAR - ' + t.name; reward += 15;
       if (prog === TIERS.length) { bannerText = 'SKY CONQUERED!'; reward += 200; }   // beat the game
     }
-    addCoins(reward, W/2, 40);
-    floaters.push({ text:'+'+reward, x:W/2, y:towerTopY()-BH-18, vy:-.35, life:1.4, color:'#FFD75E' });
+    if (!m.practice) {
+      addCoins(reward, W/2, 40);
+      floaters.push({ text:'+'+reward, x:W/2, y:towerTopY()-BH-18, vy:-.35, life:1.4, color:'#FFD75E' });
+    }
     burst(W/2, towerTopY()-BH, 24, f.col, true); shake = Math.max(shake, reduceMotion?2:4);
     sfx.milestone(); tier++; startRegionIntro(tier);   // entering the next region — play its intro
   }
   const bh2 = bestBlocksFor(mode);
-  if (!runLaunch && runLevel < 0 && h > bh2 && !newHeight && bh2 > 0) {
+  if (!m.practice && !runLaunch && runLevel < 0 && h > bh2 && !newHeight && bh2 > 0) {
     newHeight = true;
     floaters.push({ text:'NEW BEST!', x:W/2, y:towerTopY()+2, vy:-.3, life:1.6, color:'#62E8B5' });
     burst(W/2, towerTopY(), 16, f.col, true); shake = Math.max(shake, 3); hapt([15,25,15]);
@@ -972,14 +998,15 @@ function levelComplete() {
   sfx.milestone(); sfx.unlock(); hapt([20, 30, 20, 30, 40]);
 }
 function gameOver(cause) {
+  const m = curMode();
   state = 'gameover'; faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; paused = false; dropPending = 0;
   overCause = cause || 'miss';
   shake = reduceMotion ? 2 : (cause === 'topple' ? 8 : 6); overLock = 40;
   if (cause === 'topple') { sfx.topple();
     for (let i = Math.max(0, blocks.length-6); i < blocks.length; i++) { const b = blocks[i]; debris.push({ x:b.x, y:GROUND_Y-(i+1)*BH, w:b.w, h:BH, vx:(balance>0?1:-1)*(0.6+Math.random()), vy:-Math.random()*1.5, rot:0, vr:(balance>0?1:-1)*.12, col:b.col }); } }
   else sfx.over();
-  stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
-  if (!runLaunch && runLevel < 0) {   // records are for full ground-up free runs, never level attempts
+  if (!m.practice) stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
+  if (!m.practice && !runLaunch && runLevel < 0) {   // PRACTICE is guided, not competitive
     if (score > best) { best = score; newBest = true; store.set('skystack-best', best); }
     if (blocks.length > bestHeight) { bestHeight = blocks.length; store.set('skystack-height', bestHeight); }
     const rec = modeBests[mode] || { blocks: 0, score: 0 };
@@ -1004,11 +1031,12 @@ function gameOver(cause) {
 function reviveCost() { return 25 + Math.min(tier, TIERS.length) * 5; }   // deeper runs pay more
 function canOfferRevive() {
   const m = curMode();   // PURE is skill-only and DAILY is one fair run — no second chances there
-  return !reviveUsed && !m.pure && !m.daily && overCause !== 'quit' && overCause !== 'time';
+  return !reviveUsed && !m.pure && !m.daily && !m.practice && overCause !== 'quit' && overCause !== 'time';
 }
 function finalizeRun() {   // the run is truly over: count the game and settle XP/missions once
   if (runSettled) return;
   runSettled = true; reviveOffered = false;
+  if (curMode().practice) return;                    // no XP, missions, stats, or rewards from guided runs
   stats.games++;
   settleRun(0);
 }
@@ -1088,7 +1116,9 @@ function relayout() {
   MAP_BTN  = { x: HERO_CARD.x, y: HERO_CARD.y + HERO_CARD.h + 6, w: halfW, h:18 };
   MODE_BTN = { x: HERO_CARD.x + heroW - halfW, y: MAP_BTN.y, w: halfW, h:18 };
   const pickW = Math.min(W - 24, 240);
-  PICK_ROWS = EXTRAS.map((m, i) => ({ x: Math.round((W-pickW)/2), y:74 + i*44, w:pickW, h:40, id:m.id }));
+  const pickTop = 68, pickGap = 4;
+  const pickH = clamp(Math.floor((H - 94 - pickGap*(EXTRAS.length-1)) / EXTRAS.length), 32, 40);
+  PICK_ROWS = EXTRAS.map((m, i) => ({ x: Math.round((W-pickW)/2), y:pickTop + i*(pickH+pickGap), w:pickW, h:pickH, id:m.id }));
   // level win / fail screens: fat centered button rows
   const rowW = Math.min(W - 40, 180);
   WIN_ROWS = ['next','retry','map'].map((id, i) =>
@@ -1175,7 +1205,11 @@ function pressDown(e) {
       else if (rw.id === 'restart') { sfx.tap(); if (runLevel >= 0) startLevel(runLevel); else startRun(); }
       else if (rw.id === 'sound') { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); }
       else if (rw.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
-      else if (rw.id === 'quit') { paused = false; gameOver('quit'); }
+      else if (rw.id === 'quit') {
+        paused = false;
+        if (curMode().practice) { finalizeRun(); state = 'home'; fadeT = 1; slider = null; faller = null; }
+        else gameOver('quit');
+      }
       return;
     }
     return;                                            // stray taps never resume-drop by accident
@@ -1232,7 +1266,7 @@ function pressDown(e) {
       } else if (sk.id !== skinId) { skinId = sk.id; store.set('skystack-skin', skinId); sfx.tap(); toast('EQUIPPED'); }
       return;
     }
-    if (mode !== 'daily' && mode !== 'pure') for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
+    if (mode !== 'daily' && mode !== 'pure' && mode !== 'practice') for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
       shopInfo = POW_DESC[c.id];
       if (loadout[c.id]) { loadout[c.id] = false; coins += c.cost; store.set('skystack-coins', coins); sfx.tap(); }
       else if (coins >= c.cost) { loadout[c.id] = true; coins -= c.cost; store.set('skystack-coins', coins); sfx.coin(); }
@@ -2903,7 +2937,7 @@ function renderHome() {
   txt('>', MODE_BTN.x + MODE_BTN.w - 8, MODE_BTN.y + 6, 1, 'rgba(255,246,232,0.7)', 'left');
   // armed boosts indicator (centered icons under the secondary row)
   const armed = LOADOUT.filter(l => loadout[l.id]);
-  if (armed.length && mode !== 'daily') {
+  if (armed.length && mode !== 'daily' && mode !== 'practice') {
     const iw = armed.length * 12 - 4;
     let ix = Math.round(W/2 - iw/2);
     for (const a of armed) { drawIcon(a.id, ix, MODE_BTN.y + MODE_BTN.h + 6); ix += 12; }
@@ -3461,7 +3495,8 @@ function renderModePicker() {
     const bb = M.daily ? (daily.streak > 0 ? 'STREAK ' + daily.streak : '') : (bestBlocksFor(rw.id) > 0 ? bestBlocksFor(rw.id)*METERS_PER + 'M' + bp : '');
     if (bb) txt(bb, rw.x + rw.w - 6, rw.y + 7, 1, active ? UI_HEX() : 'rgba(255,246,232,0.6)', 'right');
   }
-  txt('TAP ANYWHERE ELSE TO CLOSE', W/2, PICK_ROWS[PICK_ROWS.length-1].y + 50, 1, 'rgba(255,246,232,0.45)', 'center');
+  const lastPick = PICK_ROWS[PICK_ROWS.length-1];
+  txt('TAP ANYWHERE ELSE TO CLOSE', W/2, lastPick.y + lastPick.h + 6, 1, 'rgba(255,246,232,0.45)', 'center');
 }
 
 // ---------- SHOP ----------
@@ -3506,6 +3541,9 @@ function renderShop() {
   if (mode === 'pure') {
     txt('BOOSTS ARE OFF IN PURE', W/2, 210, 1, 'rgba(255,246,232,0.5)', 'center');
     txt('PURE IS SKILL ONLY - 1.5X SCORE', W/2, 222, 1, 'rgba(255,246,232,0.4)', 'center');
+  } else if (mode === 'practice') {
+    txt('BOOSTS ARE OFF IN PRACTICE', W/2, 210, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt('GUIDED RUNS NEVER SPEND BOOSTS', W/2, 222, 1, 'rgba(255,246,232,0.4)', 'center');
   } else if (mode !== 'daily') {
     for (const c of LOAD_CHIPS) {
       const on = loadout[c.id], afford = coins >= c.cost;
@@ -3773,7 +3811,7 @@ function renderHUD(h) {
   if (slowBlocks > 0) { drawIcon('slow', ix, 20); ix += 10; }
   if (auraBlocks > 0) { drawIcon('aura', ix, 20); ix += 10; }
   if (goldenNext || (slider && slider.golden)) { drawIcon('gold', ix, 20); ix += 10; }
-  if (m.fail && m.id!=='zen' && h > 5) {
+  if ((m.fail || m.practice) && h > 5) {
     const bp = clamp(balance/TOPPLE, -1, 1);
     if (Math.abs(bp) > 0.22) {
       ctx.globalAlpha = Math.min(1, (Math.abs(bp) - 0.22) * 5);
@@ -3785,7 +3823,7 @@ function renderHUD(h) {
       ctx.fillStyle = danger ? (Math.floor(tick/6)%2?'#FF5E7E':'#FFD75E') : '#62E8B5';
       ctx.fillRect(Math.round(px-1), bmY-1, 3, 5);
       ctx.globalAlpha = 1;
-      if (danger && Math.floor(tick/10)%2===0) txt('BALANCE!', W/2, 52, 1, '#FF5E7E', 'center');
+      if (danger && Math.floor(tick/10)%2===0) txt(m.practice ? 'AUTO STEADY' : 'BALANCE!', W/2, 52, 1, m.practice ? '#62E8B5' : '#FF5E7E', 'center');
     }
   }
   if (wind) {
@@ -3794,12 +3832,13 @@ function renderHUD(h) {
     txt(wind.dir>0?'WIND >':'< WIND', W/2, 62, 1, '#BFE8FF', 'center');
     ctx.globalAlpha = 1;
   }
-  // first-run tutorial hints (one calm strip, bottom third)
+  // first-run / PRACTICE onboarding: compact, world-readable, and replayable
   if (tutStep >= 0) {
-    const msgs = ['TAP TO DROP THE BLOCK', 'CENTER IT FOR A PERFECT', 'STACK HIGH - DONT TOPPLE'];
-    ctx.fillStyle = 'rgba(11,14,26,0.55)'; ctx.fillRect(0, H-84, W, 18);
-    ctx.fillStyle = 'rgba(255,215,94,0.5)'; ctx.fillRect(0, H-84, W, 1);
-    if (Math.floor(tick/25)%4 !== 3) txt(msgs[tutStep], W/2, H-78, 1, '#FFF6E8', 'center');
+    const lesson = TUT_LESSONS[Math.min(tutStep, TUT_LESSONS.length-1)];
+    ctx.fillStyle = 'rgba(11,14,26,0.62)'; ctx.fillRect(0, H-94, W, 29);
+    ctx.fillStyle = 'rgba(255,215,94,0.55)'; ctx.fillRect(0, H-94, W, 1);
+    txt((m.practice ? 'PRACTICE ' : '') + lesson.title, W/2, H-88, 1, '#FFD75E', 'center');
+    txt(lesson.body, W/2, H-76, 1, '#FFF6E8', 'center');
   }
   // sound toggle
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(SND_BTN.x-1,SND_BTN.y-1,SND_BTN.w+2,SND_BTN.h+2);
