@@ -739,6 +739,49 @@ check('forest world layers are world-anchored (worldY), never parallax-decoupled
 check('no city imagery left in the map art (no building helper, no window grids)', () =>
   !/bldg\s*=|skyline/i.test(src.slice(src.indexOf('const ISLES'))));
 
+// ---------- v74: Clouds + Upper Sky / Stratosphere continuity ----------
+const uw = makeGame({ 'skystack-height': '300' });
+uw.run('mode = "endless"; resetRun(); state = "playing";');
+check('cloudDensityAt: continuous gather -> thick -> thin gradient anchored to TIERS', () => uw.run(
+  '(() => { const c0=TIERS[3].n, c1=TIERS[4].n, j=TIERS[5].n, s=TIERS[6].n;' +
+  'if (cloudDensityAt(c0-20) !== 0) return "not clear below the deck";' +
+  'if (!(cloudDensityAt(c0) > 0.2 && cloudDensityAt(c0) < 0.6)) return "no gathering at the deck";' +
+  'if (cloudDensityAt(Math.round((c0+c1)/2)) !== 1) return "middle not fully thick";' +
+  'if (!(cloudDensityAt(c1) < 1 && cloudDensityAt(c1) > 0.5)) return "no thinning at the tier top";' +
+  'if (!(cloudDensityAt(j) < cloudDensityAt(c1))) return "jet stream not thinner";' +
+  'if (cloudDensityAt(s) !== 0 || cloudDensityAt(s+50) !== 0) return "cover not gone by aurora";' +
+  'let prev = -1, rising = true;' +
+  'for (let A2 = 50; A2 <= s + 10; A2++) { const d = cloudDensityAt(A2);' +
+  '  if (d < 0 || d > 1) return "out of range at " + A2;' +
+  '  if (rising) { if (d < prev - 1e-9) rising = false; } else if (d > prev + 1e-9) return "not unimodal at " + A2;' +
+  '  prev = d; } return true; })()'));
+check('screenA matches the biome reference altitude', () => uw.run(
+  '(() => { const cy2 = GROUND_Y - 90*BH - (H-100); return Math.abs(screenA(cy2) - 90) < 1e-9 && currentBiome(cy2).ti === biomeTierAt(screenA(cy2)); })()'));
+check('upper-sky backdrops render across their whole spans without throwing', () => {
+  uw.run('for (let a2 = 60; a2 <= 230; a2 += 4) { const cy2 = GROUND_Y - a2*BH - (H-100); drawCloudNineBg(cy2, 1, 40); drawJetStreamBg(cy2, 1, 40); drawStratosphereBg(cy2, 1, 40); drawAuroraBg(cy2, 1, 40); }');
+  return true;
+});
+check('reduced-motion upper-sky backdrops render without throwing', () => {
+  const rm3 = makeGame({ 'skystack-height': '300' }, true);
+  rm3.run('for (let a2 = 70; a2 <= 220; a2 += 10) { const cy2 = GROUND_Y - a2*BH - (H-100); drawCloudNineBg(cy2, 1, 0); drawJetStreamBg(cy2, 1, 0); drawStratosphereBg(cy2, 1, 0); drawAuroraBg(cy2, 1, 0); }');
+  return true;
+});
+check('every celestial weather index (0..8) renders, including new STRATOSPHERE air', () => {
+  uw.run('for (let i = 0; i <= 8; i++) biomeWeather(i, -3000, 1, 55)');
+  return /tier === 4\) \{\s*\/\/ STRATOSPHERE — thin icy flecks/.test(src);
+});
+check('sun shafts are confined to the open-sky middle of CLOUD NINE', () =>
+  /const shaft = clamp\(\(A - \(c0 \+ 4\)\) \/ 6, 0, 1\) \* clamp\(\(\(c1 - 4\) - A\) \/ 8, 0, 1\)/.test(src) &&
+  /if \(shaft > 0\.02\)/.test(src));
+check('clouds tint colder toward the top of CLOUD NINE', () =>
+  /const cold = clamp\(\(A - \(c1 - 10\)\) \/ 14, 0, 1\)/.test(src));
+check('jet stream carries thinning cloud remnants only while density remains', () =>
+  /function drawJetStreamBg[\s\S]{0,220}cloudDensityAt\(A\)[\s\S]{0,120}if \(dens > 0\.05\)/.test(src));
+check('stratosphere aircraft stay in the lower half of the tier', () =>
+  /A < \(TIERS\[5\]\.n \+ TIERS\[6\]\.n\) \/ 2/.test(src));
+check('the aurora glow dies away into space over the last blocks of the tier', () =>
+  /const glow = clamp\(\(TIERS\[7\]\.n - A\) \/ 12, 0, 1\)/.test(src));
+
 // ---------- save schema v2 + migration (v64) ----------
 // fresh profile: a valid v2 container is created, and nothing is ever written to v1 keys
 const sv = makeGame();
@@ -816,7 +859,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v73', () => /const CACHE = 'skystack-v73'/.test(sw));
+check('sw.js cache bumped to v74', () => /const CACHE = 'skystack-v74'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
