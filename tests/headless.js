@@ -1211,11 +1211,13 @@ check('visual production freezes a coherent canvas palette, rhythm, frame, type,
 check('production Home and stepped global navigation render safely across the locked viewport set', () => fresh.run(
   '(() => { for(const [w,h] of [[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";prog=0;renderHome();drawNav();prog=TIERS.length;renderHome();if(NAV_H!==24||HERO_CARD.x<0||HERO_CARD.x+HERO_CARD.w>W||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y+MAP_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=NAV_Y)return false;}return true; })()'));
 check('production UI keeps presentation ownership separate from locked mechanics', () =>
-  /function pixelFrame\(/.test(src) && /function drawJourneyRail\(/.test(src) && /function drawNavGlyph\(/.test(src) && fresh.run('mechanicsLockReport().ready&&MECHANICS_LOCK_TARGETS.weeklySeeded===false'));
+  /function pixelFrame\(/.test(src) && /function drawJourneyProgress\(/.test(src) && /function drawNavGlyph\(/.test(src) && fresh.run('mechanicsLockReport().ready&&MECHANICS_LOCK_TARGETS.weeklySeeded===false'));
+check('Home, Shop, Bases, and Me share centered dark frames without entering navigation', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";renderHome();state="shop";shopView="character";renderShop();shopView="base";renderShop();state="me";renderMe();const lastMix=MIX_ROWS[MIX_ROWS.length-1],meW=Math.min(W-PAD*2-16,200),meX=Math.round((W-meW)/2)-8;if(HERO_CARD.x!==Math.round((W-HERO_CARD.w)/2)||SHOP_TABS[0].x+SHOP_TABS[0].w!==SHOP_TABS[1].x||EQUIP_BTN.y+EQUIP_BTN.h>=194||LOAD_CHIPS.some(c=>c.y+c.h>=NAV_Y)||lastMix.plus.y+lastMix.plus.h>=NAV_Y||meX<0||meX+meW+16>W)return false;}return true; })()'));
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v86', () => /const CACHE = 'skystack-v86'/.test(sw));
+check('sw.js cache bumped to v87', () => /const CACHE = 'skystack-v87'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
