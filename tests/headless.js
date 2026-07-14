@@ -891,8 +891,8 @@ check('S0 level registry is index-aligned with every v75 tier boundary', () => f
   'LEVEL_REGISTRY.length === TIERS.length && LEVEL_REGISTRY.every((l,i) => l.id === i && l.goalAltitude === TIERS[i].n && l.startAltitude === (i ? TIERS[i-1].n : 0) && l.name === TIERS[i].name && l.color === TIERS[i].c)'));
 check('S0 balance registry aliases the live v75 physics constants', () => fresh.run(
   'BALANCE_REGISTRY.physics.blockHeight === BH && BALANCE_REGISTRY.physics.baseWidth === BASE_W && BALANCE_REGISTRY.physics.metersPerBlock === METERS_PER && BALANCE_REGISTRY.physics.topple === TOPPLE && BALANCE_REGISTRY.physics.perfectPx === PERFECT_PX'));
-check('S0 feature flags remain centralized; only shipped Characters, Bases, and Modifiers are active', () => fresh.run(
-  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && FEATURE_FLAGS.characters === true && FEATURE_FLAGS.bases === true && FEATURE_FLAGS.modifiers === true && FEATURE_FLAGS.collections === false && FEATURE_FLAGS.challenges === false'));
+check('S0 feature flags remain centralized; shipped Characters, Bases, Collections, and Modifiers are active', () => fresh.run(
+  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && FEATURE_FLAGS.characters === true && FEATURE_FLAGS.bases === true && FEATURE_FLAGS.modifiers === true && FEATURE_FLAGS.collections === true && FEATURE_FLAGS.challenges === false'));
 
 const s0ctx = makeGame();
 s0ctx.run('mode="endless"; loadout={shield:true,aura:false,slow:true}; resetRun(); globalThis.__ctx=runContext; globalThis.__seed=runContext.seed; globalThis.__speed=difficultyAt(runContext,40,assist,2).sliderSpeed;');
@@ -914,8 +914,8 @@ check('owned non-Daily seeds reproduce the same run RNG stream', () => fresh.run
 check('permission helpers preserve reward, record, loadout, and checkpoint rules', () => fresh.run(
   '(() => { const mk=(m,l=-1,a=0)=>createRunContext({mode:m,campaignLevel:l,startingAltitude:a,seed:1,skill:.35,loadout:{},modifiers:[]}); return !canEarnRewards(mk("practice")) && !canWriteRecords(mk("practice")) && !canUseLoadout(mk("practice")) && canEarnRewards(mk("pure")) && canWriteRecords(mk("pure")) && !canUseLoadout(mk("pure")) && canEarnRewards(mk("daily")) && canWriteRecords(mk("daily")) && !canUseLoadout(mk("daily")) && canUseLoadout(mk("endless")) && !canWriteRecords(mk("level",2,44)) && !canWriteRecords(mk("endless",-1,44)); })()'));
 
-check('future save-v2 contracts stay frozen; only shipped Character and Base fields activate', () => fresh.run(
-  'Object.isFrozen(FUTURE_SAVE_CONTRACTS) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.characters.defaults) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.bases.defaults) && ["characters","bases"].every(id=>Object.prototype.hasOwnProperty.call(SAVE.data,FUTURE_SAVE_CONTRACTS[id].key)) && ["collections","challengeRecords"].every(id=>!Object.prototype.hasOwnProperty.call(SAVE.data,FUTURE_SAVE_CONTRACTS[id].key))'));
+check('future save-v2 contracts stay frozen; shipped Character, Base, and Collection fields activate', () => fresh.run(
+  'Object.isFrozen(FUTURE_SAVE_CONTRACTS) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.characters.defaults) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.bases.defaults) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.collections.defaults) && ["characters","bases","collections"].every(id=>Object.prototype.hasOwnProperty.call(SAVE.data,FUTURE_SAVE_CONTRACTS[id].key)) && !Object.prototype.hasOwnProperty.call(SAVE.data,FUTURE_SAVE_CONTRACTS.challengeRecords.key)'));
 check('future save-v2 migration normalizes only present fields and preserves current data', () => fresh.run(
   '(() => { const src={keep:7,"skystack-characters":{owned:["pilot",4,"pilot"],selected:9,mastery:null},"skystack-bases":null,"skystack-collections":{unlocked:["ore","ore"],completed:"bad"},"skystack-challenge-records":[1]}; const out=migrateFutureSaveV2(src); return out!==src && out.keep===7 && JSON.stringify(out["skystack-characters"])===JSON.stringify({owned:["pilot"],selected:null,mastery:{}}) && JSON.stringify(out["skystack-bases"])===JSON.stringify({owned:[],selected:null}) && JSON.stringify(out["skystack-collections"])===JSON.stringify({unlocked:["ore"],completed:[]}) && JSON.stringify(out["skystack-challenge-records"])==="{}" && src["skystack-characters"].owned.length===3; })()'));
 
@@ -1014,9 +1014,9 @@ check('S3 checkpoint score reduction composes with Character trade-offs without 
   '(() => { const classic=createRunContext({mode:"level",campaignLevel:2,startingAltitude:44,checkpointId:"checkpoint-1",baseId:"natural",seed:1,skill:.35,loadout:{},characterId:"aurora",characterMastery:{},modifiers:[]}), candy=createRunContext({mode:"level",campaignLevel:2,startingAltitude:44,checkpointId:"checkpoint-1",baseId:"natural",seed:1,skill:.35,loadout:{},characterId:"candy",characterMastery:{},modifiers:[]}); return adjustedRunScore(classic,100)===75&&adjustedRunScore(candy,100)===71&&canEarnRewards(classic)&&!canWriteRecords(classic); })()'));
 check('S3 checkpoint, structure, Base, Character, and boost fields are separate immutable RunContext owners', () => fresh.run(
   '(() => { const c=createRunContext({mode:"level",campaignLevel:2,startingAltitude:44,checkpointId:"checkpoint-1",baseId:"starforge",seed:1,skill:.35,loadout:{shield:true},characterId:"neon",characterMastery:{xp:4},modifiers:[]}),before=JSON.stringify(c); try{c.checkpointSnapshot.id="ground"}catch(e){}try{c.startingStructureSnapshot.kind="ground"}catch(e){}try{c.baseSnapshot.id="natural"}catch(e){}try{c.characterSnapshot.id="aurora"}catch(e){}try{c.boostSnapshot.shield=false}catch(e){} return [c.checkpointSnapshot,c.startingStructureSnapshot,c.baseSnapshot,c.characterSnapshot,c.boostSnapshot,c.boostPermissions].every(Object.isFrozen)&&JSON.stringify(c)===before&&c.baseSnapshot.id==="starforge"&&c.characterSnapshot.id==="neon"&&c.boostSnapshot.shield; })()'));
-check('S3 activates a valid default Base save and leaves later save domains dormant', () => {
+check('S3 keeps a valid default Base save while S5 activates only the Collection domain', () => {
   const g=makeGame(),b=saved(g,'skystack-bases'),data=JSON.parse(g.mem.get('skystack-save')).data;
-  return b.selected==='natural'&&JSON.stringify(b.owned)===JSON.stringify(['natural'])&&Object.prototype.hasOwnProperty.call(data,'skystack-characters')&&Object.prototype.hasOwnProperty.call(data,'skystack-bases')&&!Object.prototype.hasOwnProperty.call(data,'skystack-collections')&&!Object.prototype.hasOwnProperty.call(data,'skystack-challenge-records');
+  return b.selected==='natural'&&JSON.stringify(b.owned)===JSON.stringify(['natural'])&&Object.prototype.hasOwnProperty.call(data,'skystack-characters')&&Object.prototype.hasOwnProperty.call(data,'skystack-bases')&&Object.prototype.hasOwnProperty.call(data,'skystack-collections')&&!Object.prototype.hasOwnProperty.call(data,'skystack-challenge-records');
 });
 check('S3 Base save normalization repairs selection while preserving unknown owned ids', () => {
   const g=makeGame({'skystack-save':JSON.stringify({version:2,data:{'skystack-bases':{owned:['runestone','future-base','runestone',7],selected:'missing'}}})}),b=saved(g,'skystack-bases');
@@ -1064,9 +1064,52 @@ check('S4 reset scrubs mutable modifier progress while preserving the immutable 
 check('S4 modifier HUD renders telegraph, rule, duration, reward lane, and gust direction at phone width', () => fresh.run(
   '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:3,startingAltitude:60,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();const m=runContext.modifiers[0],p=modifierRuntime(m);p.status="announced";renderModifierHUD(m.announceAltitude);p.status="active";renderModifierHUD(m.startAltitude);const b=modifierLaneBounds(m,false);return b.left>=0&&b.right<=W&&b.right>b.left; })()'));
 
+// ---------- S5 progression, economy, missions, achievements + collections ----------
+check('S5 defines one frozen coin-only direct-purchase economy with no gacha or premium currency', () => fresh.run(
+  'Object.isFrozen(ECONOMY_RULES)&&ECONOMY_RULES.currency==="coins"&&ECONOMY_RULES.directPurchase&&!ECONOMY_RULES.duplicates&&!ECONOMY_RULES.premiumCurrency&&Object.isFrozen(ECONOMY_RULES.achievementRewards)'));
+check('S5 coin transactions are integer, persistent, overdraft-safe, and refunds never count as earnings', () => fresh.run(
+  '(() => { coins=20;stats.coins=10;const bad=transactCoins(-21,false),spend=transactCoins(-7,false),refund=transactCoins(7,false),earn=transactCoins(5,true);return !bad&&spend&&refund&&earn&&coins===25&&stats.coins===15&&store.get("skystack-coins",0)===25&&store.get("skystack-stats",{}).coins===15; })()'));
+check('S5 shared purchase quotes charge a direct unlock exactly once and refuse insufficient funds', () => fresh.run(
+  '(() => { coins=100;const ids=[],b=BASE_REGISTRY.find(x=>x.id==="runestone"),a=purchaseUnlock(b,ids),dup=purchaseUnlock(b,ids),poor=purchaseUnlock(BASE_REGISTRY.find(x=>x.id==="rootbound"),ids);return a.status==="purchased"&&a.charged===90&&dup.status==="owned"&&dup.charged===0&&poor.status==="funds"&&coins===10&&JSON.stringify(ids)===JSON.stringify(["runestone"]); })()'));
+check('S5 every Character and Base uses an explicit starter, event, or direct-coin unlock contract', () => fresh.run(
+  '[...CHARACTER_REGISTRY,...BASE_REGISTRY].every(x=>x.unlock&&["starter","event","coins"].includes(x.unlock.type)&&coinAmount(x.unlock.cost)===x.unlock.cost)'));
+check('S5 expands the rotating mission pool to twelve fair measurable run goals', () => fresh.run(
+  'MKEYS.length===12&&["height","perfects","power","coinsrun","blocks","fever","balloon","score","combo","modifier","skybreak","precision"].every(k=>MDEF[k]&&MDEF[k].targets.length&&MDEF[k].reward>0&&typeof MDEF[k].achieve==="function")'));
+check('S5 mission loading repairs corrupt and unknown slots while preserving valid goals', () => {
+  const g=makeGame({'skystack-missions':JSON.stringify([{key:'height',target:90,reward:30},{key:'future',target:1,reward:99},null,{key:'score',target:'bad',reward:25}])});
+  return g.run('missions.length===3&&missions[0].key==="height"&&missions.every(m=>MDEF[m.key]&&Number.isFinite(+m.target)&&Number.isFinite(+m.reward))&&new Set(missions.map(m=>m.key)).size===3');
+});
+check('S5 expands achievements to 24 immutable tiered badges while preserving every legacy id', () => fresh.run(
+  'ACH.length===24&&Object.isFrozen(ACH)&&ACH.every(a=>Object.isFrozen(a)&&["bronze","silver","gold"].includes(a.tier)&&a.reward===ECONOMY_RULES.achievementRewards[a.tier])&&["first","m150","m600","c10","c15","sky","pop5","streak3"].every(id=>ACH.some(a=>a.id===id))'));
+check('S5 achievement settlement grants its exact reward only once per finalized run', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="endless";resetRun();coins=0;stats={games:0,blocks:0,coins:0,maxCombo:0,skybreaks:0,balloons:0,streakBest:0};achDone=[];missions=[{key:"height",target:9999,reward:1},{key:"score",target:9999,reward:1},{key:"combo",target:99,reward:1}];gameOver("quit");const once=coins,done=achDone.slice();finalizeRun();return once===ECONOMY_RULES.achievementRewards.bronze&&coins===once&&done.length===1&&done[0]==="first"; })()');
+});
+check('S5 defines six frozen cosmetic/progression collection sets with one-time coin rewards', () => fresh.run(
+  'COLLECTION_REGISTRY.length===6&&Object.isFrozen(COLLECTION_REGISTRY)&&COLLECTION_REGISTRY.every(c=>Object.isFrozen(c)&&c.id&&c.name&&c.reward>0&&typeof c.progress==="function")'));
+check('S5 Collection normalization preserves unknown future ids and removes duplicates and bad values', () => {
+  const g=makeGame({'skystack-save':JSON.stringify({version:2,data:{'skystack-collections':{unlocked:['future-set','future-set',7],completed:['future-done','future-done',null]}}})});
+  const c=saved(g,'skystack-collections');
+  return c.unlocked.includes('future-set')&&c.unlocked.filter(x=>x==='future-set').length===1&&c.completed.includes('future-done')&&c.completed.filter(x=>x==='future-done').length===1;
+});
+check('S5 completing a cosmetic Base collection pays once without changing Base behavior', () => fresh.run(
+  '(() => { coins=500;ownedBases=["natural","runestone","rootbound"];collectionState={unlocked:[],completed:[]};persistCollections();const b=BASE_REGISTRY.find(x=>x.id==="starforge"),buy=purchaseUnlock(b,ownedBases),first=reconcileCollections(true),after=coins,second=reconcileCollections(true);return buy.charged===260&&first.length===1&&first[0].id==="base-gallery"&&first[0].reward===100&&after===340&&coins===after&&!second.length&&baseById("starforge").identity&&BASE_REGISTRY.every(x=>!x.effect&&!x.effects); })()'));
+check('S5 star-chart completion survives reboot and cannot pay twice', () => {
+  const g=makeGame({'skystack-levelstars':JSON.stringify([3,3,3,3,3,3,3,1])});
+  const first=saved(g,'skystack-coins'),save=g.mem.get('skystack-save'),c=saved(g,'skystack-collections');
+  const again=makeGame({'skystack-save':save});
+  return first===125&&c.completed.includes('star-chart')&&saved(again,'skystack-coins')===125&&saved(again,'skystack-collections').completed.includes('star-chart');
+});
+check('S5 Practice cannot settle missions, achievements, mastery, collections, or coins', () => fresh.run(
+  '(() => { mode="practice";resetRun();const before=JSON.stringify({coins,missions,achDone,characterMastery,collectionState,stats});score=9999;runPerfects=99;runSkybreaks=2;modifierWins=2;gameOver("quit");finalizeRun();return JSON.stringify({coins,missions,achDone,characterMastery,collectionState,stats})===before; })()'));
+check('S5 Pure and Daily retain neutral passives, boosts, modifiers, scoring, and cosmetic-only Bases', () => fresh.run(
+  '["pure","daily"].every(mode=>{const c=createRunContext({mode,campaignLevel:-1,startingAltitude:0,checkpointId:"ground",baseId:"starforge",seed:5,skill:.8,loadout:{shield:true},characterId:"neon",characterMastery:{xp:999}});return !c.characterSnapshot.passiveEnabled&&!c.boostPermissions.allowed&&!c.modifierPermissions.enabled&&c.modifiers.length===0&&c.basePermissions.cosmetic&&!c.basePermissions.effects&&adjustedRunScore(c,100)===100&&adjustedRunCoins(c,10)===10;})'));
+check('S5 Player screen presents achievement and Collection progress without overflowing phone navigation', () => fresh.run(
+  '(() => { W=242;H=300;relayout();state="me";renderMe();return ACH.length===24&&COLLECTION_REGISTRY.length===6&&TOGGLES.every(t=>t.x>=0&&t.x+t.w<=W&&t.y+t.h<NAV_Y)&&MIX_ROWS.every(r=>r.plus.y+r.plus.h<NAV_Y); })()'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v81', () => /const CACHE = 'skystack-v81'/.test(sw));
+check('sw.js cache bumped to v82', () => /const CACHE = 'skystack-v82'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

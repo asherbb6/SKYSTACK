@@ -410,6 +410,34 @@ let owned = store.get('skystack-skins', ['aurora', 'candy']);
 let skinId = store.get('skystack-skin', 'aurora');
 const skin = () => SKINS.find(s => s.id === skinId) || SKINS[0];
 
+// ---------- shared economy contract (S5) ----------
+// Every non-run reward, purchase, refund, and revive uses this exact coin ledger. Run pickups
+// still pass through addCoins so event/Character multipliers remain scoped to earned run coins.
+const ECONOMY_RULES = deepFreeze({
+  currency:'coins', directPurchase:true, duplicates:false, premiumCurrency:false,
+  levelUpReward:25, achievementRewards:{ bronze:15, silver:25, gold:50 }
+});
+function coinAmount(n) { return Math.max(0,Number.isFinite(+n)?Math.floor(+n):0); }
+function transactCoins(delta, earned) {
+  const n=Number.isFinite(+delta)?Math.trunc(+delta):0;
+  if (n<0 && coins < -n) return false;
+  coins=Math.max(0,coins+n);
+  if (earned && n>0) { stats.coins+=n; store.set('skystack-stats',stats); }
+  store.set('skystack-coins',coins);
+  return true;
+}
+function canAfford(cost) { return coins>=coinAmount(cost); }
+function purchaseUnlock(item, ownedIds) {
+  if (!item || !item.unlock || !Array.isArray(ownedIds)) return { ok:false, status:'invalid', charged:0 };
+  if (ownedIds.indexOf(item.id)!==-1) return { ok:true, status:'owned', charged:0 };
+  if (item.unlock.type!=='coins') return { ok:false, status:'locked', charged:0 };
+  const cost=coinAmount(item.unlock.cost);
+  if (!canAfford(cost)) return { ok:false, status:'funds', charged:0 };
+  if (!transactCoins(-cost,false)) return { ok:false, status:'funds', charged:0 };
+  ownedIds.push(item.id);
+  return { ok:true, status:'purchased', charged:cost };
+}
+
 // ---------- seasonal events (local clock only, no network; ?event=<id> forces one for testing) ----------
 function nthDow(y, m, dow, n) { const d = new Date(y, m, 1); while (d.getDay() !== dow) d.setDate(d.getDate()+1); d.setDate(d.getDate() + (n-1)*7); return d; }
 function easterDate(y) { const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451); return new Date(y, Math.floor((h+l-7*m+114)/31)-1, ((h+l-7*m+114)%31)+1); }
@@ -636,7 +664,7 @@ const MODE_REGISTRY = deepFreeze({
 });
 const MODES = Object.freeze(['level','practice','endless','time','pure','daily'].map(id => MODE_REGISTRY[id]));
 const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
-const FEATURE_FLAGS = deepFreeze({ characters:true, bases:true, collections:false, modifiers:true, challenges:false });
+const FEATURE_FLAGS = deepFreeze({ characters:true, bases:true, collections:true, modifiers:true, challenges:false });
 const EXTRAS = MODES.filter(m => !m.hidden);   // the picker: side modes, not the main climb
 let mode = store.get('skystack-mode', 'endless');
 if (!MODES.find(m => m.id === mode) || mode === 'level') { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
@@ -673,16 +701,33 @@ let winT = 0, failT = 0, winStars = 0, winReward = 0, winFirst = false;
 // truly ends (finalizeRun), so a revived run settles once — post-revive progress included.
 let reviveUsed = false, reviveOffered = false, runSettled = false;
 
-const ACH = [
-  { id:'first',   name:'FIRST FLIGHT',   chk:()=>stats.games>=1 },
-  { id:'m150',    name:'REACH 150M',     chk:()=>bestHeight*3>=150 },
-  { id:'m600',    name:'REACH SPACE',    chk:()=>bestHeight*3>=600 },
-  { id:'c10',     name:'COMBO X10',      chk:()=>stats.maxCombo>=10 },
-  { id:'c15',     name:'COMBO X15',      chk:()=>stats.maxCombo>=15 },
-  { id:'sky',     name:'SKYBREAK!',      chk:()=>stats.skybreaks>=1 },
-  { id:'pop5',    name:'5 BALLOONS',     chk:()=>stats.balloons>=5 },
-  { id:'streak3', name:'3 DAY STREAK',   chk:()=>stats.streakBest>=3 }
-];
+const achievement = (id,name,tier,chk) => deepFreeze({id,name,tier,reward:ECONOMY_RULES.achievementRewards[tier],chk});
+const ACH = deepFreeze([
+  achievement('first','FIRST FLIGHT','bronze',()=>stats.games>=1),
+  achievement('games10','10 FLIGHTS','silver',()=>stats.games>=10),
+  achievement('games50','50 FLIGHTS','gold',()=>stats.games>=50),
+  achievement('m150','REACH 150M','bronze',()=>bestHeight*METERS_PER>=150),
+  achievement('m600','REACH SPACE','silver',()=>bestHeight*METERS_PER>=600),
+  achievement('m1620','REACH STARS','gold',()=>bestHeight*METERS_PER>=1620),
+  achievement('c5','COMBO X5','bronze',()=>stats.maxCombo>=5),
+  achievement('c10','COMBO X10','silver',()=>stats.maxCombo>=10),
+  achievement('c15','COMBO X15','gold',()=>stats.maxCombo>=15),
+  achievement('sky','SKYBREAK!','bronze',()=>stats.skybreaks>=1),
+  achievement('sky5','5 SKYBREAKS','silver',()=>stats.skybreaks>=5),
+  achievement('sky20','20 SKYBREAKS','gold',()=>stats.skybreaks>=20),
+  achievement('pop1','FIRST BALLOON','bronze',()=>stats.balloons>=1),
+  achievement('pop5','5 BALLOONS','silver',()=>stats.balloons>=5),
+  achievement('pop25','25 BALLOONS','gold',()=>stats.balloons>=25),
+  achievement('coin100','EARN 100 COINS','bronze',()=>stats.coins>=100),
+  achievement('coin1000','EARN 1K COINS','silver',()=>stats.coins>=1000),
+  achievement('coin5000','EARN 5K COINS','gold',()=>stats.coins>=5000),
+  achievement('block100','STACK 100','bronze',()=>stats.blocks>=100),
+  achievement('block1000','STACK 1K','silver',()=>stats.blocks>=1000),
+  achievement('block5000','STACK 5K','gold',()=>stats.blocks>=5000),
+  achievement('streak3','3 DAY STREAK','silver',()=>stats.streakBest>=3),
+  achievement('climb5','CLEAR 5 BIOMES','silver',()=>prog>=5),
+  achievement('summit','SKY CONQUERED','gold',()=>prog>=TIERS.length)
+]);
 let achDone = store.get('skystack-ach', []);
 
 // ---------- missions ----------
@@ -693,7 +738,12 @@ const MDEF = {
   coinsrun:{ text:t=>'EARN '+t+' COINS/RUN',targets:[25,40],     reward:20, achieve:()=>runCoins },
   blocks:  { text:t=>'STACK '+t+' BLOCKS',  targets:[40,60],     reward:25, achieve:()=>blocks.length },
   fever:   { text:t=>'HIT FEVER X'+t,       targets:[1,2],       reward:30, achieve:()=>runFevers },
-  balloon: { text:t=>'POP '+t+' BALLOON'+'', targets:[1,2],      reward:25, achieve:()=>runBalloons }
+  balloon: { text:t=>'POP '+t+' BALLOON'+'', targets:[1,2],      reward:25, achieve:()=>runBalloons },
+  score:   { text:t=>'SCORE '+t+' PTS',       targets:[250,500,1000],reward:25,achieve:()=>score },
+  combo:   { text:t=>'REACH COMBO X'+t,       targets:[3,5,7],      reward:25,achieve:()=>maxCombo },
+  modifier:{ text:t=>'CLEAR '+t+' MODIFIER'+(t>1?'S':''),targets:[1,2],reward:30,achieve:()=>modifierWins },
+  skybreak:{ text:t=>'TRIGGER A SKYBREAK',    targets:[1],          reward:35,achieve:()=>runSkybreaks },
+  precision:{text:t=>'LAND '+t+'% PERFECT',   targets:[40,55,70],   reward:30,achieve:()=>{const n=Math.max(0,blocks.length-runLaunch-1);return n?Math.round(runPerfects/n*100):0;} }
 };
 MDEF.balloon.text = t => 'POP ' + t + ' BALLOON' + (t > 1 ? 'S' : '');
 const MKEYS = Object.keys(MDEF);
@@ -703,10 +753,9 @@ function newMission(exclude) {
   return { key, target: pick(MDEF[key].targets), reward: MDEF[key].reward };
 }
 let missions = store.get('skystack-missions', null);
-if (!missions || missions.length !== 3) {
-  missions = []; while (missions.length < 3) missions.push(newMission(missions.map(m => m.key)));
-  store.set('skystack-missions', missions);
-}
+missions=Array.isArray(missions)?missions.filter(m=>m&&MDEF[m.key]&&Number.isFinite(+m.target)&&Number.isFinite(+m.reward)).slice(0,3):[];
+while (missions.length < 3) missions.push(newMission(missions.map(m => m.key)));
+store.set('skystack-missions', missions);
 
 // ---------- sky ----------
 const SKY_BANDS = [[255,178,94],[255,126,107],[242,94,142],[156,94,216],[75,63,168],[27,42,107],[14,27,75],[18,59,94],[30,107,107],[62,232,181],[94,200,242],[255,208,94]];
@@ -730,6 +779,40 @@ const TIERS = [
   { n:360, name:'ORBIT',        c:'#FFD75E' },
   { n:540, name:'THE STARS',    c:'#FFF6E8' }
 ];
+
+// ---------- collection sets (S5) ----------
+// Collections recognize existing direct-purchase cosmetics and campaign stars. Completion pays
+// coins once; it never grants run power, changes a Base, or modifies Pure/Daily rules.
+const collectionSet = (id,name,items,reward,progress) => deepFreeze({id,name,items,reward,progress});
+const COLLECTION_REGISTRY = deepFreeze([
+  collectionSet('first-crew','FIRST CREW',['aurora','candy','lava','mint'],50,()=>[owned.filter(id=>['aurora','candy','lava','mint'].includes(id)).length,4]),
+  collectionSet('rare-crew','RARE CREW',['lava','mint','ocean'],75,()=>[owned.filter(id=>['lava','mint','ocean'].includes(id)).length,3]),
+  collectionSet('epic-crew','EPIC CREW',['neon','mono','sakura','void'],100,()=>[owned.filter(id=>['neon','mono','sakura','void'].includes(id)).length,4]),
+  collectionSet('legend-crew','LEGEND CREW',['gold','royal','prism'],150,()=>[owned.filter(id=>['gold','royal','prism'].includes(id)).length,3]),
+  collectionSet('base-gallery','BASE GALLERY',BASE_REGISTRY.map(b=>b.id),100,()=>[BASE_REGISTRY.filter(b=>ownedBases.includes(b.id)).length,BASE_REGISTRY.length]),
+  collectionSet('star-chart','STAR CHART',[],125,()=>[levelStars.reduce((n,x)=>n+coinAmount(x),0),22])
+]);
+function normalizeCollectionState(v) {
+  const src=normalizeFutureSaveValue('collections',v);
+  return { unlocked:src.unlocked, completed:src.completed };
+}
+let collectionState=normalizeCollectionState(store.get(FUTURE_SAVE_CONTRACTS.collections.key,null));
+function persistCollections() { store.set(FUTURE_SAVE_CONTRACTS.collections.key,collectionState); }
+function reconcileCollections(payRewards) {
+  const finished=[];
+  for (const set of COLLECTION_REGISTRY) {
+    const p=set.progress(), current=Math.max(0,coinAmount(p[0])), target=Math.max(1,coinAmount(p[1]));
+    if (current>0 && collectionState.unlocked.indexOf(set.id)<0) collectionState.unlocked.push(set.id);
+    if (current>=target && collectionState.completed.indexOf(set.id)<0) {
+      collectionState.completed.push(set.id);
+      if (payRewards) transactCoins(set.reward,true);
+      finished.push({id:set.id,name:set.name,reward:payRewards?set.reward:0});
+    }
+  }
+  persistCollections();
+  return finished;
+}
+reconcileCollections(true);
 prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed unlocks from lifetime best
 // per-region block material — affects FEEL (fair + subtle, tune freely):
 // spd = slider-speed multiplier, wob = drift-wobble amount, wind = local wind exposure.
@@ -877,7 +960,7 @@ let paused = false;
 let dropPending = 0;   // tiny grace window between tap and release (people pre-tap expecting delay)
 let combo = 0, maxCombo = 0, hueBase = Math.random() * 360;
 let squash = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
-let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, coinPop = 0, tick = 0;
+let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, runSkybreaks = 0, coinPop = 0, tick = 0;
 let score = 0;
 let bannerText = '', bannerT = 0;
 let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
@@ -885,7 +968,7 @@ let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = 
 let wind = null, windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
 let nextPickupRow = 8;
 let previewIdx = 0, basePreviewIdx = Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)), shopView = 'character';
-let completedThisRun = [], achThisRun = [], levelUpsThisRun = 0, xpThisRun = 0;
+let completedThisRun = [], achThisRun = [], collectionThisRun = [], levelUpsThisRun = 0, xpThisRun = 0;
 let overCause = '';
 let fever = false, feverT = 0;
 let nova = false, novaT = 0, novaFlash = 0;   // SUPERNOVA at combo x15 (3x score)
@@ -1110,10 +1193,10 @@ function resetRun() {
   balloon = null; lastBalloonRow = 0;
   score = 0; combo = 0; maxCombo = 0; newBest = false; newHeight = false;
   tier = TIERS.findIndex(t => t.n > blocks.length); if (tier < 0) tier = TIERS.length;   // skip pre-stacked tiers
-  runCoins = 0; runPerfects = 0; runPowerups = 0; runFevers = 0; runBalloons = 0; bannerT = 0;
+  runCoins = 0; runPerfects = 0; runPowerups = 0; runFevers = 0; runBalloons = 0; runSkybreaks = 0; bannerT = 0;
   shield = 0; widenNext = false; slowBlocks = 0; auraBlocks = 0; goldenNext = false;
   wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
-  nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
+  nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; collectionThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
   reviveUsed = false; reviveOffered = false; runSettled = false;
   initModifierRuntime();
@@ -1186,8 +1269,7 @@ function addCoins(n, x, y) {
   if (!canEarnRewards(runContext)) return;
   if (EV) n = Math.ceil(n * 1.25);   // event week: +25% coins
   n = adjustedRunCoins(runContext,n);
-  coins += n; runCoins += n; stats.coins += n; coinPop = 1;
-  store.set('skystack-coins', coins);
+  transactCoins(n,true); runCoins += n; coinPop = 1;
   if (x !== undefined) for (let i = 0; i < n && i < 6; i++) coinFx.push({ x, y, t: 0, delay: i * 3 });
   sfx.coin();
 }
@@ -1329,7 +1411,7 @@ function land() {
     blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col:f.col });
     bannerText = 'SKYBREAK! +50'; bannerT = 1;
     addCoins(50, W/2, towerTopY());
-    balance = 0; if (canEarnRewards(runContext)) stats.skybreaks++; skybreakT = 1;
+    balance = 0; if (canEarnRewards(runContext)) { stats.skybreaks++; runSkybreaks++; } skybreakT = 1;
     burst(W/2, towerTopY(), 36, f.col, true);
     for (let bx2 = 8; bx2 < W; bx2 += 24) particles.push({ x:bx2, y:towerTopY(), vx:0, vy:-1.6-Math.random(), life:1, color:'#FFD75E' });
     shake = Math.max(shake, reduceMotion ? 3 : 6);
@@ -1397,7 +1479,7 @@ function settleRun(xpBonus) {
     const mm = missions[i], def = MDEF[mm.key];
     if (def.achieve() >= mm.target) {
       completedThisRun.push({ text: def.text(mm.target), reward: mm.reward });
-      coins += mm.reward; stats.coins += mm.reward; store.set('skystack-coins', coins);
+      transactCoins(mm.reward,true);
       missions[i] = newMission(missions.map(x => x.key)); changed = true;
     }
   }
@@ -1406,17 +1488,17 @@ function settleRun(xpBonus) {
   // XP + level (only the blocks YOU placed count, not the pre-stack)
   xpThisRun = Math.max(1, Math.round(score / 10) + (blocks.length - runLaunch) + (xpBonus || 0));
   lvl.xp += xpThisRun; levelUpsThisRun = 0;
-  while (lvl.xp >= xpNeed()) { lvl.xp -= xpNeed(); lvl.level++; levelUpsThisRun++; coins += 25; stats.coins += 25; }
-  if (levelUpsThisRun) { sfx.levelup(); store.set('skystack-coins', coins); }
+  while (lvl.xp >= xpNeed()) { lvl.xp -= xpNeed(); lvl.level++; levelUpsThisRun++; transactCoins(ECONOMY_RULES.levelUpReward,true); }
+  if (levelUpsThisRun) sfx.levelup();
   store.set('skystack-lv', lvl);
   achThisRun = [];
   for (const a of ACH) {
     if (achDone.indexOf(a.id) === -1 && a.chk()) {
-      achDone.push(a.id); achThisRun.push(a.name);
-      coins += 25; stats.coins += 25;
+      achDone.push(a.id); achThisRun.push({name:a.name,reward:a.reward});
+      transactCoins(a.reward,true);
     }
   }
-  if (achThisRun.length) { store.set('skystack-ach', achDone); store.set('skystack-coins', coins); sfx.unlock(); }
+  if (achThisRun.length) { store.set('skystack-ach', achDone); sfx.unlock(); }
   // adapt the personal skill estimate so the next run's assist fits the player
   const placed = Math.max(0, blocks.length - runLaunch);
   const perf = clamp((Math.min(maxCombo, 12) / 12) * 0.6 + (Math.min(placed, 50) / 50) * 0.4, 0, 1);
@@ -1424,6 +1506,7 @@ function settleRun(xpBonus) {
   const charId=runContext.characterSnapshot.id, cm=masteryFor(charId);
   cm.xp+=xpThisRun; cm.runs++; cm.blocks+=placed; cm.perfects+=runPerfects;
   characterMastery[charId]=cm; persistCharacters();
+  collectionThisRun=reconcileCollections(true);
   saveStats();
 }
 // campaign level goal reached mid-run: freeze the run and celebrate
@@ -1439,7 +1522,7 @@ function levelComplete() {
   if (winFirst) { prog = i + 1; store.set('skystack-tiers', prog); }
   if (winStars > (levelStars[i] || 0)) { levelStars[i] = winStars; store.set('skystack-levelstars', levelStars); }
   winReward = 15 + i * 10 + winStars * 5 + (winFirst ? 25 : 0) + (winFirst && prog === TIERS.length ? 200 : 0);
-  coins += winReward; stats.coins += winReward; store.set('skystack-coins', coins);
+  transactCoins(winReward,true);
   runSettled = true; reviveOffered = false;   // wins settle on the spot
   stats.games++;
   stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
@@ -1491,7 +1574,7 @@ function finalizeRun() {   // the run is truly over: count the game and settle X
 }
 function doRevive() {
   if (!reviveOffered || coins < reviveCost()) { sfx.deny(); return; }
-  coins -= reviveCost(); store.set('skystack-coins', coins);
+  transactCoins(-reviveCost(),false);
   reviveUsed = true; reviveOffered = false;
   debris = []; balance = 0; swayX = 0; wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;   // scrub the death state
   faller = null; dropPending = 0; overCause = ''; overLock = 0; shake = 0;
@@ -1721,22 +1804,24 @@ function pressDown(e) {
       if (shopView==='base') {
         const b=BASE_REGISTRY[basePreviewIdx];
         if (ownedBases.indexOf(b.id)===-1) {
-          if (coins>=b.cost) { coins-=b.cost; ownedBases.push(b.id); baseId=b.id; persistBases(); store.set('skystack-coins',coins); sfx.unlock(); toast('BASE UNLOCKED!'); }
-          else { sfx.deny(); toast('NEED MORE COINS'); }
+          const buy=purchaseUnlock(b,ownedBases);
+          if (buy.status==='purchased') { baseId=b.id; persistBases(); const done=reconcileCollections(true); sfx.unlock(); toast(done.length?'COLLECTION COMPLETE +'+done[0].reward:'BASE UNLOCKED!'); }
+          else { sfx.deny(); toast(buy.status==='locked'?'NOT AVAILABLE':'NEED MORE COINS'); }
         } else if (b.id!==baseId) { baseId=b.id; persistBases(); sfx.tap(); toast('BASE EQUIPPED'); }
         return;
       }
       const sk = CHARACTER_REGISTRY[previewIdx];
       if (owned.indexOf(sk.id) === -1) {
-        if (coins >= sk.cost) { coins -= sk.cost; owned.push(sk.id); skinId = sk.id; persistCharacters(); store.set('skystack-coins', coins); sfx.unlock(); toast('UNLOCKED!'); }
-        else { sfx.deny(); toast('NEED MORE COINS'); }
+        const buy=purchaseUnlock(sk,owned);
+        if (buy.status==='purchased') { skinId=sk.id; persistCharacters(); const done=reconcileCollections(true); sfx.unlock(); toast(done.length?'COLLECTION COMPLETE +'+done[0].reward:'UNLOCKED!'); }
+        else { sfx.deny(); toast(buy.status==='locked'?'NOT AVAILABLE':'NEED MORE COINS'); }
       } else if (sk.id !== skinId) { skinId = sk.id; persistCharacters(); sfx.tap(); toast('EQUIPPED'); }
       return;
     }
     if (shopView==='character' && canUseLoadout(mode)) for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
       shopInfo = POW_DESC[c.id];
-      if (loadout[c.id]) { loadout[c.id] = false; coins += c.cost; store.set('skystack-coins', coins); sfx.tap(); }
-      else if (coins >= c.cost) { loadout[c.id] = true; coins -= c.cost; store.set('skystack-coins', coins); sfx.coin(); }
+      if (loadout[c.id]) { loadout[c.id] = false; transactCoins(c.cost,false); sfx.tap(); }
+      else if (canAfford(c.cost)) { loadout[c.id] = true; transactCoins(-c.cost,false); sfx.coin(); }
       else { sfx.deny(); }
       return;
     }
@@ -4409,10 +4494,12 @@ function renderMe() {
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(barX, barY, barW, 6);
   ctx.fillStyle = '#62E8B5'; ctx.fillRect(barX+1, barY+1, Math.max(0, Math.round((barW-2) * clamp(lvl.xp / xpNeed(), 0, 1))), 4);
 
-  // achievements (two columns of four — fixed grid, no overlap)
-  txt('ACHIEVEMENTS', mx, 46, 1, UI_HEX(), 'left');
-  for (let i = 0; i < ACH.length; i++) {
-    const a = ACH[i], done = achDone.indexOf(a.id) !== -1;
+  // Eight next/recent badges stay readable here; the counter covers the complete 24-badge track.
+  txt('ACHIEVEMENTS '+achDone.filter(id=>ACH.some(a=>a.id===id)).length+'/'+ACH.length, mx, 46, 1, UI_HEX(), 'left');
+  const nextAch=ACH.filter(a=>achDone.indexOf(a.id)===-1), doneAch=ACH.filter(a=>achDone.indexOf(a.id)!==-1).reverse();
+  const shownAch=nextAch.concat(doneAch).slice(0,8);
+  for (let i = 0; i < shownAch.length; i++) {
+    const a = shownAch[i], done = achDone.indexOf(a.id) !== -1;
     const col = i % 2, row = Math.floor(i / 2);
     const ax = mx + col * cw, ay = 58 + row * 13;
     ctx.fillStyle = done ? '#FFD75E' : 'rgba(255,246,232,0.18)';
@@ -4421,8 +4508,14 @@ function renderMe() {
     txt(a.name, ax + 10, ay, 1, done ? '#FFF6E8' : 'rgba(255,246,232,0.4)', 'left');
   }
 
+  const knownCollections=collectionState.completed.filter(id=>COLLECTION_REGISTRY.some(c=>c.id===id)).length;
+  const nextSet=COLLECTION_REGISTRY.find(c=>collectionState.completed.indexOf(c.id)===-1) || COLLECTION_REGISTRY[COLLECTION_REGISTRY.length-1];
+  const setProgress=nextSet.progress(), setNow=Math.min(coinAmount(setProgress[0]),coinAmount(setProgress[1]));
+  txt('COLLECTIONS '+knownCollections+'/'+COLLECTION_REGISTRY.length, mx, 112, 1, UI_HEX(), 'left');
+  txt(nextSet.name+' '+setNow+'/'+coinAmount(setProgress[1]), mx+meW, 112, 1, 'rgba(255,246,232,0.6)', 'right');
+
   // lifetime stats
-  txt('LIFETIME', mx, 118, 1, UI_HEX(), 'left');
+  txt('LIFETIME', mx, 128, 1, UI_HEX(), 'left');
   const rows = [
     ['GAMES', stats.games], ['BLOCKS', stats.blocks], ['COINS', stats.coins],
     ['COMBO', 'X' + stats.maxCombo], ['BEST M', bestHeight*METERS_PER + 'M'], ['BEST PTS', fmtPts(best)],
@@ -4430,18 +4523,18 @@ function renderMe() {
   ];
   for (let i = 0; i < rows.length; i++) {
     const col = i % 2, row = Math.floor(i / 2);
-    const rx = mx + col * cw, ry = 130 + row * 12;
+    const rx = mx + col * cw, ry = 140 + row * 12;
     txt(rows[i][0], rx, ry, 1, 'rgba(255,246,232,0.55)', 'left');
     txt(rows[i][1], rx + cw - 6, ry, 1, '#FFF6E8', 'right');
   }
 
   // settings
-  txt('SETTINGS', mx, 180, 1, UI_HEX(), 'left');
+  txt('SETTINGS', mx, 182, 1, UI_HEX(), 'left');
   const setLabels = { sound:'SOUND', music:'MUSIC', haptics:'HAPTICS' };
   const setVals = { sound: !muted, music: musicOn, haptics: hapticsOn };
   for (let i = 0; i < TOGGLES.length; i++) {
     const t = TOGGLES[i], on = setVals[t.id];
-    const ry = 192 + i * 15;
+    const ry = 194 + i * 15;
     txt(setLabels[t.id], mx, ry + 2, 1, 'rgba(255,246,232,0.85)', 'left');
     t.x = mx + meW - t.w; t.y = ry;   // keep hitbox in sync with drawn position
     ctx.fillStyle = on ? '#62E8B5' : 'rgba(0,0,0,0.35)';
@@ -4742,7 +4835,8 @@ function renderGameOver() {
   } else if (runSettled) {
     let y = modifierResults.length ? 167 : 156;
     if (levelUpsThisRun > 0) { txt('LEVEL UP! NOW LV '+lvl.level+' +25', W/2, y, 1, '#FFD75E', 'center'); y += 11; }
-    for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i]+' +25', W/2, y, 1, '#C77EFF', 'center'); y += 11; }
+    for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i].name+' +'+achThisRun[i].reward, W/2, y, 1, '#C77EFF', 'center'); y += 11; }
+    for (let i = 0; i < collectionThisRun.length && i < 1; i++) { txt('COLLECTION: '+collectionThisRun[i].name+' +'+collectionThisRun[i].reward, W/2, y, 1, '#FFD75E', 'center'); y += 11; }
     for (let i = 0; i < completedThisRun.length && i < 2; i++) { txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y, 1, '#62E8B5', 'center'); y += 11; }
     if (runContext.mode === 'daily') { txt('DAILY STREAK ' + daily.streak, W/2, y, 1, '#FF9E5E', 'center'); y += 11; }
   }
