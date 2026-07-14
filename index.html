@@ -663,23 +663,60 @@ const MODE_REGISTRY = deepFreeze({
   level:    { id:'level',    name:'LEVELS',   blurb:'CLIMB THE SKY',      desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  modifiers:true,  pickups:true,  progress:true,  revive:true  } },
   practice: { id:'practice', name:'PRACTICE', blurb:'LEARN AT YOUR PACE', desc:'NO FAIL - GUIDED CLIMB',  wind:false,fail:false,practice:true,rules:{ lane:'practice', assist:'fixed',    rewards:false,records:false,loadout:false, passives:false, modifiers:false, pickups:false, progress:false, revive:false } },
   endless:  { id:'endless',  name:'ENDLESS',  blurb:'CLIMB FOREVER',      desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  modifiers:true,  pickups:true,  progress:true,  revive:true  } },
-  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  modifiers:true,  pickups:true,  progress:true,  revive:false } },
+  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, hidden:true, time:3600, rules:{ lane:'assisted', assist:'adaptive', rewards:true, records:true, loadout:true, passives:true, modifiers:true, pickups:true, progress:true, revive:false } },
+  challenge:{ id:'challenge',name:'CHALLENGE',blurb:'FOCUSED RUN',        desc:'ONE RULE - ONE GOAL',      wind:true, fail:true, hidden:true, rules:{ lane:'assisted', assist:'adaptive', rewards:true, records:true, loadout:false, passives:true, modifiers:true, pickups:false, progress:false, revive:false } },
   pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, modifiers:false, pickups:false, progress:true, revive:false } },
   daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, modifiers:false, pickups:true, progress:true, revive:false } }
 });
-const MODES = Object.freeze(['level','practice','endless','time','pure','daily'].map(id => MODE_REGISTRY[id]));
+const MODES = Object.freeze(['level','practice','endless','time','challenge','pure','daily'].map(id => MODE_REGISTRY[id]));
 const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
-const FEATURE_FLAGS = deepFreeze({ characters:true, bases:true, collections:true, modifiers:true, challenges:false });
-const EXTRAS = MODES.filter(m => !m.hidden);   // the picker: side modes, not the main climb
+const FEATURE_FLAGS = deepFreeze({ characters:true, bases:true, collections:true, modifiers:true, challenges:true });
+const CHALLENGE_REGISTRY = deepFreeze([
+  { id:'time60', name:'TIME 60', family:'timed', desc:'MAX HEIGHT IN 60 SECONDS', mode:'time', duration:3600, objective:{type:'height',target:0}, reward:0, modifiers:true },
+  { id:'precision10', name:'PERFECT TEN', family:'precision', desc:'LAND 10 PERFECTS - ONE MISS ENDS IT', mode:'challenge', objective:{type:'perfects',target:10}, reward:30, modifiers:false, failOnImperfect:true },
+  { id:'three-lives', name:'THREE LIVES', family:'limitedLives', desc:'CLIMB 24 BLOCKS WITH 3 LIVES', mode:'challenge', objective:{type:'height',target:24}, reward:30, modifiers:false, lives:3 },
+  { id:'unstable20', name:'UNSTABLE TOWER', family:'unstable', desc:'CLIMB 20 - LEAN BUILDS 35% FASTER', mode:'challenge', objective:{type:'height',target:20}, reward:35, modifiers:true, balanceScale:1.35 },
+  { id:'seeded30', name:'SEEDED CLIMB', family:'seeded', desc:'SAME 30-BLOCK RUN EVERY RETRY', mode:'challenge', objective:{type:'height',target:30}, reward:35, modifiers:true, fixedSeed:0x534B5936 },
+  { id:'recovery3', name:'RECOVERY', family:'recovery', desc:'CUT, THEN RECOVER PERFECT - 3 TIMES', mode:'challenge', objective:{type:'recoveries',target:3}, reward:30, modifiers:false },
+  { id:'neon-trial', name:'NEON TRIAL', family:'characterTrial', desc:'NEON PRECISION - LAND 8 PERFECTS', mode:'challenge', objective:{type:'perfects',target:8}, reward:30, modifiers:false, characterId:'neon' },
+  { id:'cave-gate', name:'CAVE GATE', family:'milestone', desc:'REACH 99M WITH MODIFIERS', mode:'challenge', objective:{type:'height',target:32}, reward:40, modifiers:true }
+]);
+function challengeById(id) { return CHALLENGE_REGISTRY.find(c=>c.id===id) || null; }
+function challengeRule(ctx,key,fallback) {
+  const c=ctx&&ctx.challengeSnapshot;
+  return c&&Object.prototype.hasOwnProperty.call(c,key)?c[key]:fallback;
+}
+function challengeSeed(c,retrySeed,entropy) {
+  if (Number.isInteger(retrySeed)) return retrySeed>>>0;
+  if (c&&Number.isInteger(c.fixedSeed)) return c.fixedSeed>>>0;
+  return entropy>>>0;
+}
+const CHALLENGE_ENTRY = deepFreeze({id:'challenges',name:'CHALLENGES',desc:'8 FOCUSED RUNS - LOCAL + FAIR'});
+const EXTRAS = Object.freeze([MODE_REGISTRY.practice,MODE_REGISTRY.endless,MODE_REGISTRY.pure,MODE_REGISTRY.daily,CHALLENGE_ENTRY]);
 let mode = store.get('skystack-mode', 'endless');
-if (!MODES.find(m => m.id === mode) || mode === 'level') { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
+if (!MODES.find(m => m.id === mode) || mode === 'level' || mode === 'time' || mode === 'challenge') { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate hidden/internal selections
 const curMode = () => MODES.find(m => m.id === mode) || MODES[0];
 let modePicker = false;
+let challengePicker = false;
 let skyMap = false;
 let mapScroll = 0, mapScrollMax = 0, mapDrag = null;   // sky map list scroll state
 let modeBests = store.get('skystack-modebests', {});
 function bestBlocksFor(m) { return (modeBests[m] && modeBests[m].blocks) || 0; }
 function bestScoreFor(m) { return (modeBests[m] && modeBests[m].score) || 0; }
+function challengeRecordEntry(v) {
+  const n=x=>Math.max(0,Number.isFinite(+x)?Math.floor(+x):0), src=v&&typeof v==='object'&&!Array.isArray(v)?v:{};
+  return { bestBlocks:n(src.bestBlocks), bestScore:n(src.bestScore), clears:n(src.clears), attempts:n(src.attempts) };
+}
+function normalizeChallengeRecords(v) {
+  const src=v&&typeof v==='object'&&!Array.isArray(v)?v:{}, out={};
+  for (const id of Object.keys(src)) out[id]=challengeRecordEntry(src[id]);
+  return out;
+}
+let challengeRecords=normalizeChallengeRecords(store.get(FUTURE_SAVE_CONTRACTS.challengeRecords.key,null));
+if (!challengeRecords.time60 && modeBests.time) challengeRecords.time60=challengeRecordEntry({bestBlocks:modeBests.time.blocks,bestScore:modeBests.time.score});
+function persistChallengeRecords() { store.set(FUTURE_SAVE_CONTRACTS.challengeRecords.key,challengeRecords); }
+function challengeRecord(id) { return challengeRecordEntry(challengeRecords[id]); }
+persistChallengeRecords();
 function fmtPts(n) { return n >= 100000 ? Math.floor(n/1000) + 'K' : '' + n; }
 let daily = store.get('skystack-daily', { lastPlayed: '', streak: 0, best: 0 });
 
@@ -697,6 +734,7 @@ let levelStars = store.get('skystack-levelstars', []);
 let pendingLevel = -1;   // level chosen on the map, consumed by the next resetRun
 let pendingCheckpointId = null; // checkpoint choice is independent from the selected campaign goal
 let pendingRunSeed = null; // explicit retry only: replay the owned RNG/modifier schedule
+let pendingChallengeId = null; // selected hub contract, consumed into immutable RunContext
 let runLevel = -1;       // active level for the current run (-1 = free modes)
 let runLaunch = 0;       // blocks pre-stacked for the current run (0 = full ground-up run)
 let runContext = null;   // deeply immutable rules/seed snapshot owned by the active run
@@ -925,6 +963,10 @@ function checkpointForLevel(i) { return i > 0 ? CHECKPOINT_REGISTRY[clamp(i,1,CH
 function checkpointUnlocked(cp, cleared) { return cp.unlock.requiresClearedLevel===null || (cleared===undefined?prog:cleared)>cp.unlock.requiresClearedLevel; }
 function startingStructureFor(cp) { return cp.startAltitude > 0 ? { id:'landmark-'+cp.region, kind:'landmark', region:cp.region } : { id:'natural-cave-ground', kind:'ground', region:0 }; }
 function startLevel(i, checkpointId, retrySeed) { pendingLevel=i; pendingCheckpointId=checkpointId||checkpointForLevel(i).id; pendingRunSeed=Number.isInteger(retrySeed)?retrySeed>>>0:null; mode='level'; startRun(); }
+function startChallenge(id,retrySeed) {
+  const c=challengeById(id); if (!c) return false;
+  pendingChallengeId=c.id; pendingRunSeed=Number.isInteger(retrySeed)?retrySeed>>>0:null; mode=c.mode; startRun(); return true;
+}
 
 // ---------- power-ups ----------
 const POW = {
@@ -984,6 +1026,7 @@ let timeLeft = 0;
 let toastMsg = '', toastT = 0;
 function toast(m) { toastMsg = m; toastT = 1.6; }
 let modifierProgress = {}, modifierResults = [], modifierWins = 0, modifierBonusCoins = 0;
+let challengeRuntime = null, challengeCleared = false, challengeReward = 0, challengeRecorded = false;
 function initModifierRuntime() {
   modifierProgress={}; modifierResults=[]; modifierWins=0; modifierBonusCoins=0;
   for (const m of (runContext&&runContext.modifiers)||[]) modifierProgress[m.id]={status:'pending',placements:0,perfects:0,streak:0,bestStreak:0,misses:0,hits:0,cut:false,success:false};
@@ -1067,18 +1110,20 @@ function startingAssist(modeId, skillValue) {
 }
 function createRunContext(o) {
   const m = MODE_REGISTRY[o.mode] || MODE_REGISTRY.endless;
+  const challenge=challengeById(o.challengeId);
   const campaignLevel = Number.isInteger(o.campaignLevel) ? o.campaignLevel : -1;
   const startingAltitude = Math.max(0, o.startingAltitude | 0);
   const p = PERMISSION_REGISTRY[m.id];
   const lane = laneForMode(m.id), levelSpec = campaignLevel >= 0 ? LEVEL_REGISTRY[campaignLevel] : null;
-  const char=characterById(o.characterId), passive=PASSIVE_REGISTRY[char.passiveId] || PASSIVE_REGISTRY.classic;
+  const char=characterById(challenge&&challenge.characterId?challenge.characterId:o.characterId), passive=PASSIVE_REGISTRY[char.passiveId] || PASSIVE_REGISTRY.classic;
   const checkpoint=o.checkpointId?checkpointById(o.checkpointId):checkpointAtAltitude(startingAltitude);
   const structure=startingStructureFor(checkpoint), selectedBase=baseById(o.baseId);
   const load = o.loadout || {}, boosts={ shield:!!load.shield, aura:!!load.aura, slow:!!load.slow };
-  const modifiers=Array.isArray(o.modifiers)?o.modifiers:buildModifierSchedule(o.seed>>>0,m.id,campaignLevel,startingAltitude);
+  const modifiers=Array.isArray(o.modifiers)?o.modifiers:challenge&&!challenge.modifiers?[]:buildModifierSchedule(o.seed>>>0,m.id,campaignLevel,startingAltitude);
   const recordEligible=p.records && campaignLevel<0 && startingAltitude===0 && checkpoint.recordScope==='ground-up';
   return deepFreeze({
     mode:m.id, campaignLevel, startingAltitude, seed:o.seed >>> 0,
+    challengeSnapshot:challenge?JSON.parse(JSON.stringify(challenge)):null,
     assistPolicy:p.assist,
     checkpointSnapshot:{ id:checkpoint.id, name:checkpoint.name, startAltitude:checkpoint.startAltitude, scoreMultiplier:checkpoint.scoreMultiplier, rewardScope:checkpoint.rewardScope, recordScope:checkpoint.recordScope },
     startingStructureSnapshot:structure,
@@ -1088,9 +1133,9 @@ function createRunContext(o) {
     boostPermissions:{ allowed:p.loadout },
     loadoutSnapshot:boosts, // S0 compatibility alias; boostSnapshot is the S3 canonical owner
     modifiers:modifiers.map(x => JSON.parse(JSON.stringify(x))),
-    modifierPermissions:{ enabled:!!p.modifiers, deterministic:true, surpriseFailure:false },
+    modifierPermissions:{ enabled:!!p.modifiers&&(!challenge||challenge.modifiers), deterministic:true, surpriseFailure:false },
     rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards, scope:checkpoint.rewardScope, scoreMultiplier:checkpoint.scoreMultiplier },
-    recordPermissions:{ write:recordEligible, scope:checkpoint.recordScope, reason:campaignLevel>=0?'campaign-level':checkpoint.recordScope==='ground-up'?'eligible-ground-up':'checkpoint-start' },
+    recordPermissions:{ write:recordEligible, scope:challenge?'challenge':checkpoint.recordScope, reason:challenge?'challenge':campaignLevel>=0?'campaign-level':checkpoint.recordScope==='ground-up'?'eligible-ground-up':'checkpoint-start' },
     loadoutAllowed:p.loadout,
     characterSnapshot:{ id:char.id, passiveId:passive.id, passiveEnabled:!!p.passives, mastery:masteryEntry(o.characterMastery) },
     difficultyProfile:{ lane:lane.id, assistEnvelope:lane.assist, startingAssist:startingAssist(m.id, o.skill), campaignLevel, levelSpeedScale:levelSpec ? levelSpec.speedCurve.campaignScale : 1, slider:BALANCE_REGISTRY.slider }
@@ -1153,6 +1198,57 @@ function levelBalanceReport(levelId, laneId, skillValue) {
     starObjectives:spec.starObjectives };
 }
 function activeMode() { return runContext ? MODE_REGISTRY[runContext.mode] : curMode(); }
+function activeChallenge() { return runContext&&runContext.challengeSnapshot?runContext.challengeSnapshot:null; }
+function activeRunName() { const c=activeChallenge(); return c?c.name:activeMode().name; }
+function challengeProgressValue(c) {
+  if (!c) return 0;
+  if (c.objective.type==='height') return Math.max(0,blocks.length-1);
+  if (c.objective.type==='perfects') return runPerfects;
+  if (c.objective.type==='recoveries') return challengeRuntime?challengeRuntime.recoveries:0;
+  return 0;
+}
+function challengeProgressText() {
+  const c=activeChallenge(); if (!c) return '';
+  if (c.family==='timed') return 'MAX HEIGHT - '+Math.max(0,blocks.length-1)*METERS_PER+'M';
+  const n=Math.min(challengeProgressValue(c),c.objective.target);
+  if (c.objective.type==='height') return n+'/'+c.objective.target+' BLOCKS';
+  if (c.objective.type==='perfects') return n+'/'+c.objective.target+' PERFECTS';
+  return n+'/'+c.objective.target+' RECOVERIES';
+}
+function initChallengeRuntime() {
+  challengeRuntime=activeChallenge()?{status:'active',recoveries:0,recoveryArmed:false}:null;
+  challengeCleared=false; challengeReward=0; challengeRecorded=false;
+}
+function updateChallengeForPlacement(outcome) {
+  const c=activeChallenge();
+  if (!c||!challengeRuntime||challengeRuntime.status!=='active'||c.family==='timed') return false;
+  const o=outcome||{};
+  if (c.family==='recovery') {
+    if (o.perfect&&challengeRuntime.recoveryArmed) { challengeRuntime.recoveries++; challengeRuntime.recoveryArmed=false; }
+    else if (o.cut) challengeRuntime.recoveryArmed=true;
+    else if (o.miss) challengeRuntime.recoveryArmed=false;
+  }
+  if (c.failOnImperfect&&!o.perfect) { challengeRuntime.status='failed'; gameOver('precision'); return true; }
+  if (challengeProgressValue(c)>=c.objective.target) { completeChallenge(); return true; }
+  return false;
+}
+function completeChallenge() {
+  const c=activeChallenge(); if (!c||challengeCleared) return;
+  challengeCleared=true; challengeRuntime.status='complete'; challengeReward=coinAmount(c.reward);
+  if (challengeReward) transactCoins(challengeReward,true);
+  bannerText='CHALLENGE CLEAR! +'+challengeReward; bannerT=1;
+  gameOver('challenge');
+}
+function recordChallengeOutcome() {
+  const c=activeChallenge(); if (!c||challengeRecorded) return;
+  challengeRecorded=true;
+  const r=challengeRecord(c.id); r.attempts++;
+  const height=Math.max(0,blocks.length);
+  if (height>r.bestBlocks) { r.bestBlocks=height; newHeight=true; }
+  if (score>r.bestScore) { r.bestScore=score; newBest=true; }
+  if (challengeCleared) r.clears++;
+  challengeRecords[c.id]=r; persistChallengeRecords();
+}
 // onboarding: replayed in PRACTICE, shown once everywhere else
 let tutDone = store.get('skystack-tut', false);
 let tutStep = 0;
@@ -1184,12 +1280,13 @@ let shooter = null, shooterTimer = 240;
 let demo = { n: 1, t: 0 };
 
 function towerTopY() { return GROUND_Y - blocks.length * BH; }
-function blockCol(i) { const s = skin(); return s.base(i, hueBase); }
+function blockCol(i) { const s = runContext&&runContext.characterSnapshot?characterById(runContext.characterSnapshot.id):skin(); return s.base(i, hueBase); }
 function setExpr(e, t) { mascot.expr = e; mascot.exprT = t; }
 function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assist) * passiveEffect(runContext,'perfect',1); }
 
 function resetRun() {
   const m = curMode();
+  const challenge=challengeById(pendingChallengeId); pendingChallengeId=null;
   // campaign level: pre-stack the tower to the level's start height
   runLevel = m.id === 'level' ? pendingLevel : -1; pendingLevel = -1;
   const requestedCheckpoint=checkpointById(pendingCheckpointId || (runLevel>=0?checkpointForLevel(runLevel).id:'ground'));
@@ -1198,8 +1295,9 @@ function resetRun() {
     ? requestedCheckpoint : (runLevel>=0?checkpointForLevel(runLevel):CHECKPOINT_REGISTRY[0]);
   runLaunch = checkpoint.startAltitude;
   const retrySeed=pendingRunSeed; pendingRunSeed=null;
-  const seed = Number.isInteger(retrySeed) ? retrySeed : m.daily ? seedForRun(m.id, 0) : seedForRun(m.id, Math.floor(Math.random() * 4294967296));
-  runContext = createRunContext({ mode:m.id, campaignLevel:runLevel, startingAltitude:runLaunch, checkpointId:checkpoint.id, baseId, seed, skill, loadout, characterId:skinId, characterMastery:masteryFor(skinId) });
+  const seed = m.daily ? seedForRun(m.id,0) : challengeSeed(challenge,retrySeed,seedForRun(m.id,Math.floor(Math.random()*4294967296)));
+  const runCharacter=challenge&&challenge.characterId?challenge.characterId:skinId;
+  runContext = createRunContext({ mode:m.id, challengeId:challenge&&challenge.id, campaignLevel:runLevel, startingAltitude:runLaunch, checkpointId:checkpoint.id, baseId, seed, skill, loadout, characterId:runCharacter, characterMastery:masteryFor(runCharacter) });
   rnd = mulberry32(runContext.seed); hueBase = rnd() * 360;
   blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
   for (let i = 1; i < runLaunch; i++) blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col: blockCol(i) });
@@ -1213,10 +1311,11 @@ function resetRun() {
   nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; collectionThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
   reviveUsed = false; reviveOffered = false; runSettled = false;
+  initChallengeRuntime();
   initModifierRuntime();
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
   balance = 0; swayX = 0; paused = false; dropPending = 0;
-  timeLeft = m.time || 0;
+  timeLeft = activeChallenge()&&activeChallenge().duration?activeChallenge().duration:(m.time || 0);
   PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
   assist = runContext.difficultyProfile.startingAssist;
   mascot.hop = 0; mascot.expr = 'normal'; mascot.exprT = 0;
@@ -1226,6 +1325,7 @@ function resetRun() {
     if (runContext.boostSnapshot.aura) auraBlocks = 5;
     if (runContext.boostSnapshot.slow) slowBlocks = 4;
   }
+  shield=Math.max(shield,challengeRule(runContext,'lives',1)-1);
   loadout = { shield:false, aura:false, slow:false };
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY; camVel = 0;
   if (runLevel >= 0 && !reduceMotion) cameraY = cameraTarget + 120;   // pan-to-landmark: reveal the themed base, then settle up into play
@@ -1359,6 +1459,7 @@ function land() {
       sfx.shield(); shake = Math.max(shake, 3); faller = null; squash = 1;
       cameraTarget = towerTopY() - (H - 100); state = 'playing'; afterPlace(f, false, nx+nw/2, {perfect:false,cut:false,miss:true,center:nx+nw/2}); spawnSlider(); return;
     }
+    if (activeChallenge()&&activeChallenge().failOnImperfect) { setExpr('sad',999); gameOver('precision'); return; }
     debris.push({ x:f.x, y:f.y, w:f.w, h:BH, vx:f.x<top.x?-.6:.6, vy:1.5, rot:0, vr:(Math.random()-.5)*.2, col:f.col });
     setExpr('sad', 999); gameOver('miss'); return;
   }
@@ -1452,7 +1553,7 @@ function land() {
 function afterPlace(f, updateBalance, placedCenter, outcome) {
   const m = activeMode();
   if (canEarnRewards(runContext)) stats.blocks++;
-  if (updateBalance) { const p=BALANCE_REGISTRY.placement; balance = balance * p.balanceMemory + (placedCenter - W/2) * p.balanceOffset * (1 - assist * BALANCE_REGISTRY.assist.balanceForgiveness) * passiveEffect(runContext,'balance',1); }   // assist/passive forgive lean
+  if (updateBalance) { const p=BALANCE_REGISTRY.placement; balance = balance * p.balanceMemory + (placedCenter - W/2) * p.balanceOffset * (1 - assist * BALANCE_REGISTRY.assist.balanceForgiveness) * passiveEffect(runContext,'balance',1) * challengeRule(runContext,'balanceScale',1); }   // assist/passive forgive lean
   const r = blocks.length - 1, b = blocks[r];
   for (const p of pickups) { if (p.got || p.row !== r) continue; if (p.x >= b.x && p.x <= b.x + b.w) collectPickup(p, p.x, towerTopY()); }
   schedulePickups();
@@ -1460,7 +1561,9 @@ function afterPlace(f, updateBalance, placedCenter, outcome) {
   if (balloon && !balloon.away && blocks.length > balloon.row + 1) balloon.away = 0.01;   // missed — it escapes upward
   const h = blocks.length;
   advanceTutorial(h);
-  updateModifiersForPlacement(h,outcome||{perfect:false,cut:false,miss:false,center:placedCenter});
+  const placedOutcome=outcome||{perfect:false,cut:false,miss:false,center:placedCenter};
+  updateModifiersForPlacement(h,placedOutcome);
+  if (updateChallengeForPlacement(placedOutcome)) return;
   if (runLevel >= 0 && h >= TIERS[runLevel].n) { levelComplete(); return; }   // campaign goal reached
   if (tier < TIERS.length && h >= TIERS[tier].n) {
     const t = TIERS[tier]; bannerText = t.n*METERS_PER + 'M - ' + t.name; bannerT = 1;
@@ -1477,7 +1580,7 @@ function afterPlace(f, updateBalance, placedCenter, outcome) {
     burst(W/2, towerTopY()-BH, 24, f.col, true); shake = Math.max(shake, reduceMotion?2:4);
     sfx.milestone(); tier++; startRegionIntro(tier);   // entering the next region — play its intro
   }
-  const bh2 = bestBlocksFor(runContext.mode);
+  const bh2 = activeChallenge()?challengeRecord(activeChallenge().id).bestBlocks:bestBlocksFor(runContext.mode);
   if (canWriteRecords(runContext) && h > bh2 && !newHeight && bh2 > 0) {
     newHeight = true;
     floaters.push({ text:'NEW BEST!', x:W/2, y:towerTopY()+2, vy:-.3, life:1.6, color:'#62E8B5' });
@@ -1551,15 +1654,19 @@ function gameOver(cause) {
   shake = reduceMotion ? 2 : (cause === 'topple' ? 8 : 6); overLock = 40;
   if (cause === 'topple') { sfx.topple();
     for (let i = Math.max(0, blocks.length-6); i < blocks.length; i++) { const b = blocks[i]; debris.push({ x:b.x, y:GROUND_Y-(i+1)*BH, w:b.w, h:BH, vx:(balance>0?1:-1)*(0.6+Math.random()), vy:-Math.random()*1.5, rot:0, vr:(balance>0?1:-1)*.12, col:b.col }); } }
-  else sfx.over();
+  else if (cause==='challenge') sfx.win(); else sfx.over();
   if (canEarnRewards(runContext)) stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
   if (canWriteRecords(runContext)) {
-    if (score > best) { best = score; newBest = true; store.set('skystack-best', best); }
-    if (blocks.length > bestHeight) { bestHeight = blocks.length; store.set('skystack-height', bestHeight); }
-    const rec = modeBests[runContext.mode] || { blocks: 0, score: 0 };
-    if (blocks.length > rec.blocks) rec.blocks = blocks.length;
-    if (score > (rec.score || 0)) { rec.score = score; newBest = true; }
-    modeBests[runContext.mode] = rec; store.set('skystack-modebests', modeBests);
+    const c=activeChallenge();
+    if (c) recordChallengeOutcome();
+    if (!c||c.id==='time60') {
+      if (score > best) { best = score; newBest = true; store.set('skystack-best', best); }
+      if (blocks.length > bestHeight) { bestHeight = blocks.length; store.set('skystack-height', bestHeight); }
+      const rec = modeBests[runContext.mode] || { blocks: 0, score: 0 };
+      if (blocks.length > rec.blocks) rec.blocks = blocks.length;
+      if (score > (rec.score || 0)) { rec.score = score; newBest = true; }
+      modeBests[runContext.mode] = rec; store.set('skystack-modebests', modeBests);
+    }
   }
   if (runContext.mode === 'daily') {
     const t = dayStr(0);
@@ -1607,13 +1714,13 @@ function burst(x, y, n, col, gold) {
 }
 
 // ---------- share ----------
-function shareText() { return 'SKYSTACK ' + activeMode().name + ' - ' + (blocks.length * METERS_PER) + 'M, score ' + score + '! Can you beat me? ' + location.href; }
+function shareText() { return 'SKYSTACK ' + activeRunName() + ' - ' + (blocks.length * METERS_PER) + 'M, score ' + score + '! Can you beat me? ' + location.href; }
 function renderShareCard() {
   const g = skyColor(blocks.length); ctx.fillStyle = 'rgb('+g[0]+','+g[1]+','+g[2]+')'; ctx.fillRect(0,0,W,H);
   for (let i = 0; i < Math.min(blocks.length, 16); i++) { const idx = blocks.length-1-i; const b = blocks[idx] || blocks[0]; const w = Math.max(16, 44 - i*1.5); drawBlock(Math.round(W/2-w/2), H-24-i*10, Math.round(w), 9, b.col, false, 0, skin().style); }
   ctx.fillStyle = 'rgba(11,14,26,0.5)'; ctx.fillRect(0,0,W,124);
   txt('SKYSTACK', W/2, 14, 3, '#FFF6E8', 'center');
-  txt(activeMode().name + (runContext && runContext.mode==='daily' ? ' - '+dayStr(0) : ''), W/2, 42, 1, '#FFD75E', 'center');
+  txt(activeRunName() + (runContext && runContext.mode==='daily' ? ' - '+dayStr(0) : ''), W/2, 42, 1, '#FFD75E', 'center');
   txt('I REACHED', W/2, 58, 1, 'rgba(255,246,232,0.8)', 'center');
   txt(blocks.length*METERS_PER+'M', W/2, 70, 3, '#62E8B5', 'center');
   txt('SCORE ' + score, W/2, 100, 1, '#FFF6E8', 'center');
@@ -1641,7 +1748,7 @@ function shareScore() {
 // ---------- layout constants ----------
 const PAD = 6;
 const NAV_H = 20;
-let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
+let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
@@ -1665,6 +1772,9 @@ function relayout() {
   const pickTop = 68, pickGap = 4;
   const pickH = clamp(Math.floor((H - 94 - pickGap*(EXTRAS.length-1)) / EXTRAS.length), 32, 40);
   PICK_ROWS = EXTRAS.map((m, i) => ({ x: Math.round((W-pickW)/2), y:pickTop + i*(pickH+pickGap), w:pickW, h:pickH, id:m.id }));
+  const challengeTop=46,challengeGap=3;
+  const challengeH=clamp(Math.floor((NAV_Y-challengeTop-8-challengeGap*(CHALLENGE_REGISTRY.length-1))/CHALLENGE_REGISTRY.length),24,30);
+  CHALLENGE_ROWS=CHALLENGE_REGISTRY.map((c,i)=>({x:Math.round((W-pickW)/2),y:challengeTop+i*(challengeH+challengeGap),w:pickW,h:challengeH,id:c.id}));
   // level win / fail screens: fat centered button rows
   const rowW = Math.min(W - 40, 180);
   WIN_ROWS = ['next','retry','map'].map((id, i) =>
@@ -1756,7 +1866,7 @@ function pressDown(e) {
   if (paused) {
     if (p) for (const rw of PAUSE_ROWS) if (inR(p, rw, 2)) {
       if (rw.id === 'resume') { paused = false; sfx.resume(); }
-      else if (rw.id === 'restart') { sfx.tap(); if (runLevel >= 0) startLevel(runLevel,runContext.checkpointSnapshot.id,runContext.seed); else startRun(runContext.seed); }
+      else if (rw.id === 'restart') { sfx.tap(); if (runLevel >= 0) startLevel(runLevel,runContext.checkpointSnapshot.id,runContext.seed); else if (activeChallenge()) startChallenge(activeChallenge().id,runContext.seed); else startRun(runContext.seed); }
       else if (rw.id === 'sound') { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); }
       else if (rw.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
       else if (rw.id === 'quit') {
@@ -1770,19 +1880,26 @@ function pressDown(e) {
   }
   if (state === 'splash') { state = 'home'; fadeT = 1; musicNext = 0; sfx.tap(); tryFullscreen(); return; }
   if (state === 'home') {
-    if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker) startLevel(Math.min(prog, TIERS.length - 1)); return; }
+    if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker&&!challengePicker) startLevel(Math.min(prog, TIERS.length - 1)); return; }
     if (skyMap) {
       // the map scrolls: a press starts a drag, selection happens on release (pressUp)
       mapDrag = { y: p.y, scroll: mapScroll, moved: false };
       return;
     }
-    if (modePicker) {                                  // extras picker: tapping a mode plays it
-      for (const rw of PICK_ROWS) if (inR(p, rw, 2)) { mode = rw.id; store.set('skystack-mode', mode); modePicker = false; sfx.tap(); startRun(); return; }
+    if (challengePicker) {
+      for (const rw of CHALLENGE_ROWS) if (inR(p,rw,2)) { challengePicker=false; sfx.tap(); startChallenge(rw.id); return; }
+      challengePicker=false; modePicker=true; sfx.tap(); return;
+    }
+    if (modePicker) {                                  // extras picker: modes launch; Challenges opens its hub
+      for (const rw of PICK_ROWS) if (inR(p, rw, 2)) {
+        if (rw.id==='challenges') { modePicker=false; challengePicker=true; sfx.tap(); return; }
+        mode = rw.id; store.set('skystack-mode', mode); modePicker = false; sfx.tap(); startRun(); return;
+      }
       modePicker = false; sfx.tap(); return;           // tap anywhere else closes
     }
     if (navHit(p)) return;
     if (deferredPrompt && inR(p, INSTALL_BTN, 3)) { const dp = deferredPrompt; deferredPrompt = null; try { dp.prompt(); } catch (err) {} return; }
-    if (inR(p, MODE_BTN, 4)) { modePicker = true; sfx.tap(); return; }
+    if (inR(p, MODE_BTN, 4)) { modePicker = true; challengePicker=false; sfx.tap(); return; }
     if (inR(p, MAP_BTN, 4)) { openSkyMap(); sfx.tap(); return; }
     if (inR(p, PLAY_BTN, 4) || inR(p, HERO_CARD, 2)) { startLevel(Math.min(prog, TIERS.length - 1)); return; }
   } else if (state === 'levelwin') {
@@ -1862,6 +1979,7 @@ function pressDown(e) {
       if (p && inR(p, REVIVE_BTN, 4)) { doRevive(); return; }
       finalizeRun(); sfx.tap(); return;       // declined: settle and reveal the full results
     }
+    if(activeChallenge())mode=store.get('skystack-mode','endless');
     state = 'home'; fadeT = 1;
   }
 }
@@ -3518,7 +3636,7 @@ function render() {
   if (!menu && regionIntro) renderRegionIntro();   // cinematic region-entry overlay, on top of the world
 
   if (state === 'splash') renderSplash();
-  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (skyMap) renderSkyMap(); }
+  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (challengePicker) renderChallengePicker(); if (skyMap) renderSkyMap(); }
   else if (state === 'shop') { renderShop(); drawNav(); }
   else if (state === 'me') { renderMe(); drawNav(); }
   else if (state === 'gameover') renderGameOver();
@@ -4391,12 +4509,13 @@ function renderModePicker() {
   txt('EXTRA MODES', W/2, 48, 1, UI_HEX(), 'center');
   txt('TAP ONE TO PLAY IT', W/2, 60, 1, 'rgba(255,246,232,0.5)', 'center');
   for (const rw of PICK_ROWS) {
-    const M = MODES.find(m => m.id === rw.id), active = rw.id === mode;
+    const M = rw.id==='challenges'?CHALLENGE_ENTRY:MODES.find(m => m.id === rw.id), active = rw.id === mode;
     plate3D(rw.x, rw.y, rw.w, rw.h, active ? uiA(0.22) : 'rgba(255,246,232,0.08)', active ? UI_HEX() : 'rgba(255,246,232,0.25)');
     txt(M.name, rw.x + 8, rw.y + 7, 1, active ? UI_HEX() : '#FFF6E8', 'left');
     txt(M.desc, rw.x + 8, rw.y + 22, 1, 'rgba(255,246,232,0.55)', 'left');
-    const bp = bestScoreFor(rw.id) > 0 ? ' - ' + fmtPts(bestScoreFor(rw.id)) + ' PTS' : '';
-    const bb = M.daily ? (daily.streak > 0 ? 'STREAK ' + daily.streak : '') : (bestBlocksFor(rw.id) > 0 ? bestBlocksFor(rw.id)*METERS_PER + 'M' + bp : '');
+    const bp = rw.id==='challenges'?'':bestScoreFor(rw.id) > 0 ? ' - ' + fmtPts(bestScoreFor(rw.id)) + ' PTS' : '';
+    const completed=CHALLENGE_REGISTRY.filter(c=>challengeRecord(c.id).clears>0).length;
+    const bb = rw.id==='challenges'?(completed?completed+'/'+CHALLENGE_REGISTRY.length+' CLEARED':''):M.daily ? (daily.streak > 0 ? 'STREAK ' + daily.streak : '') : (bestBlocksFor(rw.id) > 0 ? bestBlocksFor(rw.id)*METERS_PER + 'M' + bp : '');
     if (bb) txt(bb, rw.x + rw.w - 6, rw.y + 7, 1, active ? UI_HEX() : 'rgba(255,246,232,0.6)', 'right');
   }
   const lastPick = PICK_ROWS[PICK_ROWS.length-1];
@@ -4473,6 +4592,20 @@ function renderShop() {
   } else {
     txt('PASSIVES + BOOSTS OFF IN DAILY', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
     txt('EVERYONE GETS THE SAME FAIR RUN', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
+  }
+}
+
+function renderChallengePicker() {
+  ctx.fillStyle='rgba(11,14,26,0.94)';ctx.fillRect(0,0,W,H);
+  txt('CHALLENGES',W/2,24,2,UI_HEX(),'center');
+  txt('LOCAL RUNS - ONE RULE, ONE GOAL',W/2,38,1,'rgba(255,246,232,0.5)','center');
+  for(const rw of CHALLENGE_ROWS){
+    const c=challengeById(rw.id),r=challengeRecord(c.id),done=r.clears>0;
+    plate3D(rw.x,rw.y,rw.w,rw.h,done?'rgba(98,232,181,0.14)':'rgba(255,246,232,0.08)',done?'#62E8B5':'rgba(255,246,232,0.25)');
+    txt(c.name,rw.x+7,rw.y+5,1,done?'#62E8B5':'#FFF6E8','left');
+    txt(c.desc,rw.x+7,rw.y+15,1,'rgba(255,246,232,0.52)','left');
+    const best=r.bestBlocks?r.bestBlocks*METERS_PER+'M':'';
+    if(r.clears||best)txt((r.clears?'CLEAR '+r.clears:'')+(r.clears&&best?' - ':'')+best,rw.x+rw.w-6,rw.y+5,1,'rgba(255,246,232,0.62)','right');
   }
 }
 
@@ -4758,6 +4891,8 @@ function renderHUD(h) {
   txt(score, W/2+1, 6, 2, shadow, 'center'); txt(score, W/2, 5, 2, '#FFF6E8', 'center');
   if (m.time) { const s = Math.ceil(timeLeft/60); txt(s+'S', W-24, 7, 1, s<=10?(Math.floor(tick/8)%2?'#FF5E7E':'#FFD75E'):'rgba(255,246,232,0.9)', 'right'); }
   txt(h*METERS_PER+'M', W/2, 22, 1, 'rgba(255,246,232,0.8)', 'center');
+  const challenge=activeChallenge();
+  if(challenge){txt(challenge.name+' - '+challengeProgressText(),W/2,33,1,'#FFD75E','center');if(challenge.lives)txt('LIVES '+(shield+1),4,33,1,'#62E8B5','left');}
   if (runLevel >= 0) {   // campaign HUD: the goal + a slim progress bar
     const goal = TIERS[runLevel].n, from = runLaunch;
     const cp=runContext.checkpointSnapshot;
@@ -4774,7 +4909,7 @@ function renderHUD(h) {
     const col2 = nova ? (Math.floor(tick/4)%2 ? '#FFFFFF' : 'hsl('+((tick*14)%360)+',100%,80%)')
                : fever ? ('hsl('+((tick*8)%360)+',100%,75%)')
                : combo >= 7 ? '#FF9E3D' : (combo>=5?'#FF7E6B':'#FFD75E');
-    txt(lbl+combo, W/2, runLevel >= 0 ? 50 : 33, 1, col2, 'center');
+    txt(lbl+combo, W/2, runLevel >= 0 ? 50 : challenge?45:33, 1, col2, 'center');
   }
   let ix = 4;
   for (let i=0;i<shield;i++) { drawIcon('shield', ix, 20); ix += 10; }
@@ -4821,22 +4956,25 @@ function renderHUD(h) {
 }
 
 // ---------- game over ----------
-const CAUSE_TXT = { miss:'MISSED!', topple:'TOPPLED!', precision:'NOT PERFECT', time:"TIME'S UP", quit:'GAVE UP' };
+const CAUSE_TXT = { miss:'MISSED!', topple:'TOPPLED!', precision:'NOT PERFECT', time:"TIME'S UP", challenge:'CHALLENGE CLEAR!', quit:'GAVE UP' };
 function renderGameOver() {
   ctx.fillStyle = 'rgba(11,14,26,0.66)'; ctx.fillRect(0, 0, W, H);
   const shadow = 'rgba(0,0,0,0.35)';
-  txt('GAME OVER', W/2+1, 27, 2, shadow, 'center');
-  txt('GAME OVER', W/2, 26, 2, '#FF5E7E', 'center');
-  txt((CAUSE_TXT[overCause] || '') + ' - ' + activeMode().name, W/2, 46, 1, 'rgba(255,246,232,0.6)', 'center');
+  const title=challengeCleared?'CHALLENGE CLEAR':'GAME OVER';
+  txt(title, W/2+1, 27, 2, shadow, 'center');
+  txt(title, W/2, 26, 2, challengeCleared?'#62E8B5':'#FF5E7E', 'center');
+  txt((CAUSE_TXT[overCause] || '') + ' - ' + activeRunName(), W/2, 46, 1, 'rgba(255,246,232,0.6)', 'center');
   txt('HEIGHT', W/2, 62, 1, 'rgba(255,246,232,0.7)', 'center');
   txt(blocks.length*METERS_PER+'M', W/2, 73, 2, newHeight?'#62E8B5':'#FFF6E8', 'center');
   if (newHeight && Math.floor(tick/20)%2===0) txt('NEW RECORD!', W/2, 91, 1, '#62E8B5', 'center');
   txt('SCORE '+score+(newBest?' - NEW BEST!':''), W/2, 103, 1, newBest?'#62E8B5':'rgba(255,246,232,0.85)', 'center');
-  txt('BEST '+bestBlocksFor(runContext.mode)*METERS_PER+'M - '+fmtPts(bestScoreFor(runContext.mode))+' PTS', W/2, 114, 1, '#FFD75E', 'center');
+  const runBest=activeChallenge()?challengeRecord(activeChallenge().id):{bestBlocks:bestBlocksFor(runContext.mode),bestScore:bestScoreFor(runContext.mode)};
+  txt('BEST '+runBest.bestBlocks*METERS_PER+'M - '+fmtPts(runBest.bestScore)+' PTS', W/2, 114, 1, '#FFD75E', 'center');
   drawCoin(W/2-24, 127); txt('+'+runCoins, W/2-14, 127, 1, '#FFD75E', 'left');
   if (runSettled) txt('+'+xpThisRun+' XP', W/2+12, 127, 1, '#62E8B5', 'left');
   if (maxCombo > 1) txt('MAX COMBO X'+maxCombo, W/2, 141, 1, 'rgba(255,246,232,0.8)', 'center');
-  if (modifierResults.length) txt('MODIFIERS '+modifierWins+'/'+modifierResults.length+' - BONUS +'+modifierBonusCoins,W/2,151,1,'#62E8B5','center');
+  if(challengeReward)txt('CHALLENGE REWARD +'+challengeReward,W/2,151,1,'#FFD75E','center');
+  if (modifierResults.length) txt('MODIFIERS '+modifierWins+'/'+modifierResults.length+' - BONUS +'+modifierBonusCoins,W/2,challengeReward?162:151,1,'#62E8B5','center');
   if (reviveOffered) {   // XP/missions settle after the offer — this space is the revive's
     const cost = reviveCost(), ok = coins >= cost;
     const pulse = ok && Math.floor(tick/16)%2 === 0;
@@ -4847,7 +4985,7 @@ function renderGameOver() {
     txt(ok ? 'REVIVE ' + cost : 'NEED ' + cost, W/2 - 22, REVIVE_BTN.y + 8, 1, ok ? '#08301F' : 'rgba(255,246,232,0.5)', 'left');
     txt('1 REVIVE PER RUN', W/2, REVIVE_BTN.y + 27, 1, 'rgba(255,246,232,0.45)', 'center');
   } else if (runSettled) {
-    let y = modifierResults.length ? 167 : 156;
+    let y = modifierResults.length ? (challengeReward?178:167) : (challengeReward?167:156);
     if (levelUpsThisRun > 0) { txt('LEVEL UP! NOW LV '+lvl.level+' +25', W/2, y, 1, '#FFD75E', 'center'); y += 11; }
     for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i].name+' +'+achThisRun[i].reward, W/2, y, 1, '#C77EFF', 'center'); y += 11; }
     for (let i = 0; i < collectionThisRun.length && i < 1; i++) { txt('COLLECTION: '+collectionThisRun[i].name+' +'+collectionThisRun[i].reward, W/2, y, 1, '#FFD75E', 'center'); y += 11; }

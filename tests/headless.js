@@ -883,16 +883,16 @@ const cor3 = makeGame({ 'skystack-coins': '{bad', 'skystack-best': '555' });
 check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted === true && coins === 0 && best === 555'));
 
 // ---------- S0 systems foundation ----------
-check('S0 mode registry preserves the six v75 modes and picker order', () => fresh.run(
-  `JSON.stringify(Object.keys(MODE_REGISTRY)) === JSON.stringify(['level','practice','endless','time','pure','daily']) &&
-   JSON.stringify(MODES.map(m=>m.id)) === JSON.stringify(['level','practice','endless','time','pure','daily']) &&
-   MODES.every(m => MODE_REGISTRY[m.id] === m) && EXTRAS.length === 5`));
+check('S0 mode registry preserves every v75 mode and adds the hidden S6 challenge owner', () => fresh.run(
+  `JSON.stringify(Object.keys(MODE_REGISTRY)) === JSON.stringify(['level','practice','endless','time','challenge','pure','daily']) &&
+   JSON.stringify(MODES.map(m=>m.id)) === JSON.stringify(['level','practice','endless','time','challenge','pure','daily']) &&
+   MODES.every(m => MODE_REGISTRY[m.id] === m) && EXTRAS.length === 5 && EXTRAS.map(m=>m.id).join(',') === 'practice,endless,pure,daily,challenges'`));
 check('S0 level registry is index-aligned with every v75 tier boundary', () => fresh.run(
   'LEVEL_REGISTRY.length === TIERS.length && LEVEL_REGISTRY.every((l,i) => l.id === i && l.goalAltitude === TIERS[i].n && l.startAltitude === (i ? TIERS[i-1].n : 0) && l.name === TIERS[i].name && l.color === TIERS[i].c)'));
 check('S0 balance registry aliases the live v75 physics constants', () => fresh.run(
   'BALANCE_REGISTRY.physics.blockHeight === BH && BALANCE_REGISTRY.physics.baseWidth === BASE_W && BALANCE_REGISTRY.physics.metersPerBlock === METERS_PER && BALANCE_REGISTRY.physics.topple === TOPPLE && BALANCE_REGISTRY.physics.perfectPx === PERFECT_PX'));
-check('S0 feature flags remain centralized; shipped Characters, Bases, Collections, and Modifiers are active', () => fresh.run(
-  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && FEATURE_FLAGS.characters === true && FEATURE_FLAGS.bases === true && FEATURE_FLAGS.modifiers === true && FEATURE_FLAGS.collections === true && FEATURE_FLAGS.challenges === false'));
+check('S0 feature flags remain centralized; shipped Characters, Bases, Collections, Modifiers, and Challenges are active', () => fresh.run(
+  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && FEATURE_FLAGS.characters === true && FEATURE_FLAGS.bases === true && FEATURE_FLAGS.modifiers === true && FEATURE_FLAGS.collections === true && FEATURE_FLAGS.challenges === true'));
 
 const s0ctx = makeGame();
 s0ctx.run('mode="endless"; loadout={shield:true,aura:false,slow:true}; resetRun(); globalThis.__ctx=runContext; globalThis.__seed=runContext.seed; globalThis.__speed=difficultyAt(runContext,40,assist,2).sliderSpeed;');
@@ -914,8 +914,8 @@ check('owned non-Daily seeds reproduce the same run RNG stream', () => fresh.run
 check('permission helpers preserve reward, record, loadout, and checkpoint rules', () => fresh.run(
   '(() => { const mk=(m,l=-1,a=0)=>createRunContext({mode:m,campaignLevel:l,startingAltitude:a,seed:1,skill:.35,loadout:{},modifiers:[]}); return !canEarnRewards(mk("practice")) && !canWriteRecords(mk("practice")) && !canUseLoadout(mk("practice")) && canEarnRewards(mk("pure")) && canWriteRecords(mk("pure")) && !canUseLoadout(mk("pure")) && canEarnRewards(mk("daily")) && canWriteRecords(mk("daily")) && !canUseLoadout(mk("daily")) && canUseLoadout(mk("endless")) && !canWriteRecords(mk("level",2,44)) && !canWriteRecords(mk("endless",-1,44)); })()'));
 
-check('future save-v2 contracts stay frozen; shipped Character, Base, and Collection fields activate', () => fresh.run(
-  'Object.isFrozen(FUTURE_SAVE_CONTRACTS) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.characters.defaults) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.bases.defaults) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.collections.defaults) && ["characters","bases","collections"].every(id=>Object.prototype.hasOwnProperty.call(SAVE.data,FUTURE_SAVE_CONTRACTS[id].key)) && !Object.prototype.hasOwnProperty.call(SAVE.data,FUTURE_SAVE_CONTRACTS.challengeRecords.key)'));
+check('future save-v2 contracts stay frozen; every shipped system field is active', () => fresh.run(
+  'Object.isFrozen(FUTURE_SAVE_CONTRACTS) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.characters.defaults) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.bases.defaults) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.collections.defaults) && ["characters","bases","collections","challengeRecords"].every(id=>Object.prototype.hasOwnProperty.call(SAVE.data,FUTURE_SAVE_CONTRACTS[id].key))'));
 check('future save-v2 migration normalizes only present fields and preserves current data', () => fresh.run(
   '(() => { const src={keep:7,"skystack-characters":{owned:["pilot",4,"pilot"],selected:9,mastery:null},"skystack-bases":null,"skystack-collections":{unlocked:["ore","ore"],completed:"bad"},"skystack-challenge-records":[1]}; const out=migrateFutureSaveV2(src); return out!==src && out.keep===7 && JSON.stringify(out["skystack-characters"])===JSON.stringify({owned:["pilot"],selected:null,mastery:{}}) && JSON.stringify(out["skystack-bases"])===JSON.stringify({owned:[],selected:null}) && JSON.stringify(out["skystack-collections"])===JSON.stringify({unlocked:["ore"],completed:[]}) && JSON.stringify(out["skystack-challenge-records"])==="{}" && src["skystack-characters"].owned.length===3; })()'));
 
@@ -930,8 +930,8 @@ check('S1 LevelSpecs preserve every campaign threshold, start, segment size, and
   'LEVEL_REGISTRY.every((l,i)=>l.goalAltitude===TIERS[i].n && l.startAltitude===(i?TIERS[i-1].n:0) && l.blocksRequired===l.goalAltitude-l.startAltitude && l.name===TIERS[i].name && l.color===TIERS[i].c && l.material.name===MATERIALS[i].name && l.material.speed===MATERIALS[i].spd && l.material.wobble===MATERIALS[i].wob && l.material.wind===MATERIALS[i].wind)'));
 check('S1 campaign progression is explicit, ordered, and has no unlock gaps', () => fresh.run(
   'LEVEL_REGISTRY.every((l,i)=>l.difficultyRating===i+1 && l.unlock.requiresLevel===(i?i-1:null) && l.targetDurationSeconds.min<l.targetDurationSeconds.target && l.targetDurationSeconds.target<l.targetDurationSeconds.max)'));
-check('S1 difficulty lanes map all six modes without changing their fail or assist policy', () => fresh.run(
-  'laneForMode("practice").id==="practice" && laneForMode("level").id==="assisted" && laneForMode("endless").id==="assisted" && laneForMode("time").id==="assisted" && laneForMode("pure").id==="unassisted" && laneForMode("daily").id==="unassisted" && !DIFFICULTY_LANES.practice.fail && DIFFICULTY_LANES.assisted.fail && DIFFICULTY_LANES.unassisted.fail'));
+check('S1 difficulty lanes map all seven modes without changing their fail or assist policy', () => fresh.run(
+  'laneForMode("practice").id==="practice" && laneForMode("level").id==="assisted" && laneForMode("endless").id==="assisted" && laneForMode("time").id==="assisted" && laneForMode("challenge").id==="assisted" && laneForMode("pure").id==="unassisted" && laneForMode("daily").id==="unassisted" && !DIFFICULTY_LANES.practice.fail && DIFFICULTY_LANES.assisted.fail && DIFFICULTY_LANES.unassisted.fail'));
 check('S1 RunContext owns the selected lane, assist envelope, and campaign speed scale', () => fresh.run(
   '(() => { const p=createRunContext({mode:"practice",campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},modifiers:[]}), s=createRunContext({mode:"level",campaignLevel:10,startingAltitude:360,seed:1,skill:.35,loadout:{},modifiers:[]}), d=createRunContext({mode:"daily",campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},modifiers:[]}); return p.difficultyProfile.lane==="practice" && p.difficultyProfile.assistEnvelope.min===.85 && Object.isFrozen(p.difficultyProfile.assistEnvelope) && s.difficultyProfile.lane==="assisted" && s.difficultyProfile.levelSpeedScale===1.25 && d.difficultyProfile.lane==="unassisted" && d.difficultyProfile.levelSpeedScale===1; })()'));
 
@@ -1014,9 +1014,9 @@ check('S3 checkpoint score reduction composes with Character trade-offs without 
   '(() => { const classic=createRunContext({mode:"level",campaignLevel:2,startingAltitude:44,checkpointId:"checkpoint-1",baseId:"natural",seed:1,skill:.35,loadout:{},characterId:"aurora",characterMastery:{},modifiers:[]}), candy=createRunContext({mode:"level",campaignLevel:2,startingAltitude:44,checkpointId:"checkpoint-1",baseId:"natural",seed:1,skill:.35,loadout:{},characterId:"candy",characterMastery:{},modifiers:[]}); return adjustedRunScore(classic,100)===75&&adjustedRunScore(candy,100)===71&&canEarnRewards(classic)&&!canWriteRecords(classic); })()'));
 check('S3 checkpoint, structure, Base, Character, and boost fields are separate immutable RunContext owners', () => fresh.run(
   '(() => { const c=createRunContext({mode:"level",campaignLevel:2,startingAltitude:44,checkpointId:"checkpoint-1",baseId:"starforge",seed:1,skill:.35,loadout:{shield:true},characterId:"neon",characterMastery:{xp:4},modifiers:[]}),before=JSON.stringify(c); try{c.checkpointSnapshot.id="ground"}catch(e){}try{c.startingStructureSnapshot.kind="ground"}catch(e){}try{c.baseSnapshot.id="natural"}catch(e){}try{c.characterSnapshot.id="aurora"}catch(e){}try{c.boostSnapshot.shield=false}catch(e){} return [c.checkpointSnapshot,c.startingStructureSnapshot,c.baseSnapshot,c.characterSnapshot,c.boostSnapshot,c.boostPermissions].every(Object.isFrozen)&&JSON.stringify(c)===before&&c.baseSnapshot.id==="starforge"&&c.characterSnapshot.id==="neon"&&c.boostSnapshot.shield; })()'));
-check('S3 keeps a valid default Base save while S5 activates only the Collection domain', () => {
+check('S3 keeps a valid default Base save while later milestones activate Collection and Challenge domains', () => {
   const g=makeGame(),b=saved(g,'skystack-bases'),data=JSON.parse(g.mem.get('skystack-save')).data;
-  return b.selected==='natural'&&JSON.stringify(b.owned)===JSON.stringify(['natural'])&&Object.prototype.hasOwnProperty.call(data,'skystack-characters')&&Object.prototype.hasOwnProperty.call(data,'skystack-bases')&&Object.prototype.hasOwnProperty.call(data,'skystack-collections')&&!Object.prototype.hasOwnProperty.call(data,'skystack-challenge-records');
+  return b.selected==='natural'&&JSON.stringify(b.owned)===JSON.stringify(['natural'])&&Object.prototype.hasOwnProperty.call(data,'skystack-characters')&&Object.prototype.hasOwnProperty.call(data,'skystack-bases')&&Object.prototype.hasOwnProperty.call(data,'skystack-collections')&&Object.prototype.hasOwnProperty.call(data,'skystack-challenge-records');
 });
 check('S3 Base save normalization repairs selection while preserving unknown owned ids', () => {
   const g=makeGame({'skystack-save':JSON.stringify({version:2,data:{'skystack-bases':{owned:['runestone','future-base','runestone',7],selected:'missing'}}})}),b=saved(g,'skystack-bases');
@@ -1111,9 +1111,59 @@ check('S5 Pure and Daily retain neutral passives, boosts, modifiers, scoring, an
 check('S5 Player screen presents achievement and Collection progress without overflowing phone navigation', () => fresh.run(
   '(() => { W=242;H=300;relayout();state="me";renderMe();return ACH.length===24&&COLLECTION_REGISTRY.length===6&&TOGGLES.every(t=>t.x>=0&&t.x+t.w<=W&&t.y+t.h<NAV_Y)&&MIX_ROWS.every(r=>r.plus.y+r.plus.h<NAV_Y); })()'));
 
+// ---------- S6 challenge hub + fair run templates ----------
+check('S6 defines eight frozen local templates covering every planned challenge family', () => fresh.run(
+  'CHALLENGE_REGISTRY.length===8&&Object.isFrozen(CHALLENGE_REGISTRY)&&CHALLENGE_REGISTRY.every(c=>Object.isFrozen(c)&&Object.isFrozen(c.objective)&&c.id&&c.name&&c.desc&&c.mode&&c.family&&c.objective.type&&Number.isFinite(c.objective.target)&&c.reward>=0)&&["timed","precision","limitedLives","unstable","seeded","recovery","characterTrial","milestone"].every(f=>CHALLENGE_REGISTRY.some(c=>c.family===f))&&!CHALLENGE_REGISTRY.some(c=>c.weekly||c.family==="weekly")'));
+check('S6 keeps Levels primary and folds hidden Time 60 into a two-level Extra Modes hub', () => fresh.run(
+  'MODE_REGISTRY.level.hidden&&MODE_REGISTRY.time.hidden&&MODE_REGISTRY.challenge.hidden&&EXTRAS.map(x=>x.id).join(",")==="practice,endless,pure,daily,challenges"&&CHALLENGE_ENTRY.id==="challenges"&&challengeById("time60").mode==="time"&&challengeById("time60").duration===MODE_REGISTRY.time.time'));
+check('S6 RunContext deeply owns its challenge contract, record scope, and modifier permission', () => fresh.run(
+  '(() => { const c=createRunContext({mode:"challenge",challengeId:"unstable20",campaignLevel:-1,startingAltitude:0,checkpointId:"ground",seed:7,skill:.35,loadout:{shield:true},characterId:"aurora",characterMastery:{}}),before=JSON.stringify(c);try{c.challengeSnapshot.objective.target=1}catch(e){}return Object.isFrozen(c.challengeSnapshot)&&Object.isFrozen(c.challengeSnapshot.objective)&&JSON.stringify(c)===before&&c.recordPermissions.write&&c.recordPermissions.scope==="challenge"&&c.modifierPermissions.enabled&&!c.boostPermissions.allowed&&!c.rewardPermissions.pickups&&!c.rewardPermissions.progress; })()'));
+check('S6 Time 60 preserves its 3600-frame rules, loadout, passive, modifiers, records, and no-revive contract', () => fresh.run(
+  '(() => { skinId="neon";loadout={shield:true,aura:true,slow:true};startChallenge("time60");const c=runContext;return c.mode==="time"&&timeLeft===3600&&c.characterSnapshot.id==="neon"&&c.characterSnapshot.passiveEnabled&&c.boostSnapshot.shield&&c.boostSnapshot.aura&&c.boostSnapshot.slow&&c.boostPermissions.allowed&&c.modifierPermissions.enabled&&c.rewardPermissions.pickups&&c.rewardPermissions.progress&&c.recordPermissions.write&&!PERMISSION_REGISTRY.time.revive; })()'));
+check('S6 migrates the legacy Time 60 best into its challenge record without deleting legacy data', () => {
+  const g=makeGame({'skystack-modebests':JSON.stringify({time:{blocks:12,score:345}})}),r=saved(g,'skystack-challenge-records');
+  return r.time60.bestBlocks===12&&r.time60.bestScore===345&&g.run('modeBests.time.blocks===12&&modeBests.time.score===345');
+});
+check('S6 challenge-record normalization repairs corruption and preserves unknown future ids', () => {
+  const g=makeGame({'skystack-save':JSON.stringify({version:2,data:{'skystack-challenge-records':{time60:{bestBlocks:'8.9',bestScore:-2,clears:'3',attempts:'bad'},'future-local':{bestBlocks:4,clears:1}}}})}),r=saved(g,'skystack-challenge-records');
+  return JSON.stringify(r.time60)===JSON.stringify({bestBlocks:8,bestScore:0,clears:3,attempts:0})&&r['future-local'].bestBlocks===4&&r['future-local'].clears===1;
+});
+check('S6 seeded climb owns one fixed seed and identical retry schedule', () => fresh.run(
+  '(() => { startChallenge("seeded30");const a={seed:runContext.seed,hue:hueBase,mods:JSON.stringify(runContext.modifiers)};startChallenge("seeded30");const b={seed:runContext.seed,hue:hueBase,mods:JSON.stringify(runContext.modifiers)};startChallenge("seeded30",123);return a.seed===0x534B5936&&JSON.stringify(a)===JSON.stringify(b)&&runContext.seed===123&&challengeSeed(challengeById("seeded30"),null,77)===0x534B5936; })()'));
+check('S6 precision clear pays its configured reward and records exactly once', () => {
+  const g=makeGame();
+  return g.run('(() => { achDone=ACH.map(a=>a.id);missions=MKEYS.slice(0,3).map(k=>({key:k,target:99999,reward:1}));startChallenge("precision10");coins=0;runCoins=0;stats.coins=0;for(let i=0;i<10;i++){runPerfects++;updateChallengeForPlacement({perfect:true,cut:false,miss:false});}const paid=coins,rec=challengeRecord("precision10");updateChallengeForPlacement({perfect:true});recordChallengeOutcome();return state==="gameover"&&challengeCleared&&challengeReward===30&&paid===30&&rec.clears===1&&rec.attempts===1&&coins===paid&&runCoins===0&&challengeRecord("precision10").attempts===1; })()');
+});
+check('S6 precision failure ends on the first imperfect placement with no challenge reward', () => {
+  const g=makeGame();
+  return g.run('(() => { startChallenge("precision10");coins=0;runCoins=0;updateChallengeForPlacement({perfect:false,cut:true,miss:false});const r=challengeRecord("precision10");return state==="gameover"&&overCause==="precision"&&!challengeCleared&&challengeReward===0&&r.attempts===1&&r.clears===0; })()');
+});
+check('S6 limited-lives challenge starts with exactly three lives and cannot refill or revive', () => fresh.run(
+  '(() => { loadout={shield:true,aura:true,slow:true};startChallenge("three-lives");const start=shield,ctx=runContext;for(let i=0;i<3;i++){const top=blocks[blocks.length-1];faller={x:W+50,y:towerTopY()-BH,w:top.w,col:"#fff",vy:0,golden:false};state="dropping";land();}return start===2&&!ctx.boostPermissions.allowed&&!ctx.rewardPermissions.pickups&&!PERMISSION_REGISTRY.challenge.revive&&state==="gameover"&&overCause==="miss"&&shield===0; })()'));
+check('S6 unstable tower scales only its configured balance contribution', () => fresh.run(
+  '(() => { const lean=id=>{startChallenge(id);assist=0;balance=0;blocks=[{x:0,w:96,col:"#fff"},{x:0,w:96,col:"#fff"}];afterPlace(blocks[1],true,W/2+10,{perfect:false,cut:true,miss:false,center:W/2+10});return balance;},normal=lean("three-lives"),unstable=lean("unstable20");return normal>0&&Math.abs(unstable/normal-1.35)<1e-9&&challengeRule(runContext,"balanceScale",1)===1.35; })()'));
+check('S6 recovery challenge counts only cut-then-perfect pairs', () => fresh.run(
+  '(() => { startChallenge("recovery3");const u=o=>updateChallengeForPlacement(o);u({perfect:true});u({cut:true});u({cut:true});u({perfect:true});u({perfect:true});u({cut:true});u({miss:true});u({perfect:true});u({cut:true});u({perfect:true});u({cut:true});u({perfect:true});const r=challengeRecord("recovery3");return challengeCleared&&challengeRuntime.recoveries===3&&r.clears===1&&r.attempts===1; })()'));
+check('S6 Neon trial snapshots Neon and its passive without changing the selected Character', () => fresh.run(
+  '(() => { skinId="aurora";startChallenge("neon-trial");const c=runContext;skinId="candy";return c.characterSnapshot.id==="neon"&&c.characterSnapshot.passiveId===characterById("neon").passiveId&&c.characterSnapshot.passiveEnabled&&JSON.stringify(blockCol(1))===JSON.stringify(characterById("neon").base(1,hueBase)); })()'));
+check('S6 Cave Gate uses the 99M placed-block milestone with deterministic modifiers', () => fresh.run(
+  '(() => { startChallenge("cave-gate");const c=activeChallenge();while(blocks.length-1<c.objective.target)blocks.push({x:0,w:96,col:"#fff"});updateChallengeForPlacement({perfect:true});return c.objective.type==="height"&&c.objective.target===32&&blocks.length*METERS_PER===99&&runContext.modifierPermissions.enabled&&runContext.modifiers.length===MODIFIER_REGISTRY.length&&challengeCleared; })()'));
+check('S6 non-Time challenges write only their local records, not global or legacy mode bests', () => fresh.run(
+  '(() => { best=77;bestHeight=9;modeBests={endless:{blocks:8,score:70}};startChallenge("precision10");score=999;gameOver("precision");return best===77&&bestHeight===9&&!modeBests.challenge&&modeBests.endless.blocks===8&&challengeRecord("precision10").bestScore===999; })()'));
+check('S6 preserves Practice non-farming and Pure/Daily mechanical neutrality', () => fresh.run(
+  '(() => { const neutral=["practice","pure","daily"].every(mode=>{const c=createRunContext({mode,campaignLevel:-1,startingAltitude:0,checkpointId:"ground",seed:5,skill:.4,loadout:{shield:true},characterId:"neon",characterMastery:{}});return !c.challengeSnapshot&&!c.modifierPermissions.enabled&&c.modifiers.length===0&&(!c.characterSnapshot.passiveEnabled)&&!c.boostPermissions.allowed;});const p=createRunContext({mode:"practice",campaignLevel:-1,startingAltitude:0,seed:5,skill:.4,loadout:{},characterId:"aurora",characterMastery:{}});return neutral&&!canEarnRewards(p)&&!canWriteRecords(p); })()'));
+check('S6 challenge retries scrub mutable objective state while preserving owned seed and contract', () => fresh.run(
+  '(() => { startChallenge("recovery3");const seed=runContext.seed,snap=JSON.stringify(runContext.challengeSnapshot);for(let i=0;i<3;i++){challengeRuntime.recoveries=2;challengeRuntime.recoveryArmed=true;challengeReward=99;challengeCleared=true;startChallenge("recovery3",seed);if(runContext.seed!==seed||JSON.stringify(runContext.challengeSnapshot)!==snap||challengeRuntime.recoveries!==0||challengeRuntime.recoveryArmed||challengeReward!==0||challengeCleared||challengeRecorded)return false;}return true; })()'));
+check('S6 leaving a hidden challenge restores the last real Extra Mode selection', () => {
+  const g=makeGame({'skystack-mode':JSON.stringify('pure')});
+  return g.run('(() => { startChallenge("precision10");gameOver("precision");overLock=0;pressDown(null);return state==="home"&&mode==="pure"&&store.get("skystack-mode",null)==="pure"; })()');
+});
+check('S6 Challenge picker fits all eight rows above navigation at phone width and renders every template', () => fresh.run(
+  '(() => { W=242;H=300;relayout();state="home";challengePicker=true;renderChallengePicker();const fit=CHALLENGE_ROWS.length===8&&CHALLENGE_ROWS.every(r=>r.x>=0&&r.x+r.w<=W&&r.y>=0&&r.y+r.h<NAV_Y);for(const c of CHALLENGE_REGISTRY){startChallenge(c.id);renderHUD(blocks.length);gameOver(c.family==="timed"?"time":"precision");renderGameOver();}return fit; })()'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v83', () => /const CACHE = 'skystack-v83'/.test(sw));
+check('sw.js cache bumped to v84', () => /const CACHE = 'skystack-v84'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
