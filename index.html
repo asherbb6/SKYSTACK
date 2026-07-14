@@ -165,13 +165,33 @@ let AC = null, AUDIO_MASTER = null, SFX_OUT = null, MUSIC_OUT = null;
 let muted = store.get('skystack-mute', false);
 let musicOn = store.get('skystack-music', true);
 let hapticsOn = store.get('skystack-hapt', true);
+function savedMixLevel(key) {
+  const v = Number(store.get(key, 1));
+  return Number.isFinite(v) ? clamp(Math.round(v * 4) / 4, 0, 1) : 1;
+}
+let musicVol = savedMixLevel('skystack-musicvol');
+let sfxVol = savedMixLevel('skystack-sfxvol');
+function musicOutputGain() { return musicOn ? MUSIC_OUTPUT_LEVEL * musicVol : 0; }
+function applyMixLevels() {
+  if (!AC) return;
+  const now = AC.currentTime;
+  if (SFX_OUT) SFX_OUT.gain.setTargetAtTime(0.9 * sfxVol, now, 0.025);
+  if (MUSIC_OUT) MUSIC_OUT.gain.setTargetAtTime(musicOutputGain(), now, 0.05);
+}
+function setMixVolume(id, direction) {
+  const next = clamp(Math.round(((id === 'music' ? musicVol : sfxVol) + direction * 0.25) * 4) / 4, 0, 1);
+  if (id === 'music') { musicVol = next; store.set('skystack-musicvol', musicVol); }
+  else { sfxVol = next; store.set('skystack-sfxvol', sfxVol); }
+  applyMixLevels();
+  sfx.tap();
+}
 function audio() {
   if (!AC) {
     try {
       AC = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
       AUDIO_MASTER = AC.createGain(); SFX_OUT = AC.createGain(); MUSIC_OUT = AC.createGain();
       AUDIO_MASTER.gain.value = muted ? 0 : 0.9;
-      SFX_OUT.gain.value = 0.9; MUSIC_OUT.gain.value = musicOn ? MUSIC_OUTPUT_LEVEL : 0;
+      SFX_OUT.gain.value = 0.9 * sfxVol; MUSIC_OUT.gain.value = musicOutputGain();
       SFX_OUT.connect(AUDIO_MASTER); MUSIC_OUT.connect(AUDIO_MASTER); AUDIO_MASTER.connect(AC.destination);
     } catch (e) {}
   }
@@ -330,7 +350,7 @@ function scheduleBar(t,bar,dur,p) {
 function musicStep() {
   if(!AC||AC.state!=='running'){musicNext=0;return;}
   if(AUDIO_MASTER)AUDIO_MASTER.gain.setTargetAtTime(muted?0:.9,AC.currentTime,.025);
-  if(MUSIC_OUT)MUSIC_OUT.gain.setTargetAtTime(musicOn ? MUSIC_OUTPUT_LEVEL : 0,AC.currentTime,.08);
+  if(MUSIC_OUT)MUSIC_OUT.gain.setTargetAtTime(musicOutputGain(),AC.currentTime,.08);
   if(muted||!musicOn){musicNext=0;return;}
   const c=currentMusicContext(),key=musicSignature(c),p=musicProfileFor(c.sceneName,c.biome,c.modeId,c.eventName);
   if(key!==musicKey||!musicBus)switchMusic(p,key);
@@ -1156,7 +1176,7 @@ function shareScore() {
 const PAD = 6;
 const NAV_H = 20;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
-    SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
+    SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
@@ -1196,6 +1216,12 @@ function relayout() {
   LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: 196, w: 52, h: 26, id: l.id, cost: l.cost }));
   // me
   TOGGLES = ['sound','music','haptics'].map((id, i) => ({ id, x: W-PAD-30, y: 216 + i * 15, w: 30, h: 11 }));
+  const meW = Math.min(W - PAD*2, 168), meX = Math.round((W - meW)/2);
+  MIX_ROWS = ['music','sfx'].map((id, i) => {
+    const y = 240 + i * 17, minus = { x:meX+meW-88, y, w:13, h:11 };
+    const bar = { x:minus.x+16, y:y+2, w:56, h:7 };
+    return { id, y, minus, bar, plus:{ x:meX+meW-13, y, w:13, h:11 } };
+  });
   // in-run
   SND_BTN = { x:W-17, y:4, w:13, h:13 };
   PAUSE_BTN = { x:4, y:4, w:13, h:13 };
@@ -1341,6 +1367,10 @@ function pressDown(e) {
       else if (t.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
       else if (t.id === 'haptics') { hapticsOn = !hapticsOn; store.set('skystack-hapt', hapticsOn); sfx.tap(); if (hapticsOn) hapt(20); }
       return;
+    }
+    for (const row of MIX_ROWS) {
+      if (inR(p, row.minus, 4)) { setMixVolume(row.id, -1); return; }
+      if (inR(p, row.plus, 4)) { setMixVolume(row.id, 1); return; }
     }
   } else if (state === 'playing' || state === 'dropping') {
     if (p && inR(p, SND_BTN, 3)) { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); return; }
@@ -3721,7 +3751,20 @@ function renderMe() {
     ctx.fillStyle = on ? '#08301F' : 'rgba(255,246,232,0.5)';
     txt(on ? 'ON' : 'OFF', t.x + t.w/2, ry + 2, 1, on ? '#08301F' : 'rgba(255,246,232,0.5)', 'center');
   }
-  txt('SKYSTACK 1.0', W/2, H-50, 1, 'rgba(255,246,232,0.55)', 'center');
+  for (const row of MIX_ROWS) {
+    const v = row.id === 'music' ? musicVol : sfxVol;
+    txt(row.id === 'music' ? 'MUSIC' : 'EFFECTS', mx, row.y + 2, 1, 'rgba(255,246,232,0.85)', 'left');
+    for (const b of [row.minus,row.plus]) {
+      ctx.fillStyle = 'rgba(255,246,232,0.14)'; ctx.fillRect(b.x,b.y,b.w,b.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(b.x,b.y,b.w,1);
+    }
+    txt('-', row.minus.x+row.minus.w/2, row.y+2, 1, '#FFF6E8', 'center');
+    txt('+', row.plus.x+row.plus.w/2, row.y+2, 1, '#FFF6E8', 'center');
+    ctx.fillStyle='rgba(0,0,0,0.38)';ctx.fillRect(row.bar.x,row.bar.y,row.bar.w,row.bar.h);
+    ctx.fillStyle=row.id==='music'?'#5EC8F2':'#FFD75E';ctx.fillRect(row.bar.x,row.bar.y,Math.round(row.bar.w*v),row.bar.h);
+    txt(Math.round(v*100)+'%',row.bar.x+row.bar.w/2,row.y+2,1,'#FFF6E8','center');
+  }
+  txt('SKYSTACK 1.0', W/2, Math.max(270,H-50), 1, 'rgba(255,246,232,0.55)', 'center');
 }
 
 // ---------- shared 3D UI helpers ----------

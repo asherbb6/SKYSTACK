@@ -439,6 +439,15 @@ check('music engine creates separate master, SFX, music, and crossfade buses', (
   'AC&&AUDIO_MASTER&&SFX_OUT&&MUSIC_OUT&&musicBus&&musicKey==="play:0:endless:calm"'));
 check('global music output is louder everywhere without raising the SFX bus', () => mus.run(
   'MUSIC_OUTPUT_LEVEL===1.05&&MUSIC_OUT.gain.value===MUSIC_OUTPUT_LEVEL&&SFX_OUT.gain.value===.9'));
+check('volume mixer defaults preserve the approved v71 music and effects mix', () => mus.run(
+  'musicVol===1&&sfxVol===1&&musicOutputGain()===MUSIC_OUTPUT_LEVEL'));
+check('volume mixer independently updates live buses and persists v2 settings', () => {
+  mus.run('setMixVolume("music",-1); setMixVolume("sfx",-1); setMixVolume("sfx",-1);');
+  return mus.run('musicVol===.75&&sfxVol===.5&&MUSIC_OUT.gain.value===MUSIC_OUTPUT_LEVEL*.75&&SFX_OUT.gain.value===.9*.5') &&
+    saved(mus,'skystack-musicvol')===.75 && saved(mus,'skystack-sfxvol')===.5;
+});
+check('volume mixer clamps to 0–100 percent in consistent 25 percent steps', () => mus.run(
+  '(() => { for(let i=0;i<8;i++)setMixVolume("music",-1); const lo=musicVol; for(let i=0;i<8;i++)setMixVolume("music",1); return lo===0&&musicVol===1; })()'));
 check('music scheduler produces voices ahead of playback without per-frame creation', () => mus.run(
   'AC.created>0 && musicNext>AC.currentTime && barDurCur>0'));
 check('cave-only scheduler adds drone, lute, bell, and war-drum voices immediately', () => mus.run(
@@ -693,6 +702,10 @@ check('renderHome (hero card) runs for fresh, veteran and conquered profiles', (
   }
   return true;
 });
+check('Me volume mixer renders and stays above navigation on narrow portrait screens', () => fresh.run(
+  '(() => { state="me"; renderMe(); return MIX_ROWS.length===2&&MIX_ROWS.every(r=>r.minus.x>=0&&r.plus.x+r.plus.w<=W&&r.y+r.plus.h<NAV_Y); })()'));
+check('Me volume mixer touch controls adjust the selected channel only', () => fresh.run(
+  '(() => { state="me"; musicVol=1;sfxVol=1;renderMe();const r=MIX_ROWS[0].minus;canvasRect=null;pressDown({clientX:(r.x+r.w/2)/W*320,clientY:(r.y+r.h/2)/H*480});return musicVol===.75&&sfxVol===1; })()'));
 
 // ---------- save schema v2 + migration (v64) ----------
 // fresh profile: a valid v2 container is created, and nothing is ever written to v1 keys
@@ -771,7 +784,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v71', () => /const CACHE = 'skystack-v71'/.test(sw));
+check('sw.js cache bumped to v72', () => /const CACHE = 'skystack-v72'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
