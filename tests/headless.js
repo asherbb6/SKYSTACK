@@ -424,6 +424,8 @@ check('every biome theme has a complete playable arrangement', () => mus.run(
   'MUSIC_THEMES.every(t=>t.root>0&&t.bpm>=58&&t.bpm<=130&&t.mel.length>=16&&t.bass.length>=4&&t.density>0&&t.drums>=0&&t.lead&&t.pad&&t.lpf>0)'));
 check('menu, victory, and loss have dedicated music identities', () => mus.run(
   'MENU_THEME.name!==WIN_THEME.name && WIN_THEME.name!==LOSS_THEME.name && MENU_THEME.bpm!==LOSS_THEME.bpm'));
+check('home screens receive a strong menu-only lift without changing gameplay theme gain', () => mus.run(
+  '(() => { const m=musicProfileFor("menu",0,"menu","calm"),g=musicProfileFor("play",1,"endless","calm"); return m.gain===1.9&&g.gain===1&&MENU_THEME.gain>MUSIC_THEMES[0].gain; })()'));
 check('Practice is calmer while Time mode is more urgent', () => mus.run(
   '(() => { const b=musicProfileFor("play",4,"endless","calm"),p=musicProfileFor("play",4,"practice","calm"),t=musicProfileFor("play",4,"time","calm"); return p.bpm<b.bpm&&p.drums<b.drums&&p.gain<b.gain&&t.bpm>b.bpm&&t.drums>=b.drums; })()'));
 check('Pure and Daily keep biome identity but use different arrangements', () => mus.run(
@@ -769,7 +771,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v70', () => /const CACHE = 'skystack-v70'/.test(sw));
+check('sw.js cache bumped to v71', () => /const CACHE = 'skystack-v71'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
