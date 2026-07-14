@@ -435,6 +435,8 @@ check('music signatures change across biome, mode, scene, and event', () => mus.
 mus.run('audio(); state="playing"; mode="endless"; tier=0; musicStep(); globalThis.__bus0=musicBus; globalThis.__key0=musicKey;');
 check('music engine creates separate master, SFX, music, and crossfade buses', () => mus.run(
   'AC&&AUDIO_MASTER&&SFX_OUT&&MUSIC_OUT&&musicBus&&musicKey==="play:0:endless:calm"'));
+check('global music output is louder everywhere without raising the SFX bus', () => mus.run(
+  'MUSIC_OUTPUT_LEVEL===1.05&&MUSIC_OUT.gain.value===MUSIC_OUTPUT_LEVEL&&SFX_OUT.gain.value===.9'));
 check('music scheduler produces voices ahead of playback without per-frame creation', () => mus.run(
   'AC.created>0 && musicNext>AC.currentTime && barDurCur>0'));
 check('cave-only scheduler adds drone, lute, bell, and war-drum voices immediately', () => mus.run(
@@ -767,7 +769,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v69', () => /const CACHE = 'skystack-v69'/.test(sw));
+check('sw.js cache bumped to v70', () => /const CACHE = 'skystack-v70'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

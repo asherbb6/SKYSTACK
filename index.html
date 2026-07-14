@@ -160,6 +160,7 @@ function txt(text, x, y, sc, color, align) {
 }
 
 // ---------- audio ----------
+const MUSIC_OUTPUT_LEVEL = 1.05; // Global +3.3 dB lift over the old 0.72 mix; leaves SFX/master headroom intact.
 let AC = null, AUDIO_MASTER = null, SFX_OUT = null, MUSIC_OUT = null;
 let muted = store.get('skystack-mute', false);
 let musicOn = store.get('skystack-music', true);
@@ -170,7 +171,7 @@ function audio() {
       AC = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
       AUDIO_MASTER = AC.createGain(); SFX_OUT = AC.createGain(); MUSIC_OUT = AC.createGain();
       AUDIO_MASTER.gain.value = muted ? 0 : 0.9;
-      SFX_OUT.gain.value = 0.9; MUSIC_OUT.gain.value = musicOn ? 0.72 : 0;
+      SFX_OUT.gain.value = 0.9; MUSIC_OUT.gain.value = musicOn ? MUSIC_OUTPUT_LEVEL : 0;
       SFX_OUT.connect(AUDIO_MASTER); MUSIC_OUT.connect(AUDIO_MASTER); AUDIO_MASTER.connect(AC.destination);
     } catch (e) {}
   }
@@ -329,7 +330,7 @@ function scheduleBar(t,bar,dur,p) {
 function musicStep() {
   if(!AC||AC.state!=='running'){musicNext=0;return;}
   if(AUDIO_MASTER)AUDIO_MASTER.gain.setTargetAtTime(muted?0:.9,AC.currentTime,.025);
-  if(MUSIC_OUT)MUSIC_OUT.gain.setTargetAtTime(musicOn ? .72 : 0,AC.currentTime,.08);
+  if(MUSIC_OUT)MUSIC_OUT.gain.setTargetAtTime(musicOn ? MUSIC_OUTPUT_LEVEL : 0,AC.currentTime,.08);
   if(muted||!musicOn){musicNext=0;return;}
   const c=currentMusicContext(),key=musicSignature(c),p=musicProfileFor(c.sceneName,c.biome,c.modeId,c.eventName);
   if(key!==musicKey||!musicBus)switchMusic(p,key);
