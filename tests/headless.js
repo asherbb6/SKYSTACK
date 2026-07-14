@@ -544,6 +544,40 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
   return bl.run('(() => { const A = blocks.length; const ti = TIERS.findIndex(t => A < t.n); return TIERS[ti].name === "AURORA"; })()');
 });
 
+// ---------- v65: campaign-hero home + map star total ----------
+const h65 = makeGame({ 'skystack-height': '60' });
+h65.run('mode = "endless"; state = "home";');
+check('hero card contains the PLAY button', () => h65.run(
+  'PLAY_BTN.x >= HERO_CARD.x && PLAY_BTN.y >= HERO_CARD.y && PLAY_BTN.x + PLAY_BTN.w <= HERO_CARD.x + HERO_CARD.w && PLAY_BTN.y + PLAY_BTN.h <= HERO_CARD.y + HERO_CARD.h'));
+check('MAP + EXTRAS are demoted below the hero card', () => h65.run(
+  'MAP_BTN.y >= HERO_CARD.y + HERO_CARD.h && MODE_BTN.y === MAP_BTN.y && MAP_BTN.x < MODE_BTN.x'));
+check('tapping the hero card itself starts the next level', () => h65.run(
+  '(() => { const p = {x: HERO_CARD.x + 6, y: HERO_CARD.y + 6}; pos = () => p; pressDown({}); return state === "playing" && runLevel === prog && runLaunch === TIERS[prog-1].n; })()'));
+h65.run('gameOver("fall"); failT = 60; state = "home";');
+check('SKY MAP button opens the map', () => h65.run(
+  '(() => { const p = {x: MAP_BTN.x + 4, y: MAP_BTN.y + 4}; pos = () => p; pressDown({}); return skyMap === true && state === "home"; })()'));
+h65.run('skyMap = false;');
+check('EXTRA MODES button opens the picker', () => h65.run(
+  '(() => { const p = {x: MODE_BTN.x + 4, y: MODE_BTN.y + 4}; pos = () => p; pressDown({}); return modePicker === true && state === "home"; })()'));
+check('map header shows the campaign star total', () => {
+  const g = makeGame({ 'skystack-height': '60', 'skystack-levelstars': '[3,2,1]' });
+  g.run('state = "home"; openSkyMap();');
+  g.run('var __mt = []; var __mt0 = txt; txt = function(t,...a){ __mt.push(String(t)); return __mt0(t,...a); };');
+  g.run('renderSkyMap()');
+  return g.run('__mt.some(t => t === "STARS 6/" + TIERS.length*3)');
+});
+check('home layout stays inside the canvas on a narrow portrait screen', () => {
+  const g = makeGame();
+  return g.run('(() => { const oW = W, oH = H; try { W = 242; H = 300; relayout(); return HERO_CARD.x >= 0 && HERO_CARD.x + HERO_CARD.w <= W && MODE_BTN.x + MODE_BTN.w <= W && MAP_BTN.x >= 0 && MODE_BTN.y + MODE_BTN.h < MISS_PANEL.y; } finally { W = oW; H = oH; relayout(); } })()');
+});
+check('renderHome (hero card) runs for fresh, veteran and conquered profiles', () => {
+  for (const seed of [{}, { 'skystack-height': '60' }, { 'skystack-height': '900', 'skystack-tiers': '11' }]) {
+    const g = makeGame(seed);
+    g.run('state = "home"; skyMap = false; renderHome()');
+  }
+  return true;
+});
+
 // ---------- save schema v2 + migration (v64) ----------
 // fresh profile: a valid v2 container is created, and nothing is ever written to v1 keys
 const sv = makeGame();
@@ -621,7 +655,7 @@ check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v64', () => /const CACHE = 'skystack-v64'/.test(sw));
+check('sw.js cache bumped to v65', () => /const CACHE = 'skystack-v65'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

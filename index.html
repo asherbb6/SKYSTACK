@@ -1067,7 +1067,7 @@ function shareScore() {
 // ---------- layout constants ----------
 const PAD = 6;
 const NAV_H = 20;
-let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, PLAY_BTN, MISS_PANEL, INSTALL_BTN,
+let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
@@ -1079,12 +1079,16 @@ function relayout() {
     { id:'me',   label:'ME' }
   ].map((t, i) => ({ ...t, x: Math.round(i * W/3), w: Math.ceil(W/3) }));   // tabs share the full width on any screen
   NAV_Y = H - NAV_H;
-  // home (mode button + sky-map button share the row, centered as a pair)
-  MODE_BTN = { x:Math.max(2, W/2-76), y:70, w:112, h:20 };
-  MAP_BTN = { x:Math.min(W-38, W/2+40), y:70, w:36, h:20 };
+  // home: the campaign is the hero — one big next-level card with PLAY inside,
+  // MAP + EXTRAS demoted to a secondary row underneath it
+  const heroW = Math.min(W - 24, 240);
+  HERO_CARD = { x: Math.round((W-heroW)/2), y:62, w:heroW, h:76 };
+  PLAY_BTN = { x: HERO_CARD.x+12, y: HERO_CARD.y+46, w: heroW-24, h:22 };
+  const halfW = Math.floor((heroW - 6) / 2);
+  MAP_BTN  = { x: HERO_CARD.x, y: HERO_CARD.y + HERO_CARD.h + 6, w: halfW, h:18 };
+  MODE_BTN = { x: HERO_CARD.x + heroW - halfW, y: MAP_BTN.y, w: halfW, h:18 };
   const pickW = Math.min(W - 24, 240);
   PICK_ROWS = EXTRAS.map((m, i) => ({ x: Math.round((W-pickW)/2), y:74 + i*44, w:pickW, h:40, id:m.id }));
-  PLAY_BTN = { x:W/2-50, y:130, w:100, h:30 };
   // level win / fail screens: fat centered button rows
   const rowW = Math.min(W - 40, 180);
   WIN_ROWS = ['next','retry','map'].map((id, i) =>
@@ -1192,7 +1196,7 @@ function pressDown(e) {
     if (deferredPrompt && inR(p, INSTALL_BTN, 3)) { const dp = deferredPrompt; deferredPrompt = null; try { dp.prompt(); } catch (err) {} return; }
     if (inR(p, MODE_BTN, 4)) { modePicker = true; sfx.tap(); return; }
     if (inR(p, MAP_BTN, 4)) { openSkyMap(); sfx.tap(); return; }
-    if (inR(p, PLAY_BTN, 4)) { startLevel(Math.min(prog, TIERS.length - 1)); return; }
+    if (inR(p, PLAY_BTN, 4) || inR(p, HERO_CARD, 2)) { startLevel(Math.min(prog, TIERS.length - 1)); return; }
   } else if (state === 'levelwin') {
     if (winT < 24) return;                             // let the celebration land before taps count
     if (!p) { if (runLevel + 1 < TIERS.length) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; } return; }
@@ -2868,34 +2872,41 @@ function renderHome() {
   }
   txt(tag, W/2, 52+bob, 1, EV ? EV.acc : '#FFD75E', 'center');
 
-  // EXTRAS (side modes) + SKY MAP buttons share the row
-  plate3D(MODE_BTN.x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h, 'rgba(0,0,0,0.32)', uiA(0.6));
-  txt('EXTRA MODES', MODE_BTN.x + MODE_BTN.w/2 - 5, MODE_BTN.y + 7, 1, UI_HEX(), 'center');
-  txt('>', MODE_BTN.x + MODE_BTN.w - 10, MODE_BTN.y + 7, 1, 'rgba(255,246,232,0.7)', 'left');
-  plate3D(MAP_BTN.x, MAP_BTN.y, MAP_BTN.w, MAP_BTN.h, 'rgba(0,0,0,0.32)', uiA(0.6));
-  txt('MAP', MAP_BTN.x + MAP_BTN.w/2, MAP_BTN.y + 7, 1, UI_HEX(), 'center');
-  // the main climb: next level card
+  // the campaign hero card: the whole card is the PLAY target (tap anywhere on it)
   const nl = Math.min(prog, TIERS.length - 1), nt = TIERS[nl];
   const conquered = prog >= TIERS.length;
+  const hc = HERO_CARD;
+  plate3D(hc.x, hc.y, hc.w, hc.h, 'rgba(11,14,26,0.55)', nt.c);
+  txt('THE CLIMB', W/2, hc.y + 6, 1, 'rgba(255,246,232,0.5)', 'center');
   if (conquered) {
-    txt('SKY CONQUERED!', W/2, 96, 1, '#FFD75E', 'center');
-    txt('REPLAY ANY LEVEL ON THE MAP', W/2, 106, 1, 'rgba(255,246,232,0.6)', 'center');
+    txt('SKY CONQUERED!', W/2, hc.y + 15, 1, '#FFD75E', 'center');
+    txt('REPLAY ANY LEVEL ON THE MAP', W/2, hc.y + 24, 1, 'rgba(255,246,232,0.6)', 'center');
   } else {
-    txt('LEVEL ' + (nl+1) + ' - ' + nt.name, W/2, 96, 1, nt.c, 'center');
+    txt('LEVEL ' + (nl+1) + ' - ' + nt.name, W/2, hc.y + 15, 1, nt.c, 'center');
     const starSum = levelStars.reduce((a,b)=>a+(b||0),0);
-    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? ' - STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, 106, 1, 'rgba(255,246,232,0.6)', 'center');
+    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? ' - STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, hc.y + 24, 1, 'rgba(255,246,232,0.6)', 'center');
   }
-  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, 119, 1, k < (levelStars[nl] || 0));
+  // this level's stars flanked by its biome art
+  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, hc.y + 37, 1, k < (levelStars[nl] || 0));
+  drawStageDecoScaled(nl, hc.x + 18, hc.y + 37, 2);
+  drawStageDecoScaled(nl, hc.x + hc.w - 18, hc.y + 37, 2);
 
   const pulse = beatPulse();   // PLAY breathes on the music's bar
   plate3D(PLAY_BTN.x, PLAY_BTN.y, PLAY_BTN.w, PLAY_BTN.h, playA(.55+pulse*.35));
-  txt('PLAY', W/2, PLAY_BTN.y+9, 2, EV ? '#141414' : '#08301F', 'center');
-  // armed boosts indicator (centered icons under PLAY)
+  txt('PLAY', W/2, PLAY_BTN.y+4, 2, EV ? '#141414' : '#08301F', 'center');
+
+  // secondary row: SKY MAP + EXTRAS live under the climb, not above it
+  plate3D(MAP_BTN.x, MAP_BTN.y, MAP_BTN.w, MAP_BTN.h, 'rgba(0,0,0,0.32)', uiA(0.6));
+  txt('SKY MAP', MAP_BTN.x + MAP_BTN.w/2, MAP_BTN.y + 6, 1, UI_HEX(), 'center');
+  plate3D(MODE_BTN.x, MODE_BTN.y, MODE_BTN.w, MODE_BTN.h, 'rgba(0,0,0,0.32)', uiA(0.6));
+  txt('EXTRA MODES', MODE_BTN.x + MODE_BTN.w/2 - 3, MODE_BTN.y + 6, 1, UI_HEX(), 'center');
+  txt('>', MODE_BTN.x + MODE_BTN.w - 8, MODE_BTN.y + 6, 1, 'rgba(255,246,232,0.7)', 'left');
+  // armed boosts indicator (centered icons under the secondary row)
   const armed = LOADOUT.filter(l => loadout[l.id]);
   if (armed.length && mode !== 'daily') {
     const iw = armed.length * 12 - 4;
     let ix = Math.round(W/2 - iw/2);
-    for (const a of armed) { drawIcon(a.id, ix, PLAY_BTN.y + PLAY_BTN.h + 6); ix += 12; }
+    for (const a of armed) { drawIcon(a.id, ix, MODE_BTN.y + MODE_BTN.h + 6); ix += 12; }
   }
 
   panel(MISS_PANEL.x, MISS_PANEL.y, MISS_PANEL.w, MISS_PANEL.h);
@@ -3420,6 +3431,10 @@ function renderSkyMap() {
   txt('SKY MAP', W/2+1, 6, 2, 'rgba(0,0,0,0.5)', 'center');
   txt('SKY MAP', W/2, 5, 2, '#FFF6E8', 'center');
   txt('CHOOSE YOUR PATH', W/2, 22, 1, '#FFD75E', 'center');
+  // campaign mastery at a glance: total stars earned across the climb
+  const starTot = levelStars.reduce((a,b)=>a+(b||0),0);
+  drawStarPix(10, 12, 1, true);
+  txt('STARS ' + starTot + '/' + TIERS.length*3, 17, 9, 1, '#FFD75E', 'left');
   ctx.fillStyle = 'rgba(255,246,232,0.14)'; ctx.fillRect(W-18, 6, 13, 13);   // close box
   txt('X', W-12, 8, 1, 'rgba(255,246,232,0.85)', 'center');
   // slim scrollbar on the right edge
