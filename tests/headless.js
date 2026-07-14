@@ -377,7 +377,7 @@ check('drawBiomeDecor runs across the whole climb without throwing', () => {
 });
 // ---- realistic atmosphere (day -> sunset -> night -> space) ----
 check('sky helpers exist (drawBiomeSky, drawSun, atmoDark, currentBiome, SKY_STOPS)', () => bio.run(
-  '["drawBiomeSky","drawSun","atmoDark","currentBiome","rootedBuilding","rootedTree","foliageBlob"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function") && Array.isArray(SKY_STOPS)'));
+  '["drawBiomeSky","drawSun","atmoDark","currentBiome","rootedTree","foliageBlob"].every(f => typeof globalThis[f] === "function" || eval("typeof " + f) === "function") && Array.isArray(SKY_STOPS)'));
 check('SKY_STOPS has a gradient (>=2 stops) for every tier', () => bio.run(
   'SKY_STOPS.length === 11 && SKY_STOPS.every(g => Array.isArray(g) && g.length >= 2 && g.every(st => st.length === 2))'));
 check('SKY_STOPS is index-aligned to the 11 stages', () => bio.run('SKY_STOPS.length === 11'));
@@ -395,9 +395,11 @@ check('drawBiomeSky + drawSun render across the whole climb without throwing', (
 check('worldY maps altitude to screen-y (higher A sits higher on screen)', () => bio.run(
   'typeof worldY === "function" && worldY(10, 0) < worldY(0, 0) && (worldY(0,0) - worldY(1,0)) === BH'));
 check('anchored ground-world helpers exist + instance lists non-empty', () => bio.run(
-  '["drawGroundWorld","drawCaveWalls","drawSurfaceGround","rootedBuilding","rootedTree","foliageBlob"].every(f => eval("typeof "+f) === "function") && BUILDINGS.length > 0 && TREES.length > 0 && typeof SURF_A === "number"'));
-check('every rooted building/tree has a top ABOVE the surface line', () => bio.run(
-  'BUILDINGS.every(b => b.topA > SURF_A) && TREES.every(t => t.topA > SURF_A)'));
+  '["drawGroundWorld","drawCaveWalls","drawSurfaceGround","rootedTree","foliageBlob"].every(f => eval("typeof "+f) === "function") && TREES.length > 0 && typeof SURF_A === "number"'));
+check('every rooted tree has a top ABOVE the surface line', () => bio.run(
+  'TREES.every(t => t.topA > SURF_A)'));
+check('city buildings removed (no rooted towers or skyline haze)', () =>
+  !/const BUILDINGS\s*=|function rootedBuilding|function drawSkylineHaze/.test(src));
 check('drawGroundWorld renders across the whole climb without throwing', () => {
   bio.run('for (let a = 0; a < 520; a += 20) { cameraY = GROUND_Y - a*BH - (H-100); drawGroundWorld(cameraY, 40); }');
   return true;
@@ -521,7 +523,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v61', () => /const CACHE = 'skystack-v61'/.test(sw));
+check('sw.js cache bumped to v62', () => /const CACHE = 'skystack-v62'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
