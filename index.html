@@ -627,16 +627,16 @@ function drawEventFx(menu) {
 
 // ---------- modes ----------
 const MODE_REGISTRY = deepFreeze({
-  level:    { id:'level',    name:'LEVELS',   blurb:'CLIMB THE SKY',      desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  pickups:true,  progress:true,  revive:true  } },
-  practice: { id:'practice', name:'PRACTICE', blurb:'LEARN AT YOUR PACE', desc:'NO FAIL - GUIDED CLIMB',  wind:false,fail:false,practice:true,rules:{ lane:'practice', assist:'fixed',    rewards:false,records:false,loadout:false, passives:false, pickups:false, progress:false, revive:false } },
-  endless:  { id:'endless',  name:'ENDLESS',  blurb:'CLIMB FOREVER',      desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  pickups:true,  progress:true,  revive:true  } },
-  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  pickups:true,  progress:true,  revive:false } },
-  pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, pickups:false, progress:true, revive:false } },
-  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, pickups:true, progress:true, revive:false } }
+  level:    { id:'level',    name:'LEVELS',   blurb:'CLIMB THE SKY',      desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  modifiers:true,  pickups:true,  progress:true,  revive:true  } },
+  practice: { id:'practice', name:'PRACTICE', blurb:'LEARN AT YOUR PACE', desc:'NO FAIL - GUIDED CLIMB',  wind:false,fail:false,practice:true,rules:{ lane:'practice', assist:'fixed',    rewards:false,records:false,loadout:false, passives:false, modifiers:false, pickups:false, progress:false, revive:false } },
+  endless:  { id:'endless',  name:'ENDLESS',  blurb:'CLIMB FOREVER',      desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  modifiers:true,  pickups:true,  progress:true,  revive:true  } },
+  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600, rules:{ lane:'assisted',   assist:'adaptive', rewards:true, records:true, loadout:true,  passives:true,  modifiers:true,  pickups:true,  progress:true,  revive:false } },
+  pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, modifiers:false, pickups:false, progress:true, revive:false } },
+  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, modifiers:false, pickups:true, progress:true, revive:false } }
 });
 const MODES = Object.freeze(['level','practice','endless','time','pure','daily'].map(id => MODE_REGISTRY[id]));
 const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
-const FEATURE_FLAGS = deepFreeze({ characters:true, bases:true, collections:false, modifiers:false, challenges:false });
+const FEATURE_FLAGS = deepFreeze({ characters:true, bases:true, collections:false, modifiers:true, challenges:false });
 const EXTRAS = MODES.filter(m => !m.hidden);   // the picker: side modes, not the main climb
 let mode = store.get('skystack-mode', 'endless');
 if (!MODES.find(m => m.id === mode) || mode === 'level') { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
@@ -663,6 +663,7 @@ let prog = store.get('skystack-tiers', 0);
 let levelStars = store.get('skystack-levelstars', []);
 let pendingLevel = -1;   // level chosen on the map, consumed by the next resetRun
 let pendingCheckpointId = null; // checkpoint choice is independent from the selected campaign goal
+let pendingRunSeed = null; // explicit retry only: replay the owned RNG/modifier schedule
 let runLevel = -1;       // active level for the current run (-1 = free modes)
 let runLaunch = 0;       // blocks pre-stacked for the current run (0 = full ground-up run)
 let runContext = null;   // deeply immutable rules/seed snapshot owned by the active run
@@ -789,6 +790,41 @@ const LEVEL_REGISTRY = deepFreeze(TIERS.map((t, i) => {
 function laneForMode(modeId) { const p=PERMISSION_REGISTRY[modeId] || PERMISSION_REGISTRY.endless; return DIFFICULTY_LANES[p.lane] || DIFFICULTY_LANES.assisted; }
 const matAt = t => MATERIALS[clamp(t | 0, 0, MATERIALS.length - 1)];
 const levelStartN = i => LEVEL_REGISTRY[clamp(i | 0, 0, LEVEL_REGISTRY.length - 1)].startAltitude; // level i climbs start -> goal
+
+// S4 biome modifiers are short, optional reward windows layered over the existing stacking rules.
+// They never add collision or modifier-caused failure: missing a rule only forfeits its stated coins.
+const MODIFIER_REGISTRY = deepFreeze([
+  { id:'deep-rhythm', biome:'DEEP CAVE', family:'precision', name:'STONE RHYTHM', start:7, duration:7, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.42,label:'OPEN CENTER'}, rule:'CHAIN 3 PERFECTS' },
+  { id:'main-recovery', biome:'MAIN CAVE', family:'recovery', name:'ROOT RECOVERY', start:21, duration:8, lead:4, target:1, rewardCoins:6, safeLane:{center:.5,width:.46,label:'SHELTERED CENTER'}, rule:'CUT, THEN RECOVER PERFECT' },
+  { id:'surface-gold', biome:'SURFACE / FOREST', family:'goldRush', name:'GOLDEN GROVE', start:36, duration:6, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.5,label:'OPEN GROVE'}, rule:'PERFECTS DROP BONUS COINS' },
+  { id:'canopy-rhythm', biome:'TREETOPS / LOWER SKY', family:'precision', name:'CANOPY RHYTHM', start:49, duration:8, lead:4, target:3, rewardCoins:6, safeLane:{center:.5,width:.4,label:'CENTER BOUGH'}, rule:'CHAIN 3 PERFECTS' },
+  { id:'lower-gust', biome:'TREETOPS / LOWER SKY', family:'gust', name:'OPEN-AIR GUST', start:66, duration:9, lead:5, target:7, rewardCoins:7, safeLane:{center:.5,width:.38,label:'CENTER LANE'}, rule:'RIDE THE WARNED CROSSWIND' },
+  { id:'cloud-window', biome:'CLOUDS', family:'visibility', name:'CLEAR WINDOW', start:90, duration:10, lead:4, target:5, rewardCoins:7, safeLane:{center:.5,width:.36,label:'CLEAR CENTER'}, rule:'LAND 5 IN THE CLEAR LANE' },
+  { id:'jet-gust', biome:'UPPER SKY', family:'gust', name:'JET CROSSWIND', start:115, duration:10, lead:5, target:8, rewardCoins:8, safeLane:{center:.5,width:.34,label:'CENTER LANE'}, rule:'RIDE THE WARNED CROSSWIND' },
+  { id:'thin-air', biome:'UPPER SKY', family:'limitedMiss', name:'THIN-AIR CONTROL', start:146, duration:10, lead:4, target:8, maxMisses:1, rewardCoins:8, safeLane:{center:.5,width:.36,label:'CENTER LANE'}, rule:'AT MOST 1 NON-PERFECT' },
+  { id:'aurora-recovery', biome:'UPPER SKY', family:'recovery', name:'AURORA RECOVERY', start:180, duration:10, lead:4, target:1, rewardCoins:8, safeLane:{center:.5,width:.4,label:'CALM CENTER'}, rule:'CUT, THEN RECOVER PERFECT' },
+  { id:'space-target', biome:'ORBIT', family:'target', name:'ORBITAL TARGET', start:220, duration:12, lead:5, target:2, rewardCoins:9, safeLane:{center:.5,width:.46,label:'OPEN ORBIT'}, rule:'OPTIONAL: HIT 2 GOLD TARGETS' },
+  { id:'orbit-control', biome:'ORBIT', family:'limitedMiss', name:'DEBRIS TIMING', start:286, duration:12, lead:5, target:10, maxMisses:1, rewardCoins:10, safeLane:{center:.5,width:.4,label:'CLEAR FLIGHT LANE'}, rule:'AT MOST 1 NON-PERFECT' },
+  { id:'summit-precision', biome:'THE STARS', family:'precision', name:'SUMMIT PRECISION', start:400, duration:12, lead:5, target:4, rewardCoins:12, safeLane:{center:.5,width:.32,label:'GOLDEN CENTER'}, rule:'CHAIN 4 PERFECTS' }
+]);
+function modifierHash(seed, text) {
+  let h=(seed>>>0)^0x85EBCA6B;
+  for (let i=0;i<text.length;i++) { h=Math.imul(h^text.charCodeAt(i),0xC2B2AE35); h=(h^(h>>>16))>>>0; }
+  return h>>>0;
+}
+function buildModifierSchedule(seed, modeId, campaignLevel, startingAltitude) {
+  const p=PERMISSION_REGISTRY[modeId] || PERMISSION_REGISTRY.endless;
+  if (!FEATURE_FLAGS.modifiers || !p.modifiers) return [];
+  const start=Math.max(0,startingAltitude|0), goal=campaignLevel>=0&&LEVEL_REGISTRY[campaignLevel]?LEVEL_REGISTRY[campaignLevel].goalAltitude:Infinity;
+  return MODIFIER_REGISTRY.map(def=>{
+    const h=modifierHash(seed,def.id), jitter=h%3, at=def.start+jitter, end=at+def.duration-1;
+    const targetShift=[-.1,0,.1][(h>>>3)%3];
+    return { id:def.id, family:def.family, biome:def.biome, name:def.name, rule:def.rule,
+      announceAltitude:Math.max(start,at-def.lead), startAltitude:at, endAltitude:end, durationBlocks:def.duration,
+      target:def.target, maxMisses:def.maxMisses===undefined?null:def.maxMisses, rewardCoins:def.rewardCoins,
+      direction:(h&1)?1:-1, targetLane:{center:clamp(def.safeLane.center+targetShift,.25,.75),width:Math.min(def.safeLane.width,.18)}, safeLane:def.safeLane };
+  }).filter(m=>m.endAltitude>start&&m.startAltitude<goal&&m.endAltitude<goal);
+}
 const CHECKPOINT_SCORE_MULTIPLIER = 0.75;
 const CHECKPOINT_REGISTRY = deepFreeze([
   { id:'ground', name:'GROUND', short:'GROUND', startAltitude:0, region:0, unlock:{requiresClearedLevel:null}, scoreMultiplier:1, rewardScope:'full-climb', recordScope:'ground-up' },
@@ -800,7 +836,7 @@ function checkpointAtAltitude(a) { return CHECKPOINT_REGISTRY.find(c=>c.startAlt
 function checkpointForLevel(i) { return i > 0 ? CHECKPOINT_REGISTRY[clamp(i,1,CHECKPOINT_REGISTRY.length-1)] : CHECKPOINT_REGISTRY[0]; }
 function checkpointUnlocked(cp, cleared) { return cp.unlock.requiresClearedLevel===null || (cleared===undefined?prog:cleared)>cp.unlock.requiresClearedLevel; }
 function startingStructureFor(cp) { return cp.startAltitude > 0 ? { id:'landmark-'+cp.region, kind:'landmark', region:cp.region } : { id:'natural-cave-ground', kind:'ground', region:0 }; }
-function startLevel(i, checkpointId) { pendingLevel = i; pendingCheckpointId = checkpointId || checkpointForLevel(i).id; mode = 'level'; startRun(); }
+function startLevel(i, checkpointId, retrySeed) { pendingLevel=i; pendingCheckpointId=checkpointId||checkpointForLevel(i).id; pendingRunSeed=Number.isInteger(retrySeed)?retrySeed>>>0:null; mode='level'; startRun(); }
 
 // ---------- power-ups ----------
 const POW = {
@@ -859,6 +895,64 @@ const mascot = { hop: 0, expr: 'normal', exprT: 0 };
 let timeLeft = 0;
 let toastMsg = '', toastT = 0;
 function toast(m) { toastMsg = m; toastT = 1.6; }
+let modifierProgress = {}, modifierResults = [], modifierWins = 0, modifierBonusCoins = 0;
+function initModifierRuntime() {
+  modifierProgress={}; modifierResults=[]; modifierWins=0; modifierBonusCoins=0;
+  for (const m of (runContext&&runContext.modifiers)||[]) modifierProgress[m.id]={status:'pending',placements:0,perfects:0,streak:0,bestStreak:0,misses:0,hits:0,cut:false,success:false};
+}
+function modifierRuntime(m) { return m&&modifierProgress[m.id]; }
+function activeModifier(family, altitude) {
+  const h=altitude===undefined?blocks.length:altitude;
+  return ((runContext&&runContext.modifiers)||[]).find(m=>m.family===family&&h>=m.startAltitude&&h<=m.endAltitude&&modifierRuntime(m)&&modifierRuntime(m).status==='active') || null;
+}
+function modifierLaneBounds(m, target) {
+  const lane=target?m.targetLane:m.safeLane, half=W*lane.width/2, center=W*lane.center;
+  return { left:center-half, right:center+half, center };
+}
+function modifierSucceeded(m,p) {
+  if (m.family==='precision') return p.bestStreak>=m.target;
+  if (m.family==='recovery') return p.success;
+  if (m.family==='goldRush') return p.perfects>=m.target;
+  if (m.family==='gust') return p.placements>=m.target;
+  if (m.family==='visibility'||m.family==='target') return p.hits>=m.target;
+  if (m.family==='limitedMiss') return p.placements>=m.target&&p.misses<=m.maxMisses;
+  return false;
+}
+function finishModifier(m,p) {
+  if (!p||p.status==='complete'||p.status==='failed') return;
+  const won=modifierSucceeded(m,p); p.status=won?'complete':'failed'; p.success=won;
+  let paid=0;
+  if (won) { const before=runCoins; addCoins(m.rewardCoins,W/2,towerTopY()-BH-20); paid=runCoins-before; modifierWins++; modifierBonusCoins+=paid; }
+  modifierResults.push({id:m.id,name:m.name,success:won,rewardCoins:paid});
+  bannerText=won?m.name+' CLEAR +'+paid:m.name+' ENDED'; bannerT=1;
+  if (wind&&wind.modifierId===m.id) { wind=null; windTimer=BALANCE_REGISTRY.wind.minCooldownFrames; }
+}
+function updateModifiersForPlacement(h,outcome) {
+  if (!runContext||!runContext.modifierPermissions.enabled) return;
+  for (const m of runContext.modifiers) {
+    const p=modifierRuntime(m); if (!p||p.status==='complete'||p.status==='failed') continue;
+    if (h>=m.announceAltitude&&p.status==='pending') { p.status='announced'; bannerText='UP NEXT: '+m.name; bannerT=1; }
+    if (h>=m.startAltitude&&h<=m.endAltitude) {
+      if (p.status!=='active') { p.status='active'; bannerText=m.name+' - '+m.rule; bannerT=1; }
+      p.placements++;
+      if (outcome&&outcome.perfect) { p.perfects++; p.streak++; p.bestStreak=Math.max(p.bestStreak,p.streak); }
+      else { p.streak=0; p.misses++; }
+      if (m.family==='recovery') { if (outcome&&outcome.cut) p.cut=true; if (p.cut&&outcome&&outcome.perfect) p.success=true; }
+      if (m.family==='goldRush'&&outcome&&outcome.perfect) { const before=runCoins; addCoins(1,W/2,towerTopY()-BH-10); modifierBonusCoins+=runCoins-before; }
+      if (m.family==='visibility'&&outcome&&outcome.center!==undefined) { const b=modifierLaneBounds(m,false); if (outcome.center>=b.left&&outcome.center<=b.right) p.hits++; }
+      if (m.family==='target'&&outcome&&outcome.center!==undefined) { const b=modifierLaneBounds(m,true); if (outcome.center>=b.left&&outcome.center<=b.right) p.hits++; }
+    }
+    if (h>=m.endAltitude) finishModifier(m,p);
+  }
+}
+function modifierProgressText(m,p) {
+  if (m.family==='precision') return 'STREAK '+p.bestStreak+'/'+m.target;
+  if (m.family==='recovery') return p.success?'RECOVERED':p.cut?'NOW LAND PERFECT':'MAKE A SAFE CUT';
+  if (m.family==='goldRush') return 'PERFECTS '+p.perfects+'/'+m.target;
+  if (m.family==='gust') return 'SAFE DROPS '+p.placements+'/'+m.target;
+  if (m.family==='visibility'||m.family==='target') return 'TARGETS '+p.hits+'/'+m.target;
+  return 'MISSES '+p.misses+'/'+m.maxMisses;
+}
 const LOADOUT = [
   { id:'shield', cost:25 },
   { id:'aura',   cost:30 },
@@ -884,6 +978,7 @@ function createRunContext(o) {
   const checkpoint=o.checkpointId?checkpointById(o.checkpointId):checkpointAtAltitude(startingAltitude);
   const structure=startingStructureFor(checkpoint), selectedBase=baseById(o.baseId);
   const load = o.loadout || {}, boosts={ shield:!!load.shield, aura:!!load.aura, slow:!!load.slow };
+  const modifiers=Array.isArray(o.modifiers)?o.modifiers:buildModifierSchedule(o.seed>>>0,m.id,campaignLevel,startingAltitude);
   const recordEligible=p.records && campaignLevel<0 && startingAltitude===0 && checkpoint.recordScope==='ground-up';
   return deepFreeze({
     mode:m.id, campaignLevel, startingAltitude, seed:o.seed >>> 0,
@@ -895,7 +990,8 @@ function createRunContext(o) {
     boostSnapshot:boosts,
     boostPermissions:{ allowed:p.loadout },
     loadoutSnapshot:boosts, // S0 compatibility alias; boostSnapshot is the S3 canonical owner
-    modifiers:Array.isArray(o.modifiers) ? o.modifiers.map(x => JSON.parse(JSON.stringify(x))) : [],
+    modifiers:modifiers.map(x => JSON.parse(JSON.stringify(x))),
+    modifierPermissions:{ enabled:!!p.modifiers, deterministic:true, surpriseFailure:false },
     rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards, scope:checkpoint.rewardScope, scoreMultiplier:checkpoint.scoreMultiplier },
     recordPermissions:{ write:recordEligible, scope:checkpoint.recordScope, reason:campaignLevel>=0?'campaign-level':checkpoint.recordScope==='ground-up'?'eligible-ground-up':'checkpoint-start' },
     loadoutAllowed:p.loadout,
@@ -1004,8 +1100,9 @@ function resetRun() {
   const checkpoint=runLevel>=0 && checkpointUnlocked(requestedCheckpoint) && requestedCheckpoint.startAltitude<=levelStartN(runLevel)
     ? requestedCheckpoint : (runLevel>=0?checkpointForLevel(runLevel):CHECKPOINT_REGISTRY[0]);
   runLaunch = checkpoint.startAltitude;
-  const seed = m.daily ? seedForRun(m.id, 0) : seedForRun(m.id, Math.floor(Math.random() * 4294967296));
-  runContext = createRunContext({ mode:m.id, campaignLevel:runLevel, startingAltitude:runLaunch, checkpointId:checkpoint.id, baseId, seed, skill, loadout, characterId:skinId, characterMastery:masteryFor(skinId), modifiers:[] });
+  const retrySeed=pendingRunSeed; pendingRunSeed=null;
+  const seed = Number.isInteger(retrySeed) ? retrySeed : m.daily ? seedForRun(m.id, 0) : seedForRun(m.id, Math.floor(Math.random() * 4294967296));
+  runContext = createRunContext({ mode:m.id, campaignLevel:runLevel, startingAltitude:runLaunch, checkpointId:checkpoint.id, baseId, seed, skill, loadout, characterId:skinId, characterMastery:masteryFor(skinId) });
   rnd = mulberry32(runContext.seed); hueBase = rnd() * 360;
   blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
   for (let i = 1; i < runLaunch; i++) blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col: blockCol(i) });
@@ -1019,6 +1116,7 @@ function resetRun() {
   nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
   reviveUsed = false; reviveOffered = false; runSettled = false;
+  initModifierRuntime();
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
   balance = 0; swayX = 0; paused = false; dropPending = 0;
   timeLeft = m.time || 0;
@@ -1163,7 +1261,7 @@ function land() {
       floaters.push({ text: m.fail ? 'SHIELD!' : 'SAVED', x:W/2, y:towerTopY()-BH, vy:-.4, life:1.4, color:'#5EC8F2' });
       for (let i = 0; i < 20; i++) particles.push({ x:nx+nw/2, y:towerTopY()-BH, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life:1, color:'#5EC8F2' });
       sfx.shield(); shake = Math.max(shake, 3); faller = null; squash = 1;
-      cameraTarget = towerTopY() - (H - 100); state = 'playing'; afterPlace(f, false); spawnSlider(); return;
+      cameraTarget = towerTopY() - (H - 100); state = 'playing'; afterPlace(f, false, nx+nw/2, {perfect:false,cut:false,miss:true,center:nx+nw/2}); spawnSlider(); return;
     }
     debris.push({ x:f.x, y:f.y, w:f.w, h:BH, vx:f.x<top.x?-.6:.6, vy:1.5, rot:0, vr:(Math.random()-.5)*.2, col:f.col });
     setExpr('sad', 999); gameOver('miss'); return;
@@ -1238,13 +1336,13 @@ function land() {
     mascot.hop = 1; setExpr('wow', 40);
     sfx.skybreak(); hapt([30, 30, 60]);
     faller = null; squash = 1; cameraTarget = towerTopY() - (H - 100); state = 'playing';
-    afterPlace(f, false);
+    afterPlace(f, false, W/2, {perfect:isPerfect,cut:!isPerfect,miss:false,center:W/2});
     spawnSlider(); return;
   }
 
   blocks.push({ x:nx, w:nw, col:f.col });
   faller = null; squash = 1; cameraTarget = towerTopY() - (H - 100); state = 'playing';
-  afterPlace(f, true, nx + nw/2);
+  afterPlace(f, true, nx + nw/2, {perfect:isPerfect,cut:!isPerfect,miss:false,center:nx+nw/2});
   if (Math.abs(balance) > TOPPLE) {
     if (m.practice) {
       balance *= 0.2; swayX *= 0.2; setExpr('happy', 28);
@@ -1255,7 +1353,7 @@ function land() {
   spawnSlider();
 }
 
-function afterPlace(f, updateBalance, placedCenter) {
+function afterPlace(f, updateBalance, placedCenter, outcome) {
   const m = activeMode();
   if (canEarnRewards(runContext)) stats.blocks++;
   if (updateBalance) { const p=BALANCE_REGISTRY.placement; balance = balance * p.balanceMemory + (placedCenter - W/2) * p.balanceOffset * (1 - assist * BALANCE_REGISTRY.assist.balanceForgiveness) * passiveEffect(runContext,'balance',1); }   // assist/passive forgive lean
@@ -1266,6 +1364,7 @@ function afterPlace(f, updateBalance, placedCenter) {
   if (balloon && !balloon.away && blocks.length > balloon.row + 1) balloon.away = 0.01;   // missed — it escapes upward
   const h = blocks.length;
   advanceTutorial(h);
+  updateModifiersForPlacement(h,outcome||{perfect:false,cut:false,miss:false,center:placedCenter});
   if (runLevel >= 0 && h >= TIERS[runLevel].n) { levelComplete(); return; }   // campaign goal reached
   if (tier < TIERS.length && h >= TIERS[tier].n) {
     const t = TIERS[tier]; bannerText = t.n*METERS_PER + 'M - ' + t.name; bannerT = 1;
@@ -1535,7 +1634,7 @@ function adaptToScreen() {
 // ---------- input ----------
 function pos(e) { if (!canvasRect) canvasRect = canvas.getBoundingClientRect(); const r = canvasRect; return { x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H }; }
 function inR(p, r, pad) { pad = pad||0; return p.x>=r.x-pad && p.x<=r.x+r.w+pad && p.y>=r.y-pad && p.y<=r.y+r.h+pad; }
-function startRun() { resetRun(); startRegionIntro(tier); state = 'playing'; sfx.start(); }
+function startRun(retrySeed) { if(Number.isInteger(retrySeed))pendingRunSeed=retrySeed>>>0; resetRun(); startRegionIntro(tier); state = 'playing'; sfx.start(); }
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
@@ -1560,7 +1659,7 @@ function pressDown(e) {
   if (paused) {
     if (p) for (const rw of PAUSE_ROWS) if (inR(p, rw, 2)) {
       if (rw.id === 'resume') { paused = false; sfx.resume(); }
-      else if (rw.id === 'restart') { sfx.tap(); if (runLevel >= 0) startLevel(runLevel); else startRun(); }
+      else if (rw.id === 'restart') { sfx.tap(); if (runLevel >= 0) startLevel(runLevel,runContext.checkpointSnapshot.id,runContext.seed); else startRun(runContext.seed); }
       else if (rw.id === 'sound') { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); }
       else if (rw.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
       else if (rw.id === 'quit') {
@@ -1594,7 +1693,7 @@ function pressDown(e) {
     if (!p) { if (runLevel + 1 < TIERS.length) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; } return; }
     for (const rw of WIN_ROWS) if (inR(p, rw, 3)) {
       if (rw.id === 'next') { if (runLevel + 1 < TIERS.length) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; openSkyMap(); } }
-      else if (rw.id === 'retry') startLevel(runLevel);
+      else if (rw.id === 'retry') startLevel(runLevel,runContext.checkpointSnapshot.id,runContext.seed);
       else { state = 'home'; fadeT = 1; openSkyMap(); }
       sfx.tap(); return;
     }
@@ -1602,10 +1701,10 @@ function pressDown(e) {
   } else if (state === 'levelfail') {
     if (failT < 24) return;
     if (reviveOffered && p && inR(p, FAIL_REV, 3)) { doRevive(); return; }
-    if (!p) { finalizeRun(); startLevel(runLevel); return; }
+    if (!p) { const seed=runContext.seed,cp=runContext.checkpointSnapshot.id; finalizeRun(); startLevel(runLevel,cp,seed); return; }
     for (const rw of FAIL_ROWS) if (inR(p, rw, 3)) {
       finalizeRun();                          // walking away from the offer settles the run
-      if (rw.id === 'retry') startLevel(runLevel);
+      if (rw.id === 'retry') startLevel(runLevel,runContext.checkpointSnapshot.id,runContext.seed);
       else if (rw.id === 'map') { state = 'home'; fadeT = 1; openSkyMap(); }
       else { state = 'home'; fadeT = 1; }
       sfx.tap(); return;
@@ -1745,10 +1844,17 @@ function update(dt) {
 
   if (playing && m.wind) {
     const wf = matAt(tier).wind;                                            // region wind exposure: sheltered caves, howling jet stream
-    windTimer -= dt;
     const wCfg=BALANCE_REGISTRY.wind;
-    if (!wind && windTimer <= 0 && blocks.length > wCfg.minStartBlocks && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(wCfg.minStrength+rnd()*wCfg.strengthRange)*wf*passiveEffect(runContext,'wind',1), dur:wCfg.minDurationFrames+rnd()*wCfg.durationRangeFrames, t:0 }; sfx.wind(); }
-    if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (wCfg.minCooldownFrames + rnd()*wCfg.cooldownRangeFrames) / Math.max(0.5, wf); } }
+    const gust=activeModifier('gust',blocks.length);
+    if (gust) {
+      if (!wind||wind.modifierId!==gust.id) { wind={modifierId:gust.id,dir:gust.direction,str:.22*Math.max(.7,Math.min(1.4,wf))*passiveEffect(runContext,'wind',1),dur:150,t:0}; sfx.wind(); }
+      wind.t+=dt; if (wind.t>=wind.dur) wind=null;   // repeated readable pulses, fixed by the owned modifier seed
+    } else {
+      if (wind&&wind.modifierId) wind=null;
+      windTimer -= dt;
+      if (!wind && windTimer <= 0 && blocks.length > wCfg.minStartBlocks && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(wCfg.minStrength+rnd()*wCfg.strengthRange)*wf*passiveEffect(runContext,'wind',1), dur:wCfg.minDurationFrames+rnd()*wCfg.durationRangeFrames, t:0 }; sfx.wind(); }
+      if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (wCfg.minCooldownFrames + rnd()*wCfg.cooldownRangeFrames) / Math.max(0.5, wf); } }
+    }
   } else wind = null;
 
   if (balloon && (state === 'playing' || state === 'dropping')) {
@@ -4458,7 +4564,7 @@ function renderLevelWin() {
     ctx.fillRect(W/2 - 40, starY + 8, 1, 1); ctx.fillRect(W/2 + 40, starY - 8, 1, 1);
   }
   const placed = Math.max(1, blocks.length - runLaunch);
-  txt('PERFECTS ' + runPerfects + '/' + placed, W/2, starY + 18, 1, 'rgba(255,246,232,0.55)', 'center');
+  txt('PERFECTS '+runPerfects+'/'+placed+(modifierResults.length?' - MODS '+modifierWins+'/'+modifierResults.length+' +'+modifierBonusCoins:''), W/2, starY + 18, 1, 'rgba(255,246,232,0.55)', 'center');
   if (winT > 48) {   // reward counts up
     const shown = Math.min(winReward, Math.floor((winT - 48) * 1.5));
     drawCoin(W/2 - 20, starY + 31);
@@ -4521,6 +4627,21 @@ function renderLevelFail() {
 }
 
 // ---------- in-run HUD ----------
+function renderModifierHUD(h) {
+  if (!runContext||!runContext.modifierPermissions.enabled) return;
+  const m=runContext.modifiers.find(x=>{const p=modifierRuntime(x);return p&&(p.status==='active'||p.status==='announced');});
+  if (!m) return;
+  const p=modifierRuntime(m), active=p.status==='active', y=H-(tutStep>=0?126:44);
+  ctx.fillStyle='rgba(11,14,26,0.76)';ctx.fillRect(4,y,W-8,30);
+  ctx.fillStyle=active?'rgba(255,215,94,0.8)':'rgba(94,200,242,0.75)';ctx.fillRect(4,y,W-8,1);
+  const head=active?m.name+' - '+Math.max(0,m.endAltitude-h+1)+' BLOCKS':'UP NEXT '+m.name+' IN '+Math.max(0,m.startAltitude-h);
+  txt(head,W/2,y+5,1,active?'#FFD75E':'#BFE8FF','center');
+  txt((active?modifierProgressText(m,p):m.rule)+' - +'+m.rewardCoins,W/2,y+16,1,'#FFF6E8','center');
+  const lane=modifierLaneBounds(m,active&&(m.family==='target'));
+  ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(8,y+26,W-16,2);
+  ctx.fillStyle=active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(lane.left),y+25,Math.max(2,Math.round(lane.right-lane.left)),3);
+  if (m.family==='gust') txt(m.direction>0?'WIND >':'< WIND',m.direction>0?W-8:8,y+16,1,'#BFE8FF',m.direction>0?'right':'left');
+}
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
   const m = activeMode();
@@ -4575,6 +4696,7 @@ function renderHUD(h) {
     txt(wind.dir>0?'WIND >':'< WIND', W/2, 62, 1, '#BFE8FF', 'center');
     ctx.globalAlpha = 1;
   }
+  renderModifierHUD(h);
   // first-run / PRACTICE onboarding: compact, world-readable, and replayable
   if (tutStep >= 0) {
     const lesson = TUT_LESSONS[Math.min(tutStep, TUT_LESSONS.length-1)];
@@ -4607,6 +4729,7 @@ function renderGameOver() {
   drawCoin(W/2-24, 127); txt('+'+runCoins, W/2-14, 127, 1, '#FFD75E', 'left');
   if (runSettled) txt('+'+xpThisRun+' XP', W/2+12, 127, 1, '#62E8B5', 'left');
   if (maxCombo > 1) txt('MAX COMBO X'+maxCombo, W/2, 141, 1, 'rgba(255,246,232,0.8)', 'center');
+  if (modifierResults.length) txt('MODIFIERS '+modifierWins+'/'+modifierResults.length+' - BONUS +'+modifierBonusCoins,W/2,151,1,'#62E8B5','center');
   if (reviveOffered) {   // XP/missions settle after the offer — this space is the revive's
     const cost = reviveCost(), ok = coins >= cost;
     const pulse = ok && Math.floor(tick/16)%2 === 0;
@@ -4617,7 +4740,7 @@ function renderGameOver() {
     txt(ok ? 'REVIVE ' + cost : 'NEED ' + cost, W/2 - 22, REVIVE_BTN.y + 8, 1, ok ? '#08301F' : 'rgba(255,246,232,0.5)', 'left');
     txt('1 REVIVE PER RUN', W/2, REVIVE_BTN.y + 27, 1, 'rgba(255,246,232,0.45)', 'center');
   } else if (runSettled) {
-    let y = 156;
+    let y = modifierResults.length ? 167 : 156;
     if (levelUpsThisRun > 0) { txt('LEVEL UP! NOW LV '+lvl.level+' +25', W/2, y, 1, '#FFD75E', 'center'); y += 11; }
     for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i]+' +25', W/2, y, 1, '#C77EFF', 'center'); y += 11; }
     for (let i = 0; i < completedThisRun.length && i < 2; i++) { txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y, 1, '#62E8B5', 'center'); y += 11; }
