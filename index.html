@@ -1258,7 +1258,7 @@ function update(dt) {
   updateEventFx(dt);
   // critically-damped smooth follow (SmoothDamp): the camera glides toward the tower with no lurch,
   // so the world scrolls so gently it barely reads as moving — never a per-drop jerk.
-  { const dts = dt / 60, smoothTime = 0.85, omega = 2 / smoothTime;
+  { const dts = dt / 60, smoothTime = 1.3, omega = 2 / smoothTime;
     const x = omega * dts, expc = 1 / (1 + x + 0.48*x*x + 0.235*x*x*x);
     const change = cameraY - cameraTarget, temp = (camVel + omega * change) * dts;
     camVel = (camVel - omega * temp) * expc;
