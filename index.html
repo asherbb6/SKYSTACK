@@ -4663,11 +4663,11 @@ function renderShop() {
   // boosts section
   txt('RUN BOOSTS', W/2, 198, 1, '#FFD75E', 'center');
   if (!canUseLoadout(mode) && mode === 'pure') {
-    txt('PASSIVES + BOOSTS OFF IN PURE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt('PURE IS SKILL ONLY - 1.5X SCORE', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt(W<220?'PURE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PURE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt(W<220?'SKILL ONLY - 1.5X SCORE':'PURE IS SKILL ONLY - 1.5X SCORE', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
   } else if (!canUseLoadout(mode) && mode === 'practice') {
-    txt('PASSIVES + BOOSTS OFF IN PRACTICE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt('GUIDED RUNS USE CLASSIC RULES', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt(W<220?'PRACTICE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PRACTICE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt(W<220?'GUIDED CLASSIC RULES':'GUIDED RUNS USE CLASSIC RULES', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
   } else if (canUseLoadout(mode)) {
     for (const c of LOAD_CHIPS) {
       const on = loadout[c.id], afford = coins >= c.cost;
@@ -4683,8 +4683,8 @@ function renderShop() {
     txt(shopInfo, W/2, 242, 1, 'rgba(255,246,232,0.6)', 'center');
     txt('LOCKS WHEN CLIMB STARTS', W/2, 254, 1, 'rgba(255,246,232,0.4)', 'center');
   } else {
-    txt('PASSIVES + BOOSTS OFF IN DAILY', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt('EVERYONE GETS THE SAME FAIR RUN', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt(W<220?'DAILY: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN DAILY', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt(W<220?'SAME FAIR RUN FOR ALL':'EVERYONE GETS THE SAME FAIR RUN', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
   }
 }
 
