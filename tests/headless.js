@@ -421,6 +421,21 @@ check('cave suite renders across the whole underground without throwing', () => 
   bio.run('for (let a = 0; a < SURF_A + 6; a += 4) { cameraY = GROUND_Y - a*BH - (H-100); const yc = GROUND_Y - SURF_A*BH - cameraY; drawCave(30, Math.max(0, Math.min(yc, H)), yc, cameraY); }');
   return true;
 });
+check('cave geology deterministically provides dirt, stone, clay, and gravel', () => bio.run(
+  '(() => { const a = [], b = []; for (let r = 0; r <= Math.round(SURF_A*BH/4); r++) for (const s of [0,1]) { a.push(caveWallMat(r,s)); b.push(caveWallMat(r,s)); } ' +
+  'return a.join(",") === b.join(",") && new Set(a).size === 4 && a.every(m => m >= 0 && m < 4); })()'));
+check('cave material atlas contains four cached original procedural textures', () => bio.run(
+  'CAVE_MAT_TEX.length === 4 && CAVE_MAT_TEX.every(t => t && t.width === CAVETEX_W && t.height === CAVETEX_H)'));
+check('cave detail placement is deterministic and bounded', () => bio.run(
+  '(() => { for (let r=-20;r<180;r++) for (const s of [0,1]) { const a=caveDetailKind(r,s), b=caveDetailKind(r,s); if (a!==b || a<0 || a>5) return false; } return true; })()'));
+check('cave texture stamping uses varied deterministic source windows', () => bio.run(
+  '(() => { const a=[], b=[]; for(let x=0;x<CAVE_STAMP_W*6;x+=CAVE_STAMP_W){a.push(caveStampSourceX(123,x));b.push(caveStampSourceX(123,x));} return a.join(",")===b.join(",") && new Set(a).size>2 && a.every(x=>x>=0&&x<=CAVETEX_W-CAVE_STAMP_W); })()'));
+check('cave texture stamping explicitly disables image smoothing', () =>
+  /function blitCaveTex[\s\S]{0,320}ctx\.imageSmoothingEnabled = false/.test(src));
+check('ledge props are emitted only from detected upward-facing wall ledges', () =>
+  /if \(prevW >= 0 && w > prevW \+ 3\)[\s\S]{0,700}drawCaveLedgeProp\(/.test(src));
+check('torches derive their x position from the current anchored wall edge', () =>
+  /wallRow = Math\.round\(\(gy - ty\) \/ 4\)[\s\S]{0,260}caveWallW\(wallRow[\s\S]{0,220}W - wallW \+ 2 : wallW - 2/.test(src));
 // the cave walls/backdrop/ground must be WORLD-anchored like the floor: a known camera shift
 // must translate every band rigidly by the same screen amount, keeping the SAME source texture
 // row + width (i.e. geometry+texture come from stable world coords, not from screen slots that
@@ -451,7 +466,7 @@ check('no embedded image backdrops left (cave is fully procedural)', () =>
 // ---- foreground occlusion + layout guarantees ----
 check('foreground layer + fade helpers + tuning constants exist', () => bio.run(
   '["drawCaveForeground","fgAlpha","towerScreenBox","caveMouth","mouthShaftW"].every(f => eval("typeof "+f) === "function") ' +
-  '&& [LANE_MIN_F,EXIT_MIN_F,CEIL_THICK,FG_FADE_RADIUS,FG_FADE_BAND,FG_FADE_MIN].every(n => typeof n === "number")'));
+  '&& [LANE_MIN_F,CAVE_LANE_CLEARANCE,EXIT_MIN_F,CEIL_THICK,FG_FADE_RADIUS,FG_FADE_BAND,FG_FADE_MIN].every(n => typeof n === "number")'));
 check('drawCaveForeground renders across the cave + exit without throwing', () => {
   bio.run('for (let a = 0; a < SURF_A + 8; a += 3) { cameraY = GROUND_Y - a*BH - (H-100); drawCaveForeground(cameraY, 30); }');
   return true;
@@ -465,6 +480,8 @@ check('fgAlpha: full when no tower, drops to the floor over the tower, restores 
 check('the play lane never drops below LANE_MIN_F at any depth (both walls capped)', () => bio.run(
   '(() => { const baseW = Math.round(W * 0.17); for (let row = 0; row < Math.round(SURF_A*BH/4) - 8; row++) { ' +
   'const lane = W - caveWallW(row, 0, baseW) - caveWallW(row, 1, baseW); if (lane < W * LANE_MIN_F - 1) return false; } return true; })()'));
+check('portrait cave lane clears the broad starting tower plus breathing room', () => bio.run(
+  '(() => { const oldW=W; try { W=180; const baseW=Math.round(W*.17); for(let row=0;row<Math.round(SURF_A*BH/4)-8;row++){const lane=W-caveWallW(row,0,baseW)-caveWallW(row,1,baseW); if(lane<BASE_W+CAVE_LANE_CLEARANCE-1)return false;} return caveLaneMin()>=BASE_W+CAVE_LANE_CLEARANCE; } finally { W=oldW; } })()'));
 check('the surface exit is always wide enough for a tower + clearance (never a choke point)', () => bio.run(
   '(() => { const m = caveMouth(); return (m.cxR - m.cxL) >= BASE_W + EXIT_CLEARANCE - 1; })()'));
 check('walls funnel to MEET the mouth right under the surface (no flat columns detached from the hole)', () => bio.run(
@@ -523,7 +540,7 @@ check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () =
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v62', () => /const CACHE = 'skystack-v62'/.test(sw));
+check('sw.js cache bumped to v63', () => /const CACHE = 'skystack-v63'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
