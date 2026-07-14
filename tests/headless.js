@@ -140,7 +140,7 @@ check('renderLevelWin runs without throwing', () => { lv.run('winT = 60; renderL
 check('win screen NEXT starts the next level', () => lv.run(
   '(() => { winT = 60; relayout(); pressDown(null); return state === "playing" && runLevel === 1 && runLaunch === TIERS[0].n && blocks.length === TIERS[0].n; })()'));
 check('a campaign level slider carries the per-level speed bump', () => lv.run(
-  '(() => { const cur = slider.speed; const rl = runLevel; runLevel = 0; spawnSlider(); const base = slider.speed; runLevel = rl; return cur > base; })()'));
+  '(() => { const cur = difficultyAt(runContext, blocks.length, assist, tier).sliderSpeed; const baseCtx = createRunContext({mode:"level",campaignLevel:0,startingAltitude:0,seed:1,skill,loadout:{},modifiers:[]}); return cur > difficultyAt(baseCtx, blocks.length, assist, tier).sliderSpeed; })()'));
 
 // fail path
 lv.run('score = 300; while (blocks.length < 20) blocks.push({x:0,w:96,col:"#fff"});');
@@ -882,9 +882,50 @@ check('wrong-shape v2 save: boots and re-migrates from v1', () => cor2.run('boot
 const cor3 = makeGame({ 'skystack-coins': '{bad', 'skystack-best': '555' });
 check('corrupt v1 key skipped; the rest still migrate', () => cor3.run('booted === true && coins === 0 && best === 555'));
 
+// ---------- S0 systems foundation ----------
+check('S0 mode registry preserves the six v75 modes and picker order', () => fresh.run(
+  `JSON.stringify(Object.keys(MODE_REGISTRY)) === JSON.stringify(['level','practice','endless','time','pure','daily']) &&
+   JSON.stringify(MODES.map(m=>m.id)) === JSON.stringify(['level','practice','endless','time','pure','daily']) &&
+   MODES.every(m => MODE_REGISTRY[m.id] === m) && EXTRAS.length === 5`));
+check('S0 level registry is index-aligned with every v75 tier boundary', () => fresh.run(
+  'LEVEL_REGISTRY.length === TIERS.length && LEVEL_REGISTRY.every((l,i) => l.id === i && l.goalAltitude === TIERS[i].n && l.startAltitude === (i ? TIERS[i-1].n : 0) && l.name === TIERS[i].name && l.color === TIERS[i].c)'));
+check('S0 balance registry aliases the live v75 physics constants', () => fresh.run(
+  'BALANCE_REGISTRY.physics.blockHeight === BH && BALANCE_REGISTRY.physics.baseWidth === BASE_W && BALANCE_REGISTRY.physics.metersPerBlock === METERS_PER && BALANCE_REGISTRY.physics.topple === TOPPLE && BALANCE_REGISTRY.physics.perfectPx === PERFECT_PX'));
+check('S0 future feature flags are centralized and all remain inactive', () => fresh.run(
+  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && Object.values(FEATURE_FLAGS).every(v => v === false)'));
+
+const s0ctx = makeGame();
+s0ctx.run('mode="endless"; loadout={shield:true,aura:false,slow:true}; resetRun(); globalThis.__ctx=runContext; globalThis.__seed=runContext.seed; globalThis.__speed=difficultyAt(runContext,40,assist,2).sliderSpeed;');
+check('RunContext captures every required run-start field', () => s0ctx.run(
+  '__ctx.mode === "endless" && __ctx.campaignLevel === -1 && __ctx.startingAltitude === 0 && Number.isInteger(__ctx.seed) && __ctx.assistPolicy === "adaptive" && __ctx.loadoutSnapshot.shield && __ctx.loadoutSnapshot.slow && Array.isArray(__ctx.modifiers) && __ctx.rewardPermissions.earn && __ctx.recordPermissions.write && __ctx.difficultyProfile.startingAssist > 0'));
+check('RunContext is deeply immutable and detached from cleared mutable loadout', () => s0ctx.run(
+  '(() => { const before=JSON.stringify(__ctx); try{__ctx.mode="pure";}catch(e){} try{__ctx.loadoutSnapshot.shield=false;}catch(e){} try{__ctx.modifiers.push({id:"x"});}catch(e){} return Object.isFrozen(__ctx) && Object.isFrozen(__ctx.loadoutSnapshot) && Object.isFrozen(__ctx.modifiers) && JSON.stringify(__ctx) === before && loadout.shield === false; })()'));
+check('difficultyAt is pure and tied to the immutable campaign profile', () => s0ctx.run(
+  '(() => { const a=difficultyAt(__ctx,40,0.2,2), b=difficultyAt(__ctx,40,0.2,2); mode="pure"; runLevel=9; return JSON.stringify(a) === JSON.stringify(b) && Math.abs(difficultyAt(__ctx,40,assist,2).sliderSpeed-__speed)<1e-12; })()'));
+
+check('Daily seed keeps the exact v75 date XOR and deterministic sequence', () => fresh.run(
+  '(() => { const seed=seedForRun("daily",0,20260714), old=(20260714 ^ 0x9E3779B9)>>>0, a=mulberry32(seed), b=mulberry32(seed); return seed===old && [a(),a(),a()].join(",") === [b(),b(),b()].join(","); })()'));
+const dailyDet = makeGame();
+check('Daily reset owns and replays hue, pickups, and gameplay wind RNG', () => dailyDet.run(
+  '(() => { const play=()=>{ resetRun(); while(blocks.length<26) blocks.push({x:0,w:96,col:"#fff"}); tier=0; windTimer=0; state="playing"; update(1); return {seed:runContext.seed,hue:hueBase,pick:JSON.stringify(pickups),wind:JSON.stringify(wind)}; }; mode="daily"; return JSON.stringify(play())===JSON.stringify(play()); })()'));
+check('owned non-Daily seeds reproduce the same run RNG stream', () => fresh.run(
+  '(() => { const seed=seedForRun("endless",0x12345678), a=mulberry32(seed), b=mulberry32(seed); return seed===0x12345678 && [a(),a(),a(),a()].join(",") === [b(),b(),b(),b()].join(","); })()'));
+
+check('permission helpers preserve reward, record, loadout, and checkpoint rules', () => fresh.run(
+  '(() => { const mk=(m,l=-1,a=0)=>createRunContext({mode:m,campaignLevel:l,startingAltitude:a,seed:1,skill:.35,loadout:{},modifiers:[]}); return !canEarnRewards(mk("practice")) && !canWriteRecords(mk("practice")) && !canUseLoadout(mk("practice")) && canEarnRewards(mk("pure")) && canWriteRecords(mk("pure")) && !canUseLoadout(mk("pure")) && canEarnRewards(mk("daily")) && canWriteRecords(mk("daily")) && !canUseLoadout(mk("daily")) && canUseLoadout(mk("endless")) && !canWriteRecords(mk("level",2,44)) && !canWriteRecords(mk("endless",-1,44)); })()'));
+
+check('future save-v2 contracts are frozen, optional, and non-activating', () => fresh.run(
+  'Object.isFrozen(FUTURE_SAVE_CONTRACTS) && Object.isFrozen(FUTURE_SAVE_CONTRACTS.characters.defaults) && Object.values(FUTURE_SAVE_CONTRACTS).every(c => !Object.prototype.hasOwnProperty.call(SAVE.data,c.key))'));
+check('future save-v2 migration normalizes only present fields and preserves current data', () => fresh.run(
+  '(() => { const src={keep:7,"skystack-characters":{owned:["pilot",4,"pilot"],selected:9,mastery:null},"skystack-bases":null,"skystack-collections":{unlocked:["ore","ore"],completed:"bad"},"skystack-challenge-records":[1]}; const out=migrateFutureSaveV2(src); return out!==src && out.keep===7 && JSON.stringify(out["skystack-characters"])===JSON.stringify({owned:["pilot"],selected:null,mastery:{}}) && JSON.stringify(out["skystack-bases"])===JSON.stringify({owned:[],selected:null}) && JSON.stringify(out["skystack-collections"])===JSON.stringify({unlocked:["ore"],completed:[]}) && JSON.stringify(out["skystack-challenge-records"])==="{}" && src["skystack-characters"].owned.length===3; })()'));
+
+const cyc = makeGame();
+check('three consecutive start/play/fail/restart cycles fully scrub run state', () => cyc.run(
+  '(() => { mode="endless"; startRun(); let prev=null; for(let i=0;i<3;i++){ prev=runContext; state="playing"; blocks.push({x:10,w:40,col:"#fff"}); debris.push({x:1}); particles.push({x:1}); floaters.push({x:1}); trails.push({x:1}); coinFx.push({x:1}); pickups.push({row:999}); balloon={x:1}; wind={dir:1}; balance=20; swayX=8; paused=true; dropPending=3; shield=2; widenNext=true; slowBlocks=3; auraBlocks=2; goldenNext=true; fever=true; nova=true; score=500; runCoins=12; gameOver("quit"); state="home"; startRun(); if(runContext===prev || !Object.isFrozen(runContext) || state!=="playing" || blocks.length!==1 || debris.length || particles.length || floaters.length || trails.length || coinFx.length || balloon!==null || wind!==null || balance!==0 || swayX!==0 || paused || dropPending!==0 || shield!==0 || widenNext || slowBlocks!==0 || auraBlocks!==0 || goldenNext || fever || nova || score!==0 || runCoins!==0 || reviveUsed || reviveOffered || runSettled) return false; } return stats.games===3 && slider!==null; })()'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v75', () => /const CACHE = 'skystack-v75'/.test(sw));
+check('sw.js cache bumped to v76', () => /const CACHE = 'skystack-v76'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

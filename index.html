@@ -84,12 +84,42 @@ let deferredPrompt = null;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; });
 addEventListener('appinstalled', () => { deferredPrompt = null; });
 
+function deepFreeze(v) {
+  if (!v || typeof v !== 'object' || Object.isFrozen(v)) return v;
+  Object.freeze(v);
+  for (const k of Object.keys(v)) deepFreeze(v[k]);
+  return v;
+}
+
 // ---------- save schema v2 ----------
 // One versioned object 'skystack-save' = { version, data } replaces the v1 per-key saves.
 // First boot migrates every v1 key into data (existing players keep all progress); the v1
 // keys are left untouched as a frozen backup so rolling back to v63 stays safe.
 const SAVE_KEY = 'skystack-save';
 const SAVE_VER = 2;
+// Dormant S0 contracts for later systems. Missing fields stay missing, so v75 saves remain byte-for-
+// byte compatible until a future feature explicitly adopts one of these optional v2 fields.
+const FUTURE_SAVE_CONTRACTS = deepFreeze({
+  characters:       { key:'skystack-characters',        defaults:{ owned:[], selected:null, mastery:{} } },
+  bases:            { key:'skystack-bases',             defaults:{ owned:[], selected:null } },
+  collections:      { key:'skystack-collections',       defaults:{ unlocked:[], completed:[] } },
+  challengeRecords: { key:'skystack-challenge-records', defaults:{} }
+});
+function stringList(v) { return Array.isArray(v) ? [...new Set(v.filter(x => typeof x === 'string'))] : []; }
+function normalizeFutureSaveValue(id, v) {
+  if (id === 'characters') return { owned:stringList(v && v.owned), selected:v && typeof v.selected === 'string' ? v.selected : null, mastery:v && v.mastery && typeof v.mastery === 'object' && !Array.isArray(v.mastery) ? JSON.parse(JSON.stringify(v.mastery)) : {} };
+  if (id === 'bases') return { owned:stringList(v && v.owned), selected:v && typeof v.selected === 'string' ? v.selected : null };
+  if (id === 'collections') return { unlocked:stringList(v && v.unlocked), completed:stringList(v && v.completed) };
+  return v && typeof v === 'object' && !Array.isArray(v) ? JSON.parse(JSON.stringify(v)) : {};
+}
+function migrateFutureSaveV2(data) {
+  const out = data && typeof data === 'object' && !Array.isArray(data) ? JSON.parse(JSON.stringify(data)) : {};
+  for (const id of Object.keys(FUTURE_SAVE_CONTRACTS)) {
+    const c = FUTURE_SAVE_CONTRACTS[id];
+    if (Object.prototype.hasOwnProperty.call(out, c.key)) out[c.key] = normalizeFutureSaveValue(id, out[c.key]);
+  }
+  return out;
+}
 const V1_KEYS = ['skystack-coins','skystack-skins','skystack-skin','skystack-mode','skystack-modebests',
   'skystack-daily','skystack-stats','skystack-lv','skystack-best','skystack-height','skystack-tiers',
   'skystack-levelstars','skystack-missions','skystack-skill','skystack-ach','skystack-tut',
@@ -518,14 +548,17 @@ function drawEventFx(menu) {
 }
 
 // ---------- modes ----------
-const MODES = [
-  { id:'level',   name:'LEVELS',  blurb:'CLIMB THE SKY',       desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true },
-  { id:'practice',name:'PRACTICE',blurb:'LEARN AT YOUR PACE',  desc:'NO FAIL - GUIDED CLIMB',  wind:false, fail:false, practice:true },
-  { id:'endless', name:'ENDLESS', blurb:'CLIMB FOREVER',       desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true },
-  { id:'time',    name:'TIME 60', blurb:'RUSH 60 SECONDS',     desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600 },
-  { id:'pure',    name:'PURE',    blurb:'SKILL ONLY - 1.5X',   desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5 },
-  { id:'daily',   name:'DAILY',   blurb:'SAME RUN FOR ALL',    desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true }
-];
+const MODE_REGISTRY = deepFreeze({
+  level:    { id:'level',    name:'LEVELS',   blurb:'CLIMB THE SKY',      desc:'THE MAIN CLIMB',          wind:true, fail:true, hidden:true, rules:{ assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:true  } },
+  practice: { id:'practice', name:'PRACTICE', blurb:'LEARN AT YOUR PACE', desc:'NO FAIL - GUIDED CLIMB',  wind:false,fail:false,practice:true,rules:{ assist:'fixed',    rewards:false,records:false,loadout:false, pickups:false, progress:false, revive:false } },
+  endless:  { id:'endless',  name:'ENDLESS',  blurb:'CLIMB FOREVER',      desc:'POWERUPS - THE CLASSIC',  wind:true, fail:true, rules:{ assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:true  } },
+  time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, time:3600, rules:{ assist:'adaptive', rewards:true, records:true, loadout:true,  pickups:true,  progress:true,  revive:false } },
+  pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ assist:'off', rewards:true, records:true, loadout:false, pickups:false, progress:true, revive:false } },
+  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ assist:'off', rewards:true, records:true, loadout:false, pickups:true, progress:true, revive:false } }
+});
+const MODES = Object.freeze(['level','practice','endless','time','pure','daily'].map(id => MODE_REGISTRY[id]));
+const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
+const FEATURE_FLAGS = deepFreeze({ characters:false, bases:false, collections:false, modifiers:false, challenges:false });
 const EXTRAS = MODES.filter(m => !m.hidden);   // the picker: side modes, not the main climb
 let mode = store.get('skystack-mode', 'endless');
 if (!MODES.find(m => m.id === mode) || mode === 'level') { mode = 'endless'; store.set('skystack-mode', mode); }  // migrate removed modes
@@ -553,6 +586,7 @@ let levelStars = store.get('skystack-levelstars', []);
 let pendingLevel = -1;   // level chosen on the map, consumed by the next resetRun
 let runLevel = -1;       // active level for the current run (-1 = free modes)
 let runLaunch = 0;       // blocks pre-stacked for the current run (0 = full ground-up run)
+let runContext = null;   // deeply immutable rules/seed snapshot owned by the active run
 let selLevel = 0;        // map selection (session only)
 let winT = 0, failT = 0, winStars = 0, winReward = 0, winFirst = false;
 // revive: one paid second chance per run. XP/missions/games settle only when the run
@@ -616,6 +650,7 @@ const TIERS = [
   { n:360, name:'ORBIT',        c:'#FFD75E' },
   { n:540, name:'THE STARS',    c:'#FFF6E8' }
 ];
+const LEVEL_REGISTRY = deepFreeze(TIERS.map((t, i) => ({ id:i, tier:i, goalAltitude:t.n, startAltitude:i <= 0 ? 0 : TIERS[i-1].n, name:t.name, color:t.c })));
 prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed unlocks from lifetime best
 // per-region block material — affects FEEL (fair + subtle, tune freely):
 // spd = slider-speed multiplier, wob = drift-wobble amount, wind = local wind exposure.
@@ -632,8 +667,14 @@ const MATERIALS = [
   { name:'COSMIC', spd:0.86, wob:0.22, wind:0.4 },   // 9 ORBIT
   { name:'STAR',   spd:0.92, wob:0.15, wind:0.5 }    // 10 THE STARS
 ];
+const BALANCE_REGISTRY = deepFreeze({
+  physics:{ blockHeight:14, baseWidth:96, metersPerBlock:3, topple:34, perfectPx:2.6 },
+  slider:{ base:1.1, perBlock:0.020, max:2.8, campaignStep:0.03, campaignMax:3.1, assistSlow:0.30 },
+  assist:{ practice:0.85, startBase:0.5, skillScale:0.55, maxStart:0.5, floorScale:0.4, max:0.85 },
+  seed:{ dailyXor:0x9E3779B9 }, materials:MATERIALS
+});
 const matAt = t => MATERIALS[clamp(t | 0, 0, MATERIALS.length - 1)];
-const levelStartN = i => i <= 0 ? 0 : TIERS[i-1].n;                   // level i climbs levelStartN(i) -> TIERS[i].n
+const levelStartN = i => LEVEL_REGISTRY[clamp(i | 0, 0, LEVEL_REGISTRY.length - 1)].startAltitude; // level i climbs start -> goal
 function startLevel(i) { pendingLevel = i; mode = 'level'; startRun(); }
 
 // ---------- power-ups ----------
@@ -655,16 +696,16 @@ const POW_DESC = {
 };
 
 // ---------- game state ----------
-const BH = 14, BASE_W = 96, METERS_PER = 3;
+const BH = BALANCE_REGISTRY.physics.blockHeight, BASE_W = BALANCE_REGISTRY.physics.baseWidth, METERS_PER = BALANCE_REGISTRY.physics.metersPerBlock;
 let GROUND_Y = H - 20;
-const TOPPLE = 34;
-let PERFECT_PX = 2.6;
+const TOPPLE = BALANCE_REGISTRY.physics.topple;
+let PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
 // dynamic difficulty: a persisted skill estimate (0..1) sets each run's starting help,
 // and an in-run `assist` (0..1) rises when you miss and eases when you chain perfects.
 // Higher assist = slower blocks + a wider perfect window. Off in PURE/DAILY (kept pure).
 let skill = clamp(store.get('skystack-skill', 0.35), 0, 1);
 let assist = 0;
-function assistFloor() { return clamp((0.5 - skill * 0.55) * 0.4, 0, 0.5); }
+function assistFloor() { const a=BALANCE_REGISTRY.assist; return clamp((a.startBase - skill * a.skillScale) * a.floorScale, 0, a.maxStart); }
 let state = 'splash';             // splash | home | shop | me | playing | dropping | gameover
 let blocks = [], slider = null, faller = null;
 let debris = [], particles = [], floaters = [], trails = [], coinFx = [], pickups = [];
@@ -698,6 +739,49 @@ const LOADOUT = [
 ];
 let loadout = { shield:false, aura:false, slow:false };
 let shopInfo = 'TAP A BOOST TO BUY IT';
+function seedForRun(modeId, entropy, day) {
+  if (modeId === 'daily') return (((day === undefined ? todayKey() : day) ^ BALANCE_REGISTRY.seed.dailyXor) >>> 0);
+  return (entropy === undefined ? 0 : entropy) >>> 0;
+}
+function startingAssist(modeId, skillValue) {
+  const p = PERMISSION_REGISTRY[modeId] || PERMISSION_REGISTRY.endless, a = BALANCE_REGISTRY.assist;
+  return p.assist === 'fixed' ? a.practice : p.assist === 'off' ? 0 : clamp(a.startBase - clamp(skillValue, 0, 1) * a.skillScale, 0, a.maxStart);
+}
+function createRunContext(o) {
+  const m = MODE_REGISTRY[o.mode] || MODE_REGISTRY.endless;
+  const campaignLevel = Number.isInteger(o.campaignLevel) ? o.campaignLevel : -1;
+  const startingAltitude = Math.max(0, o.startingAltitude | 0);
+  const p = PERMISSION_REGISTRY[m.id];
+  const load = o.loadout || {};
+  return deepFreeze({
+    mode:m.id, campaignLevel, startingAltitude, seed:o.seed >>> 0,
+    assistPolicy:p.assist,
+    loadoutSnapshot:{ shield:!!load.shield, aura:!!load.aura, slow:!!load.slow },
+    modifiers:Array.isArray(o.modifiers) ? o.modifiers.map(x => JSON.parse(JSON.stringify(x))) : [],
+    rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards },
+    recordPermissions:{ write:p.records && campaignLevel < 0 && startingAltitude === 0 },
+    loadoutAllowed:p.loadout,
+    difficultyProfile:{ startingAssist:startingAssist(m.id, o.skill), campaignLevel, slider:BALANCE_REGISTRY.slider }
+  });
+}
+function canEarnRewards(ctx) { return !!(ctx && ctx.rewardPermissions && ctx.rewardPermissions.earn); }
+function canWriteRecords(ctx) { return !!(ctx && ctx.recordPermissions && ctx.recordPermissions.write); }
+function canUseLoadout(ctx) {
+  if (typeof ctx === 'string') return !!(PERMISSION_REGISTRY[ctx] && PERMISSION_REGISTRY[ctx].loadout);
+  return !!(ctx && ctx.loadoutAllowed);
+}
+function canSpawnPickups(ctx) { return !!(ctx && ctx.rewardPermissions && ctx.rewardPermissions.pickups); }
+function difficultyAt(ctx, altitude, currentAssist, tierOverride) {
+  const h = Math.max(0, altitude | 0), d = ctx.difficultyProfile, s = d.slider;
+  const found = TIERS.findIndex(t => t.n > h);
+  const ti = tierOverride === undefined ? clamp(found < 0 ? TIERS.length - 1 : found, 0, TIERS.length - 1) : clamp(tierOverride | 0, 0, TIERS.length - 1), mat = matAt(ti);
+  let speed = Math.min(s.base + h * s.perBlock, s.max);
+  if (d.campaignLevel >= 0) speed = Math.min(speed * (1 + d.campaignLevel * s.campaignStep), s.campaignMax);
+  speed *= 1 - clamp(currentAssist === undefined ? d.startingAssist : currentAssist, 0, 1) * s.assistSlow;
+  speed *= mat.spd;
+  return { altitude:h, tier:ti, material:mat, sliderSpeed:speed };
+}
+function activeMode() { return runContext ? MODE_REGISTRY[runContext.mode] : curMode(); }
 // onboarding: replayed in PRACTICE, shown once everywhere else
 let tutDone = store.get('skystack-tut', false);
 let tutStep = 0;
@@ -735,11 +819,12 @@ function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assi
 
 function resetRun() {
   const m = curMode();
-  if (m.daily) { rnd = mulberry32((todayKey() ^ 0x9E3779B9) >>> 0); hueBase = rnd() * 360; }
-  else { rnd = Math.random; hueBase = Math.random() * 360; }
   // campaign level: pre-stack the tower to the level's start height
   runLevel = m.id === 'level' ? pendingLevel : -1; pendingLevel = -1;
   runLaunch = runLevel >= 0 ? levelStartN(runLevel) : 0;
+  const seed = m.daily ? seedForRun(m.id, 0) : seedForRun(m.id, Math.floor(Math.random() * 4294967296));
+  runContext = createRunContext({ mode:m.id, campaignLevel:runLevel, startingAltitude:runLaunch, seed, skill, loadout, modifiers:[] });
+  rnd = mulberry32(runContext.seed); hueBase = rnd() * 360;
   blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
   for (let i = 1; i < runLaunch; i++) blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col: blockCol(i) });
   debris = []; particles = []; floaters = []; trails = []; coinFx = []; pickups = [];
@@ -755,14 +840,14 @@ function resetRun() {
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
   balance = 0; swayX = 0; paused = false; dropPending = 0;
   timeLeft = m.time || 0;
-  PERFECT_PX = 2.6;
-  assist = m.practice ? 0.85 : (m.pure || m.daily) ? 0 : clamp(0.5 - skill * 0.55, 0, 0.5);   // PRACTICE stays deliberately forgiving
+  PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
+  assist = runContext.difficultyProfile.startingAssist;
   mascot.hop = 0; mascot.expr = 'normal'; mascot.exprT = 0;
   tutStep = m.practice ? 0 : (tutDone ? -1 : 0);
-  if (!m.daily && !m.pure && !m.practice) {
-    if (loadout.shield) shield = 1;
-    if (loadout.aura) auraBlocks = 5;
-    if (loadout.slow) slowBlocks = 4;
+  if (canUseLoadout(runContext)) {
+    if (runContext.loadoutSnapshot.shield) shield = 1;
+    if (runContext.loadoutSnapshot.aura) auraBlocks = 5;
+    if (runContext.loadoutSnapshot.slow) slowBlocks = 4;
   }
   loadout = { shield:false, aura:false, slow:false };
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY; camVel = 0;
@@ -786,10 +871,9 @@ function sliderWrapFx(x) {
 function spawnSlider() {
   const top = blocks[blocks.length - 1];
   const fromLeft = blocks.length % 2 === 1;
-  let speed = Math.min(1.1 + blocks.length * 0.020, 2.8);                    // gentler climb than before
-  if (runLevel >= 0) speed = Math.min(speed * (1 + runLevel * 0.03), 3.1);   // each level is a notch meaner
-  speed *= (1 - assist * 0.30);                                              // dynamic difficulty eases the pace
-  const mat = matAt(tier); speed *= mat.spd;                                 // region material: heavy stone slower, ice/steel quicker
+  const difficulty = difficultyAt(runContext, blocks.length, assist, tier);
+  let speed = difficulty.sliderSpeed;                                        // exact v75 curve, now owned by the run profile
+  const mat = difficulty.material;
   if (slowBlocks > 0) { speed *= 0.55; slowBlocks--; }
   if (auraBlocks > 0) auraBlocks--;
   const SR = slideRange();
@@ -809,7 +893,7 @@ function releaseBlock() {
 }
 
 function schedulePickups() {
-  if (curMode().pure || curMode().practice) return; // PRACTICE stays focused and cannot farm rewards
+  if (!canSpawnPickups(runContext)) return;
   while (nextPickupRow < blocks.length + 16) {
     const type = pick(['coin','coin','coin','wide','slow','shield','aura','gold','fever']);
     const SR = slideRange();                          // always reachable: spawn inside the block corridor
@@ -819,7 +903,7 @@ function schedulePickups() {
   }
 }
 function addCoins(n, x, y) {
-  if (curMode().practice) return;                   // guided runs never alter the economy
+  if (!canEarnRewards(runContext)) return;
   if (EV) n = Math.ceil(n * 1.25);   // event week: +25% coins
   coins += n; runCoins += n; stats.coins += n; coinPop = 1;
   store.set('skystack-coins', coins);
@@ -853,7 +937,7 @@ function enterFever() {
   shake = Math.max(shake, reduceMotion?2:5); sfx.fever();
 }
 function maybeSpawnBalloon() {
-  if (curMode().pure || curMode().practice) return;
+  if (!canSpawnPickups(runContext)) return;
   if (balloon || blocks.length < 8) return;
   if (blocks.length - lastBalloonRow < 8) return;
   if (rnd() > 0.5) { lastBalloonRow = blocks.length; return; }
@@ -874,8 +958,8 @@ function land() {
   const top = blocks[blocks.length - 1], f = faller;
   const oL = Math.max(f.x, top.x), oR = Math.min(f.x + f.w, top.x + top.w), overlap = oR - oL;
   const offset = f.x - top.x;
-  const m = curMode();
-  const dda = !m.pure && !m.daily && !m.practice;   // PRACTICE keeps its fixed generous assist
+  const m = activeMode();
+  const dda = runContext.assistPolicy === 'adaptive';
 
   if (balloon && !balloon.away && Math.abs((GROUND_Y - balloon.row * BH) - (towerTopY() - BH)) < BH &&
       balloon.x >= f.x - 4 && balloon.x <= f.x + f.w + 4) {
@@ -923,7 +1007,7 @@ function land() {
     burst(nx+nw/2, towerTopY()-BH, 14+Math.min(combo,10), f.col, true);
     shake = Math.max(shake, 2);
     mascot.hop = 1; setExpr(fever || combo >= 5 ? 'wow' : 'happy', 24);
-    if (!m.pure && combo % 5 === 0) {
+    if (canSpawnPickups(runContext) && combo % 5 === 0) {
       const g = pick(GIFT_POOL);
       runPowerups++;
       applyPower(g, W/2, towerTopY()-BH-16, true);
@@ -964,7 +1048,7 @@ function land() {
     blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col:f.col });
     bannerText = 'SKYBREAK! +50'; bannerT = 1;
     addCoins(50, W/2, towerTopY());
-    balance = 0; if (!m.practice) stats.skybreaks++; skybreakT = 1;
+    balance = 0; if (canEarnRewards(runContext)) stats.skybreaks++; skybreakT = 1;
     burst(W/2, towerTopY(), 36, f.col, true);
     for (let bx2 = 8; bx2 < W; bx2 += 24) particles.push({ x:bx2, y:towerTopY(), vx:0, vy:-1.6-Math.random(), life:1, color:'#FFD75E' });
     shake = Math.max(shake, reduceMotion ? 3 : 6);
@@ -989,8 +1073,8 @@ function land() {
 }
 
 function afterPlace(f, updateBalance, placedCenter) {
-  const m = curMode();
-  if (!m.practice) stats.blocks++;
+  const m = activeMode();
+  if (canEarnRewards(runContext)) stats.blocks++;
   if (updateBalance) balance = balance * 0.5 + (placedCenter - W/2) * 0.5 * (1 - assist * 0.4);   // assist forgives lean
   const r = blocks.length - 1, b = blocks[r];
   for (const p of pickups) { if (p.got || p.row !== r) continue; if (p.x >= b.x && p.x <= b.x + b.w) collectPickup(p, p.x, towerTopY()); }
@@ -1003,20 +1087,20 @@ function afterPlace(f, updateBalance, placedCenter) {
   if (tier < TIERS.length && h >= TIERS[tier].n) {
     const t = TIERS[tier]; bannerText = t.n*METERS_PER + 'M - ' + t.name; bannerT = 1;
     let reward = 5 + tier * 3;
-    if (!m.practice && tier + 1 > prog) {                     // guided runs never unlock campaign levels
+    if (runContext.rewardPermissions.progress && tier + 1 > prog) {
       prog = tier + 1; store.set('skystack-tiers', prog);
       bannerText = 'LEVEL CLEAR - ' + t.name; reward += 15;
       if (prog === TIERS.length) { bannerText = 'SKY CONQUERED!'; reward += 200; }   // beat the game
     }
-    if (!m.practice) {
+    if (canEarnRewards(runContext)) {
       addCoins(reward, W/2, 40);
       floaters.push({ text:'+'+reward, x:W/2, y:towerTopY()-BH-18, vy:-.35, life:1.4, color:'#FFD75E' });
     }
     burst(W/2, towerTopY()-BH, 24, f.col, true); shake = Math.max(shake, reduceMotion?2:4);
     sfx.milestone(); tier++; startRegionIntro(tier);   // entering the next region — play its intro
   }
-  const bh2 = bestBlocksFor(mode);
-  if (!m.practice && !runLaunch && runLevel < 0 && h > bh2 && !newHeight && bh2 > 0) {
+  const bh2 = bestBlocksFor(runContext.mode);
+  if (canWriteRecords(runContext) && h > bh2 && !newHeight && bh2 > 0) {
     newHeight = true;
     floaters.push({ text:'NEW BEST!', x:W/2, y:towerTopY()+2, vy:-.3, life:1.6, color:'#62E8B5' });
     burst(W/2, towerTopY(), 16, f.col, true); shake = Math.max(shake, 3); hapt([15,25,15]);
@@ -1078,23 +1162,23 @@ function levelComplete() {
   sfx.win(); hapt([20, 30, 20, 30, 40]);
 }
 function gameOver(cause) {
-  const m = curMode();
+  const m = activeMode();
   state = 'gameover'; faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; paused = false; dropPending = 0;
   overCause = cause || 'miss';
   shake = reduceMotion ? 2 : (cause === 'topple' ? 8 : 6); overLock = 40;
   if (cause === 'topple') { sfx.topple();
     for (let i = Math.max(0, blocks.length-6); i < blocks.length; i++) { const b = blocks[i]; debris.push({ x:b.x, y:GROUND_Y-(i+1)*BH, w:b.w, h:BH, vx:(balance>0?1:-1)*(0.6+Math.random()), vy:-Math.random()*1.5, rot:0, vr:(balance>0?1:-1)*.12, col:b.col }); } }
   else sfx.over();
-  if (!m.practice) stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
-  if (!m.practice && !runLaunch && runLevel < 0) {   // PRACTICE is guided, not competitive
+  if (canEarnRewards(runContext)) stats.maxCombo = Math.max(stats.maxCombo, maxCombo);
+  if (canWriteRecords(runContext)) {
     if (score > best) { best = score; newBest = true; store.set('skystack-best', best); }
     if (blocks.length > bestHeight) { bestHeight = blocks.length; store.set('skystack-height', bestHeight); }
-    const rec = modeBests[mode] || { blocks: 0, score: 0 };
+    const rec = modeBests[runContext.mode] || { blocks: 0, score: 0 };
     if (blocks.length > rec.blocks) rec.blocks = blocks.length;
     if (score > (rec.score || 0)) { rec.score = score; newBest = true; }
-    modeBests[mode] = rec; store.set('skystack-modebests', modeBests);
+    modeBests[runContext.mode] = rec; store.set('skystack-modebests', modeBests);
   }
-  if (mode === 'daily') {
+  if (runContext.mode === 'daily') {
     const t = dayStr(0);
     if (daily.lastPlayed !== t) {
       daily.streak = (daily.lastPlayed === dayStr(-1)) ? daily.streak + 1 : 1;
@@ -1110,13 +1194,12 @@ function gameOver(cause) {
 // ---------- revive: one per run, paid in coins (button becomes WATCH AD TO REVIVE later) ----------
 function reviveCost() { return 25 + Math.min(tier, TIERS.length) * 5; }   // deeper runs pay more
 function canOfferRevive() {
-  const m = curMode();   // PURE is skill-only and DAILY is one fair run — no second chances there
-  return !reviveUsed && !m.pure && !m.daily && !m.practice && overCause !== 'quit' && overCause !== 'time';
+  return !reviveUsed && !!(PERMISSION_REGISTRY[runContext.mode] && PERMISSION_REGISTRY[runContext.mode].revive) && overCause !== 'quit' && overCause !== 'time';
 }
 function finalizeRun() {   // the run is truly over: count the game and settle XP/missions once
   if (runSettled) return;
   runSettled = true; reviveOffered = false;
-  if (curMode().practice) return;                    // no XP, missions, stats, or rewards from guided runs
+  if (!canEarnRewards(runContext)) return;
   stats.games++;
   settleRun(0);
 }
@@ -1141,13 +1224,13 @@ function burst(x, y, n, col, gold) {
 }
 
 // ---------- share ----------
-function shareText() { return 'SKYSTACK ' + curMode().name + ' - ' + (blocks.length * METERS_PER) + 'M, score ' + score + '! Can you beat me? ' + location.href; }
+function shareText() { return 'SKYSTACK ' + activeMode().name + ' - ' + (blocks.length * METERS_PER) + 'M, score ' + score + '! Can you beat me? ' + location.href; }
 function renderShareCard() {
   const g = skyColor(blocks.length); ctx.fillStyle = 'rgb('+g[0]+','+g[1]+','+g[2]+')'; ctx.fillRect(0,0,W,H);
   for (let i = 0; i < Math.min(blocks.length, 16); i++) { const idx = blocks.length-1-i; const b = blocks[idx] || blocks[0]; const w = Math.max(16, 44 - i*1.5); drawBlock(Math.round(W/2-w/2), H-24-i*10, Math.round(w), 9, b.col, false, 0, skin().style); }
   ctx.fillStyle = 'rgba(11,14,26,0.5)'; ctx.fillRect(0,0,W,124);
   txt('SKYSTACK', W/2, 14, 3, '#FFF6E8', 'center');
-  txt(curMode().name + (mode==='daily' ? ' - '+dayStr(0) : ''), W/2, 42, 1, '#FFD75E', 'center');
+  txt(activeMode().name + (runContext && runContext.mode==='daily' ? ' - '+dayStr(0) : ''), W/2, 42, 1, '#FFD75E', 'center');
   txt('I REACHED', W/2, 58, 1, 'rgba(255,246,232,0.8)', 'center');
   txt(blocks.length*METERS_PER+'M', W/2, 70, 3, '#62E8B5', 'center');
   txt('SCORE ' + score, W/2, 100, 1, '#FFF6E8', 'center');
@@ -1293,7 +1376,7 @@ function pressDown(e) {
       else if (rw.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
       else if (rw.id === 'quit') {
         paused = false;
-        if (curMode().practice) { finalizeRun(); state = 'home'; fadeT = 1; slider = null; faller = null; }
+        if (activeMode().practice) { finalizeRun(); state = 'home'; fadeT = 1; slider = null; faller = null; }
         else gameOver('quit');
       }
       return;
@@ -1352,7 +1435,7 @@ function pressDown(e) {
       } else if (sk.id !== skinId) { skinId = sk.id; store.set('skystack-skin', skinId); sfx.tap(); toast('EQUIPPED'); }
       return;
     }
-    if (mode !== 'daily' && mode !== 'pure' && mode !== 'practice') for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
+    if (canUseLoadout(mode)) for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
       shopInfo = POW_DESC[c.id];
       if (loadout[c.id]) { loadout[c.id] = false; coins += c.cost; store.set('skystack-coins', coins); sfx.tap(); }
       else if (coins >= c.cost) { loadout[c.id] = true; coins -= c.cost; store.set('skystack-coins', coins); sfx.coin(); }
@@ -1448,7 +1531,7 @@ function update(dt) {
   if (state === 'shop') { demo.t += dt; if (demo.t > 22) { demo.t = 0; demo.n = demo.n >= 4 ? 1 : demo.n + 1; } }
 
   const playing = state === 'playing' || state === 'dropping';
-  const m = curMode();
+  const m = playing && runContext ? activeMode() : curMode();
   if (playing && m.time) { timeLeft -= dt; if (timeLeft <= 0) { timeLeft = 0; gameOver('time'); } }
   if (fever) { feverT -= dt; if (feverT <= 0) { fever = false; feverT = 0; } }
   if (nova) { novaT -= dt; if (novaT <= 0) { nova = false; novaT = 0; } }
@@ -1464,8 +1547,8 @@ function update(dt) {
   if (playing && m.wind) {
     const wf = matAt(tier).wind;                                            // region wind exposure: sheltered caves, howling jet stream
     windTimer -= dt;
-    if (!wind && windTimer <= 0 && blocks.length > 25 && wf > 0) { wind = { dir: Math.random()<.5?-1:1, str:(.16+Math.random()*.30)*wf, dur:100+Math.random()*80, t:0 }; sfx.wind(); }
-    if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (280 + Math.random()*320) / Math.max(0.5, wf); } }
+    if (!wind && windTimer <= 0 && blocks.length > 25 && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(.16+rnd()*.30)*wf, dur:100+rnd()*80, t:0 }; sfx.wind(); }
+    if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (280 + rnd()*320) / Math.max(0.5, wf); } }
   } else wind = null;
 
   if (balloon && (state === 'playing' || state === 'dropping')) {
@@ -3930,13 +4013,13 @@ function renderShop() {
 
   // boosts section
   txt('RUN BOOSTS', W/2, 180, 1, '#FFD75E', 'center');
-  if (mode === 'pure') {
+  if (!canUseLoadout(mode) && mode === 'pure') {
     txt('BOOSTS ARE OFF IN PURE', W/2, 210, 1, 'rgba(255,246,232,0.5)', 'center');
     txt('PURE IS SKILL ONLY - 1.5X SCORE', W/2, 222, 1, 'rgba(255,246,232,0.4)', 'center');
-  } else if (mode === 'practice') {
+  } else if (!canUseLoadout(mode) && mode === 'practice') {
     txt('BOOSTS ARE OFF IN PRACTICE', W/2, 210, 1, 'rgba(255,246,232,0.5)', 'center');
     txt('GUIDED RUNS NEVER SPEND BOOSTS', W/2, 222, 1, 'rgba(255,246,232,0.4)', 'center');
-  } else if (mode !== 'daily') {
+  } else if (canUseLoadout(mode)) {
     for (const c of LOAD_CHIPS) {
       const on = loadout[c.id], afford = coins >= c.cost;
       ctx.fillStyle = on ? 'rgba(98,232,181,0.85)' : 'rgba(0,0,0,0.28)';
@@ -4188,7 +4271,7 @@ function renderLevelFail() {
 // ---------- in-run HUD ----------
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
-  const m = curMode();
+  const m = activeMode();
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(PAUSE_BTN.x-1,PAUSE_BTN.y-1,PAUSE_BTN.w+2,PAUSE_BTN.h+2);
   ctx.fillStyle='#FFF6E8'; ctx.fillRect(PAUSE_BTN.x+3,PAUSE_BTN.y+3,3,8); ctx.fillRect(PAUSE_BTN.x+8,PAUSE_BTN.y+3,3,8);
   drawCoin(22, 7); txt(coins, 31, 7, 1, '#FFD75E', 'left');
@@ -4260,12 +4343,12 @@ function renderGameOver() {
   const shadow = 'rgba(0,0,0,0.35)';
   txt('GAME OVER', W/2+1, 27, 2, shadow, 'center');
   txt('GAME OVER', W/2, 26, 2, '#FF5E7E', 'center');
-  txt((CAUSE_TXT[overCause] || '') + ' - ' + curMode().name, W/2, 46, 1, 'rgba(255,246,232,0.6)', 'center');
+  txt((CAUSE_TXT[overCause] || '') + ' - ' + activeMode().name, W/2, 46, 1, 'rgba(255,246,232,0.6)', 'center');
   txt('HEIGHT', W/2, 62, 1, 'rgba(255,246,232,0.7)', 'center');
   txt(blocks.length*METERS_PER+'M', W/2, 73, 2, newHeight?'#62E8B5':'#FFF6E8', 'center');
   if (newHeight && Math.floor(tick/20)%2===0) txt('NEW RECORD!', W/2, 91, 1, '#62E8B5', 'center');
   txt('SCORE '+score+(newBest?' - NEW BEST!':''), W/2, 103, 1, newBest?'#62E8B5':'rgba(255,246,232,0.85)', 'center');
-  txt('BEST '+bestBlocksFor(mode)*METERS_PER+'M - '+fmtPts(bestScoreFor(mode))+' PTS', W/2, 114, 1, '#FFD75E', 'center');
+  txt('BEST '+bestBlocksFor(runContext.mode)*METERS_PER+'M - '+fmtPts(bestScoreFor(runContext.mode))+' PTS', W/2, 114, 1, '#FFD75E', 'center');
   drawCoin(W/2-24, 127); txt('+'+runCoins, W/2-14, 127, 1, '#FFD75E', 'left');
   if (runSettled) txt('+'+xpThisRun+' XP', W/2+12, 127, 1, '#62E8B5', 'left');
   if (maxCombo > 1) txt('MAX COMBO X'+maxCombo, W/2, 141, 1, 'rgba(255,246,232,0.8)', 'center');
@@ -4283,7 +4366,7 @@ function renderGameOver() {
     if (levelUpsThisRun > 0) { txt('LEVEL UP! NOW LV '+lvl.level+' +25', W/2, y, 1, '#FFD75E', 'center'); y += 11; }
     for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i]+' +25', W/2, y, 1, '#C77EFF', 'center'); y += 11; }
     for (let i = 0; i < completedThisRun.length && i < 2; i++) { txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y, 1, '#62E8B5', 'center'); y += 11; }
-    if (mode === 'daily') { txt('DAILY STREAK ' + daily.streak, W/2, y, 1, '#FF9E5E', 'center'); y += 11; }
+    if (runContext.mode === 'daily') { txt('DAILY STREAK ' + daily.streak, W/2, y, 1, '#FF9E5E', 'center'); y += 11; }
   }
   ctx.fillStyle = 'rgba(94,200,242,0.9)'; ctx.fillRect(SHARE_BTN.x, SHARE_BTN.y, SHARE_BTN.w, SHARE_BTN.h);
   ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(SHARE_BTN.x, SHARE_BTN.y, SHARE_BTN.w, 1);
