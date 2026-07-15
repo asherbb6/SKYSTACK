@@ -702,10 +702,16 @@ check('renderHome (hero card) runs for fresh, veteran and conquered profiles', (
   }
   return true;
 });
+check('compact Home keeps title, hero details, climb button, and missions in separate lanes', () => fresh.run(
+  '(() => { for(const [w,h] of [[242,300],[480,270]]){W=w;H=h;relayout();if(HERO_CARD.y<62||PLAY_BTN.y<HERO_CARD.y+64||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y<=HERO_CARD.y+HERO_CARD.h||MODE_BTN.y+MODE_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=NAV_Y||MISS_PANEL.h!==36)return false;}return true; })()'));
+check('compact Missions and Shop detail surfaces render and remain dismissible', () => fresh.run(
+  '(() => { W=242;H=300;relayout();state="home";missionsOpen=true;renderMissionsOverlay();const mp={x:2,y:2};pos=()=>mp;pressDown({});if(missionsOpen)return false;state="shop";shopView="character";shopDetailOpen=true;renderShopDetail();pressDown({});if(shopDetailOpen)return false;shopView="base";shopDetailOpen=true;renderShopDetail();return SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h<190; })()'));
 check('Me volume mixer renders and stays above navigation on narrow portrait screens', () => fresh.run(
   '(() => { state="me"; renderMe(); return MIX_ROWS.length===2&&MIX_ROWS.every(r=>r.minus.x>=0&&r.plus.x+r.plus.w<=W&&r.y+r.plus.h<NAV_Y); })()'));
+check('Player Progress and Settings tabs render as bounded separate surfaces', () => fresh.run(
+  '(() => { W=242;H=300;relayout();state="me";meView="progress";renderMe();meDetailOpen=true;renderMeDetail();meView="settings";renderMe();return ME_TABS.length===2&&ME_TABS[0].x+ME_TABS[0].w===ME_TABS[1].x&&ME_BADGES_BTN.y+ME_BADGES_BTN.h<122&&MIX_ROWS.every(r=>r.plus.y+r.plus.h<NAV_Y); })()'));
 check('Me volume mixer touch controls adjust the selected channel only', () => fresh.run(
-  '(() => { state="me"; musicVol=1;sfxVol=1;renderMe();const r=MIX_ROWS[0].minus;canvasRect=null;pressDown({clientX:(r.x+r.w/2)/W*320,clientY:(r.y+r.h/2)/H*480});return musicVol===.75&&sfxVol===1; })()'));
+  '(() => { state="me";meView="settings";meDetailOpen=false; musicVol=1;sfxVol=1;renderMe();const r=MIX_ROWS[0].minus;pos=()=>({x:r.x+r.w/2,y:r.y+r.h/2});pressDown({});return musicVol===.75&&sfxVol===1; })()'));
 
 // ---------- v73: Surface/Forest + Treetops/Lower Sky world identity ----------
 const fw = makeGame({ 'skystack-height': '90' });
@@ -1217,7 +1223,7 @@ check('Home, Shop, Bases, and Me share centered dark frames without entering nav
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v88', () => /const CACHE = 'skystack-v88'/.test(sw));
+check('sw.js cache bumped to v89', () => /const CACHE = 'skystack-v89'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

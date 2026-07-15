@@ -1024,6 +1024,7 @@ let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = 
 let wind = null, windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
 let nextPickupRow = 8;
 let previewIdx = 0, basePreviewIdx = Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)), shopView = 'character';
+let missionsOpen = false, shopDetailOpen = false, meDetailOpen = false, meView = 'progress';
 let completedThisRun = [], achThisRun = [], collectionThisRun = [], levelUpsThisRun = 0, xpThisRun = 0;
 let overCause = '';
 let fever = false, feverT = 0;
@@ -1793,7 +1794,7 @@ function shareScore() {
 const PAD = 6;
 const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
-    SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, LOAD_CHIPS, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
+    SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
@@ -1807,8 +1808,8 @@ function relayout() {
   // home: the campaign is the hero — one big next-level card with PLAY inside,
   // MAP + EXTRAS demoted to a secondary row underneath it
   const heroW = Math.min(W - 24, 240);
-  HERO_CARD = { x: Math.round((W-heroW)/2), y:62, w:heroW, h:82 };
-  PLAY_BTN = { x: HERO_CARD.x+12, y: HERO_CARD.y+56, w: heroW-24, h:20 };
+  HERO_CARD = { x: Math.round((W-heroW)/2), y:62, w:heroW, h:88 };
+  PLAY_BTN = { x: HERO_CARD.x+12, y: HERO_CARD.y+66, w: heroW-24, h:18 };
   const halfW = Math.floor((heroW - 6) / 2);
   MAP_BTN  = { x: HERO_CARD.x, y: HERO_CARD.y + HERO_CARD.h + 6, w: halfW, h:18 };
   MODE_BTN = { x: HERO_CARD.x + heroW - halfW, y: MAP_BTN.y, w: halfW, h:18 };
@@ -1827,7 +1828,8 @@ function relayout() {
     ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) + i*26, w: rowW, h: 20 }));
   FAIL_REV = { x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) - 26, w: rowW, h: 20 };
   const missW = Math.min(W - PAD*2, 200);
-  MISS_PANEL = { x: Math.round((W-missW)/2), y:H-114, w:missW, h:44 };   // centered, capped on wide screens
+  const missY=Math.min(NAV_Y-44,Math.max(MAP_BTN.y+MAP_BTN.h+10,H-106));
+  MISS_PANEL = { x: Math.round((W-missW)/2), y:missY, w:missW, h:36 };   // compact summary; full list opens on tap
   INSTALL_BTN = { x:W/2-42, y:H-58, w:84, h:14 };
   // shop
   const shopTabW=Math.min(90,Math.floor((W-30)/2));
@@ -1835,12 +1837,16 @@ function relayout() {
   SKIN_L = { x: Math.max(PAD, Math.round(W/2)-80), y:66, w:20, h:26 };   // arrows hug the preview, not the screen edge
   SKIN_R = { x: Math.min(W-PAD-20, Math.round(W/2)+60), y:66, w:20, h:26 };
   EQUIP_BTN = { x:W/2-46, y:138, w:92, h:18 };
+  SHOP_DETAIL_BTN = { x:W/2-70, y:160, w:140, h:18 };
   LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: 210, w: 52, h: 26, id: l.id, cost: l.cost }));
   // me
-  TOGGLES = ['sound','music','haptics'].map((id, i) => ({ id, x: W-PAD-30, y: 216 + i * 15, w: 30, h: 11 }));
   const meW = Math.min(W - PAD*2-16, 200), meX = Math.round((W - meW)/2);
+  const meTabW=Math.floor(meW/2);
+  ME_TABS=['progress','settings'].map((id,i)=>({id,x:meX+i*meTabW,y:22,w:meTabW,h:14}));
+  ME_BADGES_BTN={x:meX,y:72,w:meW,h:40};
+  TOGGLES = ['sound','music','haptics'].map((id, i) => ({ id, x: meX+meW-30, y: 66 + i * 18, w: 30, h: 11 }));
   MIX_ROWS = ['music','sfx'].map((id, i) => {
-    const y = 240 + i * 17, minus = { x:meX+meW-88, y, w:13, h:11 };
+    const y = 130 + i * 20, minus = { x:meX+meW-88, y, w:13, h:11 };
     const bar = { x:minus.x+16, y:y+2, w:56, h:7 };
     return { id, y, minus, bar, plus:{ x:meX+meW-13, y, w:13, h:11 } };
   });
@@ -1889,7 +1895,7 @@ function startRun(retrySeed) { if(Number.isInteger(retrySeed))pendingRunSeed=ret
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
-    if (state !== t.id) { state = t.id; sfx.tap(); if (t.id === 'shop') { shopView='character'; previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); basePreviewIdx=Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
+    if (state !== t.id) { state = t.id; missionsOpen=false; shopDetailOpen=false; meDetailOpen=false; sfx.tap(); if (t.id === 'shop') { shopView='character'; previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); basePreviewIdx=Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
     return true;
   }
   return true;
@@ -1925,6 +1931,7 @@ function pressDown(e) {
   if (state === 'splash') { state = 'home'; fadeT = 1; musicNext = 0; sfx.tap(); tryFullscreen(); return; }
   if (state === 'home') {
     if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker&&!challengePicker) startLevel(Math.min(prog, TIERS.length - 1)); return; }
+    if (missionsOpen) { missionsOpen=false; sfx.tap(); return; }
     if (skyMap) {
       // the map scrolls: a press starts a drag, selection happens on release (pressUp)
       mapDrag = { y: p.y, scroll: mapScroll, moved: false };
@@ -1945,6 +1952,7 @@ function pressDown(e) {
     if (deferredPrompt && inR(p, INSTALL_BTN, 3)) { const dp = deferredPrompt; deferredPrompt = null; try { dp.prompt(); } catch (err) {} return; }
     if (inR(p, MODE_BTN, 4)) { modePicker = true; challengePicker=false; sfx.tap(); return; }
     if (inR(p, MAP_BTN, 4)) { openSkyMap(); sfx.tap(); return; }
+    if (inR(p, MISS_PANEL, 3)) { missionsOpen=true; sfx.tap(); return; }
     if (inR(p, PLAY_BTN, 4) || inR(p, HERO_CARD, 2)) { startLevel(Math.min(prog, TIERS.length - 1)); return; }
   } else if (state === 'levelwin') {
     if (winT < 24) return;                             // let the celebration land before taps count
@@ -1970,11 +1978,13 @@ function pressDown(e) {
     return;
   } else if (state === 'shop') {
     if (!p) return;
+    if (shopDetailOpen) { shopDetailOpen=false; sfx.tap(); return; }
     if (navHit(p)) return;
-    for (const tab of SHOP_TABS) if (inR(p,tab,2)) { shopView=tab.id; sfx.tap(); return; }
+    for (const tab of SHOP_TABS) if (inR(p,tab,2)) { shopView=tab.id; shopDetailOpen=false; sfx.tap(); return; }
     const catalog=shopView==='base'?BASE_REGISTRY:CHARACTER_REGISTRY;
     if (inR(p, SKIN_L, 6)) { if(shopView==='base')basePreviewIdx=(basePreviewIdx+catalog.length-1)%catalog.length;else previewIdx=(previewIdx+catalog.length-1)%catalog.length; demo.n=1; sfx.tap(); return; }
     if (inR(p, SKIN_R, 6)) { if(shopView==='base')basePreviewIdx=(basePreviewIdx+1)%catalog.length;else previewIdx=(previewIdx+1)%catalog.length; demo.n=1; sfx.tap(); return; }
+    if (inR(p,SHOP_DETAIL_BTN,3)) { shopDetailOpen=true; sfx.tap(); return; }
     if (inR(p, EQUIP_BTN, 3)) {
       if (shopView==='base') {
         const b=BASE_REGISTRY[basePreviewIdx];
@@ -2002,7 +2012,11 @@ function pressDown(e) {
     }
   } else if (state === 'me') {
     if (!p) return;
+    if (meDetailOpen) { meDetailOpen=false; sfx.tap(); return; }
     if (navHit(p)) return;
+    for(const tab of ME_TABS) if(inR(p,tab,2)){meView=tab.id;sfx.tap();return;}
+    if(meView==='progress'&&inR(p,ME_BADGES_BTN,3)){meDetailOpen=true;sfx.tap();return;}
+    if(meView!=='settings')return;
     for (const t of TOGGLES) if (inR(p, t, 4)) {
       if (t.id === 'sound') { muted = !muted; store.set('skystack-mute', muted); if (!muted) sfx.tap(); }
       else if (t.id === 'music') { musicOn = !musicOn; store.set('skystack-music', musicOn); musicNext = 0; sfx.tap(); }
@@ -2330,7 +2344,7 @@ function pixelFrame(x,y,w,h,fill,accent,strong) {
 function pixelButton(r,label,primary) {
   const accent=primary?PLAY_HEX():UI_HEX(),pulse=primary?beatPulse():0;
   pixelFrame(r.x,r.y,r.w,r.h,primary?playA(.68+pulse*.22):'rgba(11,14,26,0.62)',accent,primary);
-  const sc=primary&&label.length*12-2<=r.w-12?2:1;
+  const sc=1;
   txt(label,r.x+r.w/2,r.y+Math.floor((r.h-7*sc)/2),sc,primary?'#08301F':VISUAL_SYSTEM.palette.paper,'center');
 }
 function drawNavGlyph(id,cx,y,col) {
@@ -3724,9 +3738,9 @@ function render() {
   if (!menu && regionIntro) renderRegionIntro();   // cinematic region-entry overlay, on top of the world
 
   if (state === 'splash') renderSplash();
-  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (challengePicker) renderChallengePicker(); if (skyMap) renderSkyMap(); }
-  else if (state === 'shop') { renderShop(); drawNav(); }
-  else if (state === 'me') { renderMe(); drawNav(); }
+  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (challengePicker) renderChallengePicker(); if (skyMap) renderSkyMap(); if(missionsOpen)renderMissionsOverlay(); }
+  else if (state === 'shop') { renderShop(); drawNav(); if(shopDetailOpen)renderShopDetail(); }
+  else if (state === 'me') { renderMe(); drawNav(); if(meDetailOpen)renderMeDetail(); }
   else if (state === 'gameover') renderGameOver();
   else if (state === 'levelwin') renderLevelWin();
   else if (state === 'levelfail') renderLevelFail();
@@ -3948,9 +3962,7 @@ function renderHome() {
   const shadow = 'rgba(0,0,0,0.35)';
   topBar('');
   const nl = Math.min(prog, TIERS.length - 1), nt = TIERS[nl], conquered = prog >= TIERS.length;
-  const bob = reduceMotion?0:Math.sin(tick*.04)*1.5,titleScale=W>=220?4:3,titleY=titleScale===4?18:26;
-  // A quiet dark mast behind the wordmark keeps it authored and legible through every moving sky.
-  ctx.fillStyle='rgba(11,14,26,0.30)';ctx.fillRect(Math.round(W/2-(titleScale===4?102:78)),titleY-5, titleScale===4?204:156,36);
+  const bob = reduceMotion?0:Math.sin(tick*.04)*1.5,titleScale=3,titleY=16;
   ctx.fillStyle=nt.c;ctx.fillRect(Math.round(W/2-18),titleY-8,36,1);
   txt('SKYSTACK', W/2+1, titleY+1+bob, titleScale, shadow, 'center');
   txt('SKYSTACK', W/2, titleY+bob, titleScale, VISUAL_SYSTEM.palette.paper, 'center');
@@ -3958,30 +3970,30 @@ function renderHome() {
   const tag = EV ? (Math.floor(tick/180)%2 ? '+25% COINS ALL WEEK' : EV.name) : 'STACK TO THE STARS';
   if (EV) {   // dark ribbon so the event title reads on any sky
     const tw = tag.length * 6 - 1;
-    ctx.fillStyle = 'rgba(11,14,26,0.66)'; ctx.fillRect(Math.round(W/2 - tw/2) - 5, 50+bob, tw + 10, 11);
-    ctx.fillStyle = uiA(0.85); ctx.fillRect(Math.round(W/2 - tw/2) - 5, 50+bob, tw + 10, 1);
+    ctx.fillStyle = 'rgba(11,14,26,0.66)'; ctx.fillRect(Math.round(W/2 - tw/2) - 5, 42+bob, tw + 10, 11);
+    ctx.fillStyle = uiA(0.85); ctx.fillRect(Math.round(W/2 - tw/2) - 5, 42+bob, tw + 10, 1);
   }
-  txt(tag, W/2, 52+bob, 1, EV ? EV.acc : VISUAL_SYSTEM.palette.gold, 'center');
+  txt(tag, W/2, 44+bob, 1, EV ? EV.acc : VISUAL_SYSTEM.palette.gold, 'center');
 
   // the campaign hero card: the whole card is the PLAY target (tap anywhere on it)
   const hc = HERO_CARD;
   pixelFrame(hc.x,hc.y,hc.w,hc.h,'rgba(17,17,25,0.82)',nt.c,true);
   ctx.fillStyle=nt.c;ctx.globalAlpha=.10;ctx.fillRect(hc.x+3,hc.y+3,hc.w-6,23);ctx.globalAlpha=1;
   drawJourneyProgress(nl,hc.x+12,hc.y+5,hc.w-24);
-  txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, hc.y + 11, 1, 'rgba(255,246,232,0.55)', 'left');
-  txt((nl+1)+' / '+TIERS.length,hc.x+hc.w-8,hc.y+11,1,nt.c,'right');
+  txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, hc.y + 14, 1, 'rgba(255,246,232,0.55)', 'left');
+  txt((nl+1)+' / '+TIERS.length,hc.x+hc.w-8,hc.y+14,1,nt.c,'right');
   if (conquered) {
-    txt('SKY CONQUERED!', W/2, hc.y + 22, 2, VISUAL_SYSTEM.palette.gold, 'center');
-    txt('REPLAY THE JOURNEY', W/2, hc.y + 39, 1, 'rgba(255,246,232,0.6)', 'center');
+    txt('SKY CONQUERED!', W/2, hc.y + 26, 2, VISUAL_SYSTEM.palette.gold, 'center');
+    txt('REPLAY THE JOURNEY', W/2, hc.y + 45, 1, 'rgba(255,246,232,0.6)', 'center');
   } else {
-    txt(nt.name, W/2, hc.y + 22, 2, nt.c, 'center');
+    txt(nt.name, W/2, hc.y + 26, 2, nt.c, 'center');
     const starSum = levelStars.reduce((a,b)=>a+(b||0),0);
-    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, hc.y + 39, 1, 'rgba(255,246,232,0.62)', 'center');
+    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, hc.y + 45, 1, 'rgba(255,246,232,0.62)', 'center');
   }
   // this level's stars flanked by its biome art
-  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, hc.y + 49, 1, k < (levelStars[nl] || 0));
-  drawStageDecoScaled(nl, hc.x + 18, hc.y + 48, 2);
-  drawStageDecoScaled(nl, hc.x + hc.w - 18, hc.y + 48, 2);
+  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, hc.y + 57, 1, k < (levelStars[nl] || 0));
+  drawStageDecoScaled(nl, hc.x + 18, hc.y + 56, 1);
+  drawStageDecoScaled(nl, hc.x + hc.w - 18, hc.y + 56, 1);
 
   pixelButton(PLAY_BTN,conquered?'REPLAY':'BEGIN CLIMB',true);
 
@@ -3998,10 +4010,10 @@ function renderHome() {
 
   pixelFrame(MISS_PANEL.x,MISS_PANEL.y,MISS_PANEL.w,MISS_PANEL.h,'rgba(17,17,25,0.78)',UI_HEX(),false);
   txt('CLIMB ORDERS', MISS_PANEL.x + 7, MISS_PANEL.y + 5, 1, UI_HEX(), 'left');
-  txt(missions.length+' ACTIVE',MISS_PANEL.x+MISS_PANEL.w-7,MISS_PANEL.y+5,1,'rgba(255,246,232,0.42)','right');
+  txt('VIEW ALL >',MISS_PANEL.x+MISS_PANEL.w-7,MISS_PANEL.y+5,1,'rgba(255,246,232,0.50)','right');
   ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(MISS_PANEL.x+6,MISS_PANEL.y+14,MISS_PANEL.w-12,1);
-  for (let i=0;i<missions.length;i++) {
-    const mm = missions[i], rowY = MISS_PANEL.y + 17 + i*9;
+  for (let i=0;i<Math.min(2,missions.length);i++) {
+    const mm = missions[i], rowY = MISS_PANEL.y + 18 + i*10;
     ctx.fillStyle=i===0?UI_HEX():'rgba(255,246,232,0.28)';ctx.fillRect(MISS_PANEL.x+7,rowY+2,2,2);
     txt(MDEF[mm.key].text(mm.target), MISS_PANEL.x + 13, rowY, 1, 'rgba(255,246,232,0.82)', 'left');
     drawCoin(MISS_PANEL.x + MISS_PANEL.w - 24, rowY - 1);
@@ -4624,8 +4636,8 @@ function renderShop() {
   // functional Character Select; current block skins are the temporary character art
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
   const shopW=Math.min(W-16,220),shopX=Math.round((W-shopW)/2);
-  pixelFrame(shopX,40,shopW,149,'rgba(11,14,26,0.78)',RARE_COL[sk.rare],false);
-  pixelFrame(shopX,194,shopW,NAV_Y-202,'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.gold,false);
+  pixelFrame(shopX,40,shopW,144,'rgba(11,14,26,0.78)',RARE_COL[sk.rare],false);
+  pixelFrame(shopX,190,shopW,Math.min(78,NAV_Y-198),'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.gold,false);
   const dotsW = CHARACTER_REGISTRY.length*6-2, ddx = Math.round(W/2 - dotsW/2);
   for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 41, 4, 3); }
   for (let i = 0; i < Math.min(demo.n, 4); i++) {
@@ -4636,8 +4648,8 @@ function renderShop() {
   if (!isOwned) { const ly = 48; ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-6,ly,12,10); ctx.fillStyle='#FFF6E8'; ctx.fillRect(W/2-4,ly-3,8,4); ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-2,ly-2,4,3); ctx.fillStyle='#FFD75E'; ctx.fillRect(W/2-1,ly+3,2,4); }
   pixelFrame(SKIN_L.x,SKIN_L.y,SKIN_L.w,SKIN_L.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
   pixelFrame(SKIN_R.x,SKIN_R.y,SKIN_R.w,SKIN_R.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
-  txt('<', SKIN_L.x+5, 72, 2, 'rgba(255,246,232,0.85)', 'left');
-  txt('>', SKIN_R.x+5, 72, 2, 'rgba(255,246,232,0.85)', 'left');
+  txt('<', SKIN_L.x+SKIN_L.w/2, 76, 1, 'rgba(255,246,232,0.85)', 'center');
+  txt('>', SKIN_R.x+SKIN_R.w/2, 76, 1, 'rgba(255,246,232,0.85)', 'center');
   txt(sk.name, W/2, 108, 1, '#FFF6E8', 'center');
   txt(sk.rare+' - '+sk.role, W/2, 118, 1, RARE_COL[sk.rare], 'center');
   txt('MASTERY '+masteryLevel(sk.id), W/2, 128, 1, 'rgba(255,246,232,0.55)', 'center');
@@ -4656,12 +4668,12 @@ function renderShop() {
     drawCoin(W/2 + 8, EQUIP_BTN.y+5); txt(sk.cost, W/2 + 17, EQUIP_BTN.y+6, 1, ic, 'left');
   }
 
-  txt(passive.name, W/2, 160, 1, isEquipped ? '#62E8B5' : '#FFF6E8', 'center');
-  txt(passive.benefit, W/2, 170, 1, '#62E8B5', 'center');
-  txt(passive.tradeoff, W/2, 180, 1, passive.id==='classic'?'rgba(255,246,232,0.45)':'#FF9E5E', 'center');
+  pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.22)',false);
+  txt(passive.name,SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+6,1,isEquipped?'#62E8B5':'#FFF6E8','left');
+  txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+6,1,'rgba(255,246,232,0.52)','right');
 
   // boosts section
-  txt('RUN BOOSTS', W/2, 198, 1, '#FFD75E', 'center');
+  txt('RUN BOOSTS', W/2, 194, 1, '#FFD75E', 'center');
   if (!canUseLoadout(mode) && mode === 'pure') {
     txt(W<220?'PURE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PURE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
     txt(W<220?'SKILL ONLY - 1.5X SCORE':'PURE IS SKILL ONLY - 1.5X SCORE', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
@@ -4680,12 +4692,27 @@ function renderShop() {
       if (on) txt('OK', c.x+c.w/2, c.y+16, 1, VISUAL_SYSTEM.palette.mint, 'center');
       else { drawCoin(c.x+14, c.y+15); txt(c.cost, c.x+23, c.y+16, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
     }
-    txt(shopInfo, W/2, 242, 1, 'rgba(255,246,232,0.6)', 'center');
-    txt('LOCKS WHEN CLIMB STARTS', W/2, 254, 1, 'rgba(255,246,232,0.4)', 'center');
+    if(NAV_Y>=268){txt(shopInfo, W/2, 242, 1, 'rgba(255,246,232,0.6)', 'center');txt('LOCKS WHEN CLIMB STARTS', W/2, 254, 1, 'rgba(255,246,232,0.4)', 'center');}
   } else {
     txt(W<220?'DAILY: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN DAILY', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
     txt(W<220?'SAME FAIR RUN FOR ALL':'EVERYONE GETS THE SAME FAIR RUN', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
   }
+}
+
+function renderMissionsOverlay() {
+  ctx.fillStyle='rgba(5,7,14,0.84)';ctx.fillRect(0,0,W,H);
+  const w=Math.min(W-24,210),h=82,x=Math.round((W-w)/2),y=Math.round((H-h)/2);
+  pixelFrame(x,y,w,h,'rgba(11,14,26,0.96)',UI_HEX(),true);
+  txt('CLIMB ORDERS',x+8,y+8,1,UI_HEX(),'left');
+  txt(missions.length+' ACTIVE',x+w-8,y+8,1,'rgba(255,246,232,0.48)','right');
+  ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(x+7,y+19,w-14,1);
+  for(let i=0;i<missions.length;i++){
+    const mm=missions[i],rowY=y+27+i*14;
+    ctx.fillStyle=i===0?UI_HEX():'rgba(255,246,232,0.28)';ctx.fillRect(x+8,rowY+2,2,2);
+    txt(MDEF[mm.key].text(mm.target),x+14,rowY,1,'rgba(255,246,232,0.84)','left');
+    drawCoin(x+w-27,rowY-1);txt(mm.reward,x+w-7,rowY,1,'#FFD75E','right');
+  }
+  txt('TAP TO CLOSE',W/2,y+h-12,1,'rgba(255,246,232,0.42)','center');
 }
 
 function renderChallengePicker() {
@@ -4705,107 +4732,116 @@ function renderChallengePicker() {
 function renderBaseShop(){
   const b=BASE_REGISTRY[basePreviewIdx], isOwned=ownedBases.indexOf(b.id)!==-1, isEquipped=b.id===baseId;
   const shopW=Math.min(W-16,220),shopX=Math.round((W-shopW)/2);
-  pixelFrame(shopX,40,shopW,140,'rgba(11,14,26,0.78)',b.accent,false);
-  pixelFrame(shopX,186,shopW,NAV_Y-194,'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.mint,false);
+  pixelFrame(shopX,40,shopW,144,'rgba(11,14,26,0.78)',b.accent,false);
+  pixelFrame(shopX,190,shopW,Math.min(78,NAV_Y-198),'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.mint,false);
   const dotsW=BASE_REGISTRY.length*8-2,dx=Math.round(W/2-dotsW/2);
   for(let i=0;i<BASE_REGISTRY.length;i++){ctx.fillStyle=i===basePreviewIdx?'#FFF6E8':'rgba(255,246,232,0.3)';ctx.fillRect(dx+i*8,43,6,3);}
   ctx.fillStyle='#2D2016';ctx.fillRect(W/2-44,92,88,7);ctx.fillStyle='#57422F';ctx.fillRect(W/2-44,92,88,2);
   drawBaseCosmetic(W/2,92,50,b.id);drawBlock(W/2-25,78,50,BH,{h:210,s:18,l:62},false,0,'facet');
   pixelFrame(SKIN_L.x,SKIN_L.y,SKIN_L.w,SKIN_L.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
   pixelFrame(SKIN_R.x,SKIN_R.y,SKIN_R.w,SKIN_R.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
-  txt('<',SKIN_L.x+5,72,2,'rgba(255,246,232,0.85)','left');txt('>',SKIN_R.x+5,72,2,'rgba(255,246,232,0.85)','left');
+  txt('<',SKIN_L.x+SKIN_L.w/2,76,1,'rgba(255,246,232,0.85)','center');txt('>',SKIN_R.x+SKIN_R.w/2,76,1,'rgba(255,246,232,0.85)','center');
   txt(b.name,W/2,108,1,'#FFF6E8','center');txt('COSMETIC BASE',W/2,120,1,b.accent,'center');
   if(isEquipped){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)','rgba(255,246,232,0.26)',false);txt('EQUIPPED',W/2,EQUIP_BTN.y+6,1,'rgba(255,246,232,0.6)','center');}
   else if(isOwned){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',VISUAL_SYSTEM.palette.mint,true);txt('EQUIP',W/2,EQUIP_BTN.y+6,1,VISUAL_SYSTEM.palette.mint,'center');}
   else {const afford=coins>=b.cost;pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);const c=afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.6)';txt('UNLOCK',W/2-14,EQUIP_BTN.y+6,1,c,'center');drawCoin(W/2+8,EQUIP_BTN.y+5);txt(b.cost,W/2+17,EQUIP_BTN.y+6,1,c,'left');}
-  txt(b.identity,W/2,166,1,b.accent,'center');
-  txt('VISUAL IDENTITY ONLY',W/2,198,1,'#62E8B5','center');
-  txt('NO GAMEPLAY EFFECTS',W/2,212,1,'rgba(255,246,232,0.65)','center');
-  txt('ACTIVE IN PURE + DAILY',W/2,226,1,'rgba(255,246,232,0.55)','center');
-  txt('CHECKPOINT IS SEPARATE',W/2,242,1,'rgba(255,246,232,0.45)','center');
-  txt('BASE LOCKS AT RUN START',W/2,256,1,'rgba(255,246,232,0.4)','center');
+  pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?b.accent:'rgba(255,246,232,0.22)',false);
+  txt('BASE DETAILS',SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+6,1,isEquipped?b.accent:'#FFF6E8','left');
+  txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+6,1,'rgba(255,246,232,0.52)','right');
+  txt('BASE RULES',W/2,194,1,'#62E8B5','center');
+  txt('COSMETIC ONLY',W/2,214,1,'#62E8B5','center');
+  txt('NO GAMEPLAY EFFECT',W/2,228,1,'rgba(255,246,232,0.65)','center');
+  if(NAV_Y>=260)txt('PURE + DAILY SAFE',W/2,242,1,'rgba(255,246,232,0.52)','center');
+}
+
+function renderShopDetail(){
+  ctx.fillStyle='rgba(5,7,14,0.86)';ctx.fillRect(0,0,W,H);
+  const w=Math.min(W-24,210),h=shopView==='base'?112:100,x=Math.round((W-w)/2),y=Math.round((H-h)/2);
+  const accent=shopView==='base'?BASE_REGISTRY[basePreviewIdx].accent:RARE_COL[CHARACTER_REGISTRY[previewIdx].rare];
+  pixelFrame(x,y,w,h,'rgba(11,14,26,0.97)',accent,true);
+  if(shopView==='base'){
+    const b=BASE_REGISTRY[basePreviewIdx];
+    txt(b.name,x+8,y+9,1,'#FFF6E8','left');
+    txt('VISUAL IDENTITY',x+8,y+25,1,accent,'left');txt(b.identity,x+8,y+37,1,'rgba(255,246,232,0.82)','left');
+    txt('COSMETIC ONLY - NO GAMEPLAY EFFECT',x+8,y+53,1,'#62E8B5','left');
+    txt('ACTIVE IN PURE + DAILY',x+8,y+67,1,'rgba(255,246,232,0.62)','left');
+    txt('CHECKPOINT STAYS SEPARATE',x+8,y+79,1,'rgba(255,246,232,0.50)','left');
+    txt('BASE LOCKS WHEN THE RUN STARTS',x+8,y+91,1,'rgba(255,246,232,0.42)','left');
+  }else{
+    const sk=CHARACTER_REGISTRY[previewIdx],p=PASSIVE_REGISTRY[sk.passiveId];
+    txt(sk.name,x+8,y+9,1,'#FFF6E8','left');txt(p.name,x+w-8,y+9,1,accent,'right');
+    txt('BENEFIT',x+8,y+27,1,'#62E8B5','left');txt(p.benefit,x+8,y+39,1,'rgba(255,246,232,0.84)','left');
+    txt('TRADEOFF',x+8,y+57,1,p.id==='classic'?'rgba(255,246,232,0.48)':'#FF9E5E','left');
+    txt(p.tradeoff,x+8,y+69,1,'rgba(255,246,232,0.72)','left');
+  }
+  txt('TAP TO CLOSE',W/2,y+h-12,1,'rgba(255,246,232,0.40)','center');
 }
 
 // ---------- ME ----------
 function renderMe() {
   topBar('PLAYER');
-  // content sits in a centered column so wide screens don't left-stack everything
-  const meW = Math.min(W - PAD*2-16, 200), mx = Math.round((W - meW)/2), cw = Math.round(meW/2);
-  const meFrameX=mx-8,meFrameW=meW+16;
-  pixelFrame(meFrameX,18,meFrameW,NAV_Y-26,'rgba(11,14,26,0.80)',UI_HEX(),true);
-  ctx.fillStyle='rgba(255,246,232,0.10)';
-  for(const sy of [42,108,180])ctx.fillRect(mx-2,sy,meW+4,1);
-  // level + xp bar
-  txt('LEVEL ' + lvl.level, mx, 22, 1, '#FFF6E8', 'left');
-  txt(lvl.xp + '/' + xpNeed(), mx + meW, 22, 1, 'rgba(255,246,232,0.6)', 'right');
-  const barX = mx, barW = meW, barY = 32;
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(barX, barY, barW, 6);
-  ctx.fillStyle = '#62E8B5'; ctx.fillRect(barX+1, barY+1, Math.max(0, Math.round((barW-2) * clamp(lvl.xp / xpNeed(), 0, 1))), 4);
-
-  // Eight next/recent badges stay readable here; the counter covers the complete 24-badge track.
-  txt('ACHIEVEMENTS '+achDone.filter(id=>ACH.some(a=>a.id===id)).length+'/'+ACH.length, mx, 46, 1, UI_HEX(), 'left');
-  const nextAch=ACH.filter(a=>achDone.indexOf(a.id)===-1), doneAch=ACH.filter(a=>achDone.indexOf(a.id)!==-1).reverse();
-  const shownAch=nextAch.concat(doneAch).slice(0,8);
-  for (let i = 0; i < shownAch.length; i++) {
-    const a = shownAch[i], done = achDone.indexOf(a.id) !== -1;
-    const col = i % 2, row = Math.floor(i / 2);
-    const ax = mx + col * cw, ay = 58 + row * 13;
-    ctx.fillStyle = done ? '#FFD75E' : 'rgba(255,246,232,0.18)';
-    ctx.fillRect(ax, ay, 7, 7);
-    if (done) { ctx.fillStyle = '#2A1F0A'; ctx.fillRect(ax+2, ay+3, 1, 2); ctx.fillRect(ax+3, ay+4, 1, 1); ctx.fillRect(ax+4, ay+1, 1, 3); }
-    const achName=W<220?a.name.replace('FIRST FLIGHT','FIRST RUN').replace(' FLIGHTS',' RUNS').replace('REACH ','').replace('COMBO ',''):a.name;
-    txt(achName, ax + 10, ay, 1, done ? '#FFF6E8' : 'rgba(255,246,232,0.4)', 'left');
+  const meW=Math.min(W-PAD*2-16,200),mx=Math.round((W-meW)/2),cw=Math.round(meW/2);
+  for(const tab of ME_TABS){
+    const on=meView===tab.id;
+    pixelFrame(tab.x,tab.y,tab.w,tab.h,on?uiA(.16):'rgba(11,14,26,0.72)',on?UI_HEX():'rgba(255,246,232,0.22)',on);
+    txt(tab.id==='progress'?'PROGRESS':'SETTINGS',tab.x+tab.w/2,tab.y+4,1,on?UI_HEX():'rgba(255,246,232,0.62)','center');
   }
-
-  const knownCollections=collectionState.completed.filter(id=>COLLECTION_REGISTRY.some(c=>c.id===id)).length;
-  const nextSet=COLLECTION_REGISTRY.find(c=>collectionState.completed.indexOf(c.id)===-1) || COLLECTION_REGISTRY[COLLECTION_REGISTRY.length-1];
-  const setProgress=nextSet.progress(), setNow=Math.min(coinAmount(setProgress[0]),coinAmount(setProgress[1]));
-  txt((W<220?'SETS ':'COLLECTIONS ')+knownCollections+'/'+COLLECTION_REGISTRY.length, mx, 112, 1, UI_HEX(), 'left');
-  txt(nextSet.name+' '+setNow+'/'+coinAmount(setProgress[1]), mx+meW, 112, 1, 'rgba(255,246,232,0.6)', 'right');
-
-  // lifetime stats
-  txt('LIFETIME', mx, 126, 1, UI_HEX(), 'left');
-  const rows = W<220 ? [
-    ['RUNS', stats.games], ['BLOCKS', stats.blocks], ['COINS', stats.coins],
-    ['COMBO', 'X' + stats.maxCombo], ['BEST M', bestHeight*METERS_PER + 'M'], ['BEST P', fmtPts(best)],
-    ['BREAKS', stats.skybreaks], ['STREAK', stats.streakBest]
-  ] : [
-    ['GAMES', stats.games], ['BLOCKS', stats.blocks], ['COINS', stats.coins],
-    ['COMBO', 'X' + stats.maxCombo], ['BEST M', bestHeight*METERS_PER + 'M'], ['BEST PTS', fmtPts(best)],
-    ['SKYBRKS', stats.skybreaks], ['STREAK', stats.streakBest]
-  ];
-  for (let i = 0; i < rows.length; i++) {
-    const col = i % 2, row = Math.floor(i / 2);
-    const rx = mx + col * cw, ry = 137 + row * 11;
-    txt(rows[i][0], rx, ry, 1, 'rgba(255,246,232,0.55)', 'left');
-    txt(rows[i][1], rx + cw - 6, ry, 1, '#FFF6E8', 'right');
-  }
-
-  // settings
-  txt('SETTINGS', mx, 182, 1, UI_HEX(), 'left');
-  const setLabels = { sound:'SOUND', music:'MUSIC', haptics:'HAPTICS' };
-  const setVals = { sound: !muted, music: musicOn, haptics: hapticsOn };
-  for (let i = 0; i < TOGGLES.length; i++) {
-    const t = TOGGLES[i], on = setVals[t.id];
-    const ry = 194 + i * 15;
-    txt(setLabels[t.id], mx, ry + 2, 1, 'rgba(255,246,232,0.85)', 'left');
-    t.x = mx + meW - t.w; t.y = ry;   // keep hitbox in sync with drawn position
-    pixelFrame(t.x,ry,t.w,t.h,on?'rgba(98,232,181,0.14)':'rgba(7,8,15,0.72)',on?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.18)',on);
-    txt(on ? 'ON' : 'OFF', t.x + t.w/2, ry + 2, 1, on ? VISUAL_SYSTEM.palette.mint : 'rgba(255,246,232,0.5)', 'center');
-  }
-  for (const row of MIX_ROWS) {
-    const v = row.id === 'music' ? musicVol : sfxVol;
-    txt(row.id === 'music' ? 'MUSIC' : 'EFFECTS', mx, row.y + 2, 1, 'rgba(255,246,232,0.85)', 'left');
-    for (const b of [row.minus,row.plus]) {
-      pixelFrame(b.x,b.y,b.w,b.h,'rgba(7,8,15,0.72)','rgba(255,246,232,0.18)',false);
+  if(meView==='settings'){
+    pixelFrame(mx-8,42,meW+16,132,'rgba(11,14,26,0.80)',UI_HEX(),true);
+    txt('GAME SETTINGS',mx,50,1,UI_HEX(),'left');txt('V1.0',mx+meW,50,1,'rgba(255,246,232,0.38)','right');
+    ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(mx-2,61,meW+4,1);
+    const labels={sound:'SOUND',music:'MUSIC',haptics:'HAPTICS'},vals={sound:!muted,music:musicOn,haptics:hapticsOn};
+    for(const t of TOGGLES){
+      const on=vals[t.id];txt(labels[t.id],mx,t.y+2,1,'rgba(255,246,232,0.85)','left');
+      pixelFrame(t.x,t.y,t.w,t.h,on?'rgba(98,232,181,0.14)':'rgba(7,8,15,0.72)',on?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.18)',on);
+      txt(on?'ON':'OFF',t.x+t.w/2,t.y+2,1,on?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.5)','center');
     }
-    txt('-', row.minus.x+row.minus.w/2, row.y+2, 1, '#FFF6E8', 'center');
-    txt('+', row.plus.x+row.plus.w/2, row.y+2, 1, '#FFF6E8', 'center');
-    ctx.fillStyle='rgba(0,0,0,0.38)';ctx.fillRect(row.bar.x,row.bar.y,row.bar.w,row.bar.h);
-    ctx.fillStyle=row.id==='music'?'#5EC8F2':'#FFD75E';ctx.fillRect(row.bar.x,row.bar.y,Math.round(row.bar.w*v),row.bar.h);
-    txt(Math.round(v*100)+'%',row.bar.x+row.bar.w/2,row.y+2,1,'#FFF6E8','center');
+    ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(mx-2,120,meW+4,1);
+    for(const row of MIX_ROWS){
+      const v=row.id==='music'?musicVol:sfxVol;
+      txt(row.id==='music'?'MUSIC':'EFFECTS',mx,row.y+2,1,'rgba(255,246,232,0.85)','left');
+      for(const b of [row.minus,row.plus])pixelFrame(b.x,b.y,b.w,b.h,'rgba(7,8,15,0.72)','rgba(255,246,232,0.18)',false);
+      txt('-',row.minus.x+row.minus.w/2,row.y+2,1,'#FFF6E8','center');txt('+',row.plus.x+row.plus.w/2,row.y+2,1,'#FFF6E8','center');
+      ctx.fillStyle='rgba(0,0,0,0.38)';ctx.fillRect(row.bar.x,row.bar.y,row.bar.w,row.bar.h);
+      ctx.fillStyle=row.id==='music'?'#5EC8F2':'#FFD75E';ctx.fillRect(row.bar.x,row.bar.y,Math.round(row.bar.w*v),row.bar.h);
+      txt(Math.round(v*100)+'%',row.bar.x+row.bar.w/2,row.y+2,1,'#FFF6E8','center');
+    }
+    return;
   }
-  txt('V1.0', mx+meW, 182, 1, 'rgba(255,246,232,0.38)', 'right');
+
+  pixelFrame(mx-8,42,meW+16,168,'rgba(11,14,26,0.80)',UI_HEX(),true);
+  txt('LEVEL '+lvl.level,mx,49,1,'#FFF6E8','left');txt(lvl.xp+'/'+xpNeed(),mx+meW,49,1,'rgba(255,246,232,0.6)','right');
+  ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(mx,60,meW,6);ctx.fillStyle='#62E8B5';ctx.fillRect(mx+1,61,Math.max(0,Math.round((meW-2)*clamp(lvl.xp/xpNeed(),0,1))),4);
+  const nextAch=ACH.filter(a=>achDone.indexOf(a.id)===-1),doneAch=ACH.filter(a=>achDone.indexOf(a.id)!==-1).reverse(),shownAch=nextAch.concat(doneAch).slice(0,4);
+  txt('ACHIEVEMENTS',mx,75,1,UI_HEX(),'left');txt(achDone.filter(id=>ACH.some(a=>a.id===id)).length+'/'+ACH.length+' >',mx+meW,75,1,'rgba(255,246,232,0.55)','right');
+  for(let i=0;i<shownAch.length;i++){
+    const a=shownAch[i],done=achDone.indexOf(a.id)!==-1,col=i%2,row=Math.floor(i/2),ax=mx+col*cw,ay=88+row*14;
+    ctx.fillStyle=done?'#FFD75E':'rgba(255,246,232,0.18)';ctx.fillRect(ax,ay,7,7);
+    const name=W<220?a.name.replace('FIRST FLIGHT','FIRST RUN').replace(' FLIGHTS',' RUNS').replace('REACH ','').replace('COMBO ',''):a.name;
+    txt(name,ax+10,ay,1,done?'#FFF6E8':'rgba(255,246,232,0.46)','left');
+  }
+  const known=collectionState.completed.filter(id=>COLLECTION_REGISTRY.some(c=>c.id===id)).length,nextSet=COLLECTION_REGISTRY.find(c=>collectionState.completed.indexOf(c.id)===-1)||COLLECTION_REGISTRY[COLLECTION_REGISTRY.length-1];
+  const setProgress=nextSet.progress(),setNow=Math.min(coinAmount(setProgress[0]),coinAmount(setProgress[1]));
+  ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(mx-2,116,meW+4,1);
+  txt((W<220?'SETS ':'COLLECTIONS ')+known+'/'+COLLECTION_REGISTRY.length,mx,122,1,UI_HEX(),'left');txt(nextSet.name+' '+setNow+'/'+coinAmount(setProgress[1]),mx+meW,122,1,'rgba(255,246,232,0.6)','right');
+  txt('LIFETIME',mx,142,1,UI_HEX(),'left');
+  const rows=[['RUNS',stats.games],['BLOCKS',stats.blocks],['COINS',stats.coins],['COMBO','X'+stats.maxCombo],['BEST M',bestHeight*METERS_PER+'M'],['BEST P',fmtPts(best)],['BREAKS',stats.skybreaks],['STREAK',stats.streakBest]];
+  for(let i=0;i<rows.length;i++){const col=i%2,row=Math.floor(i/2),rx=mx+col*cw,ry=154+row*12;txt(rows[i][0],rx,ry,1,'rgba(255,246,232,0.55)','left');txt(rows[i][1],rx+cw-6,ry,1,'#FFF6E8','right');}
+}
+
+function renderMeDetail(){
+  ctx.fillStyle='rgba(5,7,14,0.86)';ctx.fillRect(0,0,W,H);
+  const nextAch=ACH.filter(a=>achDone.indexOf(a.id)===-1),doneAch=ACH.filter(a=>achDone.indexOf(a.id)!==-1).reverse(),shown=nextAch.concat(doneAch).slice(0,8);
+  const w=Math.min(W-24,210),h=136,x=Math.round((W-w)/2),y=Math.round((H-h)/2);
+  pixelFrame(x,y,w,h,'rgba(11,14,26,0.97)',UI_HEX(),true);
+  txt('ACHIEVEMENTS',x+8,y+8,1,UI_HEX(),'left');txt(achDone.filter(id=>ACH.some(a=>a.id===id)).length+'/'+ACH.length,x+w-8,y+8,1,'rgba(255,246,232,0.55)','right');
+  ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(x+7,y+20,w-14,1);
+  for(let i=0;i<shown.length;i++){
+    const a=shown[i],done=achDone.indexOf(a.id)!==-1,ay=y+28+i*12;
+    ctx.fillStyle=done?'#FFD75E':'rgba(255,246,232,0.18)';ctx.fillRect(x+9,ay,7,7);
+    txt(a.name,x+21,ay,1,done?'#FFF6E8':'rgba(255,246,232,0.55)','left');
+  }
+  txt('TAP TO CLOSE',W/2,y+h-12,1,'rgba(255,246,232,0.40)','center');
 }
 
 // ---------- shared 3D UI helpers ----------
