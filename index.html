@@ -1808,17 +1808,19 @@ function relayout() {
   // home: the campaign is the hero — one big next-level card with PLAY inside,
   // MAP + EXTRAS demoted to a secondary row underneath it
   const heroW = Math.min(W - 24, 240);
-  HERO_CARD = { x: Math.round((W-heroW)/2), y:62, w:heroW, h:88 };
-  PLAY_BTN = { x: HERO_CARD.x+12, y: HERO_CARD.y+66, w: heroW-24, h:18 };
+  const heroY = H <= 280 ? 64 : 68;
+  const heroH = H <= 280 ? 96 : 104;
+  HERO_CARD = { x: Math.round((W-heroW)/2), y:heroY, w:heroW, h:heroH };
+  PLAY_BTN = { x: HERO_CARD.x+12, y: HERO_CARD.y+HERO_CARD.h-24, w: heroW-24, h:18 };
   const halfW = Math.floor((heroW - 6) / 2);
   MAP_BTN  = { x: HERO_CARD.x, y: HERO_CARD.y + HERO_CARD.h + 6, w: halfW, h:18 };
   MODE_BTN = { x: HERO_CARD.x + heroW - halfW, y: MAP_BTN.y, w: halfW, h:18 };
   const pickW = Math.min(W - 24, 240);
-  const pickTop = 68, pickGap = 4;
+  const pickTop = H <= 280 ? 56 : 62, pickGap = 4;
   const pickH = clamp(Math.floor((H - 94 - pickGap*(EXTRAS.length-1)) / EXTRAS.length), 32, 40);
   PICK_ROWS = EXTRAS.map((m, i) => ({ x: Math.round((W-pickW)/2), y:pickTop + i*(pickH+pickGap), w:pickW, h:pickH, id:m.id }));
-  const challengeTop=46,challengeGap=3;
-  const challengeH=clamp(Math.floor((NAV_Y-challengeTop-8-challengeGap*(CHALLENGE_REGISTRY.length-1))/CHALLENGE_REGISTRY.length),24,30);
+  const challengeTop=48,challengeGap=3;
+  const challengeH=clamp(Math.floor((NAV_Y-challengeTop-8-challengeGap*(CHALLENGE_REGISTRY.length-1))/CHALLENGE_REGISTRY.length),20,30);
   CHALLENGE_ROWS=CHALLENGE_REGISTRY.map((c,i)=>({x:Math.round((W-pickW)/2),y:challengeTop+i*(challengeH+challengeGap),w:pickW,h:challengeH,id:c.id}));
   // level win / fail screens: fat centered button rows
   const rowW = Math.min(W - 40, 180);
@@ -1828,9 +1830,10 @@ function relayout() {
     ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) + i*26, w: rowW, h: 20 }));
   FAIL_REV = { x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) - 26, w: rowW, h: 20 };
   const missW = Math.min(W - PAD*2, 200);
-  const missY=Math.min(NAV_Y-44,Math.max(MAP_BTN.y+MAP_BTN.h+10,H-106));
+  const homeRoom = NAV_Y - (MAP_BTN.y + MAP_BTN.h) - 36;
+  const missY=H<=280?MAP_BTN.y+MAP_BTN.h+4:Math.min(NAV_Y-44,Math.max(MAP_BTN.y+MAP_BTN.h+12,Math.round(MAP_BTN.y+MAP_BTN.h+homeRoom*.48)));
   MISS_PANEL = { x: Math.round((W-missW)/2), y:missY, w:missW, h:36 };   // compact summary; full list opens on tap
-  INSTALL_BTN = { x:W/2-42, y:H-58, w:84, h:14 };
+  INSTALL_BTN = { x:W/2-42, y:Math.min(NAV_Y-18,Math.max(MISS_PANEL.y+MISS_PANEL.h+4,H-58)), w:84, h:14 };
   // shop
   const shopTabW=Math.min(90,Math.floor((W-30)/2));
   SHOP_TABS=['character','base'].map((id,i)=>({id,x:Math.round(W/2-shopTabW)+i*shopTabW,y:22,w:shopTabW,h:14}));
@@ -3977,23 +3980,28 @@ function renderHome() {
 
   // the campaign hero card: the whole card is the PLAY target (tap anywhere on it)
   const hc = HERO_CARD;
+  const heroExtra = hc.h - 96;
+  const chapterY = hc.y + 15 + Math.round(heroExtra*.125);
+  const nameY = hc.y + 28 + Math.round(heroExtra*.375);
+  const goalY = hc.y + 47 + Math.round(heroExtra*.625);
+  const starsY = hc.y + 59 + Math.round(heroExtra*.875);
   pixelFrame(hc.x,hc.y,hc.w,hc.h,'rgba(17,17,25,0.82)',nt.c,true);
   ctx.fillStyle=nt.c;ctx.globalAlpha=.10;ctx.fillRect(hc.x+3,hc.y+3,hc.w-6,23);ctx.globalAlpha=1;
   drawJourneyProgress(nl,hc.x+12,hc.y+5,hc.w-24);
-  txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, hc.y + 14, 1, 'rgba(255,246,232,0.55)', 'left');
-  txt((nl+1)+' / '+TIERS.length,hc.x+hc.w-8,hc.y+14,1,nt.c,'right');
+  txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, chapterY, 1, 'rgba(255,246,232,0.55)', 'left');
+  txt((nl+1)+' / '+TIERS.length,hc.x+hc.w-8,chapterY,1,nt.c,'right');
   if (conquered) {
-    txt('SKY CONQUERED!', W/2, hc.y + 26, 2, VISUAL_SYSTEM.palette.gold, 'center');
-    txt('REPLAY THE JOURNEY', W/2, hc.y + 45, 1, 'rgba(255,246,232,0.6)', 'center');
+    txt('SKY CONQUERED!', W/2, nameY, 2, VISUAL_SYSTEM.palette.gold, 'center');
+    txt('REPLAY THE JOURNEY', W/2, goalY, 1, 'rgba(255,246,232,0.6)', 'center');
   } else {
-    txt(nt.name, W/2, hc.y + 26, 2, nt.c, 'center');
+    txt(nt.name, W/2, nameY, 2, nt.c, 'center');
     const starSum = levelStars.reduce((a,b)=>a+(b||0),0);
-    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, hc.y + 45, 1, 'rgba(255,246,232,0.62)', 'center');
+    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, goalY, 1, 'rgba(255,246,232,0.62)', 'center');
   }
   // this level's stars flanked by its biome art
-  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, hc.y + 57, 1, k < (levelStars[nl] || 0));
-  drawStageDecoScaled(nl, hc.x + 18, hc.y + 56, 1);
-  drawStageDecoScaled(nl, hc.x + hc.w - 18, hc.y + 56, 1);
+  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, starsY, 1, k < (levelStars[nl] || 0));
+  drawStageDecoScaled(nl, hc.x + 18, starsY-1, 1);
+  drawStageDecoScaled(nl, hc.x + hc.w - 18, starsY-1, 1);
 
   pixelButton(PLAY_BTN,conquered?'REPLAY':'BEGIN CLIMB',true);
 
@@ -4099,7 +4107,7 @@ function renderPause() {
 // ---------- sky map (level select: one row per level, drag-scrolls, footer launches) ----------
 // list layout: one generous row per level on a straight climbing trail down a
 // centered column; the list drag-scrolls whenever it is taller than the screen
-const MAP_ROW = 60, MAP_HEAD = 34, MAP_FOOT = 10;
+const MAP_ROW = 60, MAP_HEAD = 38, MAP_FOOT = 10;
 // per-stage floating-island palette, index-aligned to the 11 TIERS
 // (cave rock, grass, grass, cloud, cloud, cloud, rock, ice, space-rock, metal, gold)
 const ISLES = [
@@ -4501,6 +4509,9 @@ function renderSkyMap() {
   // side vignette to draw the eye down the trail
   for (let e = 0; e < 10; e++) { ctx.globalAlpha = (10-e)/10 * 0.06; ctx.fillStyle = '#0B0E1A'; ctx.fillRect(e, 0, 1, H); ctx.fillRect(W-1-e, 0, 1, H); }
   ctx.globalAlpha = 1;
+  // Keep trail labels and stage art inside the map viewport. The old translucent header let
+  // offscreen stage copy ghost through it on narrow phones.
+  ctx.save();ctx.beginPath();ctx.rect(0,L.viewTop,W,L.viewBot-L.viewTop);ctx.clip();
   drawMapDecor(L, ph);   // birds, balloons, plane, aurora, galaxy, moon, planet — behind the islands
   // best-height marker point along the winding trail (mascot rides it, walked dots glow)
   let mp = null;
@@ -4583,16 +4594,17 @@ function renderSkyMap() {
   }
   // mascot marks your best height on the winding trail
   if (mp && mp.y > L.viewTop - 6 && mp.y < L.viewBot + 6) drawMascot(mp.x, mp.y + 2);
+  ctx.restore();
   // header
-  ctx.fillStyle = 'rgba(11,14,26,0.72)'; ctx.fillRect(0, 0, W, MAP_HEAD);
+  ctx.fillStyle = 'rgba(11,14,26,0.96)'; ctx.fillRect(0, 0, W, MAP_HEAD);
   ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, MAP_HEAD, W, 1);
   txt('SKY MAP', W/2+1, 6, 2, 'rgba(0,0,0,0.5)', 'center');
   txt('SKY MAP', W/2, 5, 2, '#FFF6E8', 'center');
-  txt('CHOOSE YOUR PATH', W/2, 22, 1, '#FFD75E', 'center');
   // campaign mastery at a glance: total stars earned across the climb
   const starTot = levelStars.reduce((a,b)=>a+(b||0),0);
-  drawStarPix(10, 12, 1, true);
-  txt('STARS ' + starTot + '/' + TIERS.length*3, 17, 9, 1, '#FFD75E', 'left');
+  drawStarPix(9, 25, 1, true);
+  txt('STARS ' + starTot + '/' + TIERS.length*3, 16, 22, 1, '#FFD75E', 'left');
+  txt(W<220?'DRAG TO CLIMB':'CHOOSE YOUR PATH',W-22,22,1,'rgba(255,246,232,0.56)','right');
   ctx.fillStyle = 'rgba(255,246,232,0.14)'; ctx.fillRect(W-18, 6, 13, 13);   // close box
   txt('X', W-12, 8, 1, 'rgba(255,246,232,0.85)', 'center');
   // slim scrollbar on the right edge
@@ -4606,22 +4618,35 @@ function renderSkyMap() {
 }
 
 // ---------- mode picker overlay ----------
+function modeCompactDesc(id){
+  return ({practice:'GUIDED - NO FAIL',endless:'CLASSIC - POWERUPS',pure:'SKILL ONLY - 1.5X',daily:'SEEDED DAILY - STREAKS',challenges:'8 FOCUSED RUNS'})[id]||'';
+}
+function challengeCompactDesc(id){
+  return ({time60:'60 SECONDS - MAX HEIGHT',precision10:'10 PERFECTS - ONE MISS', 'three-lives':'24 BLOCKS - 3 LIVES',unstable20:'20 BLOCKS - FAST LEAN',seeded30:'FIXED 30-BLOCK RUN',recovery3:'CUT + RECOVER - 3 TIMES','neon-trial':'NEON - LAND 8 PERFECTS','cave-gate':'REACH 99M - MODIFIERS'})[id]||'';
+}
+function challengeAccent(family){
+  return ({timed:'#FFD75E',precision:'#8FB8FF',limitedLives:'#FF8A8A',unstable:'#E0863A',seeded:'#C77EFF',recovery:'#62E8B5',characterTrial:'#FF7AD9',milestone:'#FFD75E'})[family]||UI_HEX();
+}
 function renderModePicker() {
-  ctx.fillStyle = 'rgba(11,14,26,0.88)'; ctx.fillRect(0, 0, W, H);
-  txt('EXTRA MODES', W/2, 48, 1, UI_HEX(), 'center');
-  txt('TAP ONE TO PLAY IT', W/2, 60, 1, 'rgba(255,246,232,0.5)', 'center');
+  ctx.fillStyle = '#07080F'; ctx.fillRect(0, 0, W, H);
+  txt('EXTRA MODES', W/2+1, 27, 2, 'rgba(0,0,0,0.45)', 'center');
+  txt('EXTRA MODES', W/2, 26, 2, UI_HEX(), 'center');
+  txt('CHOOSE A CLIMB', W/2, 43, 1, 'rgba(255,246,232,0.52)', 'center');
+  const completed=CHALLENGE_REGISTRY.filter(c=>challengeRecord(c.id).clears>0).length;
   for (const rw of PICK_ROWS) {
     const M = rw.id==='challenges'?CHALLENGE_ENTRY:MODES.find(m => m.id === rw.id), active = rw.id === mode;
-    plate3D(rw.x, rw.y, rw.w, rw.h, active ? uiA(0.22) : 'rgba(255,246,232,0.08)', active ? UI_HEX() : 'rgba(255,246,232,0.25)');
+    const accent=rw.id==='challenges'?VISUAL_SYSTEM.palette.gold:(active?UI_HEX():'rgba(255,246,232,0.24)');
+    pixelFrame(rw.x,rw.y,rw.w,rw.h,active?uiA(.16):'rgba(17,17,25,0.88)',accent,active||rw.id==='challenges');
+    ctx.fillStyle=accent;ctx.globalAlpha=active||rw.id==='challenges'?1:.36;ctx.fillRect(rw.x+4,rw.y+5,2,rw.h-10);ctx.globalAlpha=1;
     txt(M.name, rw.x + 8, rw.y + 7, 1, active ? UI_HEX() : '#FFF6E8', 'left');
-    txt(M.desc, rw.x + 8, rw.y + 22, 1, 'rgba(255,246,232,0.55)', 'left');
+    txt(W<220?modeCompactDesc(rw.id):M.desc, rw.x + 8, rw.y + 22, 1, 'rgba(255,246,232,0.55)', 'left');
     const bp = rw.id==='challenges'?'':bestScoreFor(rw.id) > 0 ? ' - ' + fmtPts(bestScoreFor(rw.id)) + ' PTS' : '';
-    const completed=CHALLENGE_REGISTRY.filter(c=>challengeRecord(c.id).clears>0).length;
     const bb = rw.id==='challenges'?(completed?completed+'/'+CHALLENGE_REGISTRY.length+' CLEARED':''):M.daily ? (daily.streak > 0 ? 'STREAK ' + daily.streak : '') : (bestBlocksFor(rw.id) > 0 ? bestBlocksFor(rw.id)*METERS_PER + 'M' + bp : '');
-    if (bb) txt(bb, rw.x + rw.w - 6, rw.y + 7, 1, active ? UI_HEX() : 'rgba(255,246,232,0.6)', 'right');
+    const compactBest=W<220?(rw.id==='challenges'?(completed?completed+'/'+CHALLENGE_REGISTRY.length:''):M.daily?(daily.streak?'S'+daily.streak:''):(bestBlocksFor(rw.id)>0?bestBlocksFor(rw.id)*METERS_PER+'M':'')):bb;
+    if (compactBest) txt(compactBest, rw.x + rw.w - 7, rw.y + 7, 1, active ? UI_HEX() : 'rgba(255,246,232,0.6)', 'right');
   }
   const lastPick = PICK_ROWS[PICK_ROWS.length-1];
-  txt('TAP ANYWHERE ELSE TO CLOSE', W/2, lastPick.y + lastPick.h + 6, 1, 'rgba(255,246,232,0.45)', 'center');
+  txt('TAP OUTSIDE TO CLOSE', W/2, lastPick.y + lastPick.h + 7, 1, 'rgba(255,246,232,0.42)', 'center');
 }
 
 // ---------- SHOP ----------
@@ -4716,16 +4741,19 @@ function renderMissionsOverlay() {
 }
 
 function renderChallengePicker() {
-  ctx.fillStyle='rgba(11,14,26,0.94)';ctx.fillRect(0,0,W,H);
-  txt('CHALLENGES',W/2,24,2,UI_HEX(),'center');
-  txt('LOCAL RUNS - ONE RULE, ONE GOAL',W/2,38,1,'rgba(255,246,232,0.5)','center');
+  ctx.fillStyle='#07080F';ctx.fillRect(0,0,W,H);
+  txt('< MODES',8,7,1,'rgba(255,246,232,0.58)','left');
+  txt('CHALLENGES',W/2+1,15,2,'rgba(0,0,0,0.45)','center');
+  txt('CHALLENGES',W/2,14,2,UI_HEX(),'center');
+  txt('ONE RULE - ONE GOAL',W/2,35,1,'rgba(255,246,232,0.52)','center');
   for(const rw of CHALLENGE_ROWS){
-    const c=challengeById(rw.id),r=challengeRecord(c.id),done=r.clears>0;
-    plate3D(rw.x,rw.y,rw.w,rw.h,done?'rgba(98,232,181,0.14)':'rgba(255,246,232,0.08)',done?'#62E8B5':'rgba(255,246,232,0.25)');
+    const c=challengeById(rw.id),r=challengeRecord(c.id),done=r.clears>0,accent=done?'#62E8B5':challengeAccent(c.family);
+    pixelFrame(rw.x,rw.y,rw.w,rw.h,done?'rgba(98,232,181,0.12)':'rgba(17,17,25,0.90)',accent,done);
+    ctx.fillStyle=accent;ctx.fillRect(rw.x+4,rw.y+5,2,Math.max(4,rw.h-10));
     txt(c.name,rw.x+7,rw.y+5,1,done?'#62E8B5':'#FFF6E8','left');
-    txt(c.desc,rw.x+7,rw.y+15,1,'rgba(255,246,232,0.52)','left');
+    txt(challengeCompactDesc(c.id),rw.x+7,rw.y+15,1,'rgba(255,246,232,0.52)','left');
     const best=r.bestBlocks?r.bestBlocks*METERS_PER+'M':'';
-    if(r.clears||best)txt((r.clears?'CLEAR '+r.clears:'')+(r.clears&&best?' - ':'')+best,rw.x+rw.w-6,rw.y+5,1,'rgba(255,246,232,0.62)','right');
+    if(r.clears||best)txt((r.clears?'C'+r.clears:'')+(r.clears&&best?' - ':'')+best,rw.x+rw.w-7,rw.y+5,1,done?'#62E8B5':'rgba(255,246,232,0.62)','right');
   }
 }
 

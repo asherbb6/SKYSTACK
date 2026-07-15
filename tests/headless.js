@@ -703,7 +703,7 @@ check('renderHome (hero card) runs for fresh, veteran and conquered profiles', (
   return true;
 });
 check('compact Home keeps title, hero details, climb button, and missions in separate lanes', () => fresh.run(
-  '(() => { for(const [w,h] of [[242,300],[480,270]]){W=w;H=h;relayout();if(HERO_CARD.y<62||PLAY_BTN.y<HERO_CARD.y+64||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y<=HERO_CARD.y+HERO_CARD.h||MODE_BTN.y+MODE_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=NAV_Y||MISS_PANEL.h!==36)return false;}return true; })()'));
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270]]){W=w;H=h;relayout();if(HERO_CARD.y<64||HERO_CARD.h<96||PLAY_BTN.y<HERO_CARD.y+70||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y<=HERO_CARD.y+HERO_CARD.h||MODE_BTN.y+MODE_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=INSTALL_BTN.y||INSTALL_BTN.y+INSTALL_BTN.h>=NAV_Y||MISS_PANEL.h!==36)return false;}return true; })()'));
 check('compact Missions and Shop detail surfaces render and remain dismissible', () => fresh.run(
   '(() => { W=242;H=300;relayout();state="home";missionsOpen=true;renderMissionsOverlay();const mp={x:2,y:2};pos=()=>mp;pressDown({});if(missionsOpen)return false;state="shop";shopView="character";shopDetailOpen=true;renderShopDetail();pressDown({});if(shopDetailOpen)return false;shopView="base";shopDetailOpen=true;renderShopDetail();return SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h<190; })()'));
 check('Me volume mixer renders and stays above navigation on narrow portrait screens', () => fresh.run(
@@ -1165,7 +1165,7 @@ check('S6 leaving a hidden challenge restores the last real Extra Mode selection
   return g.run('(() => { startChallenge("precision10");gameOver("precision");overLock=0;pressDown(null);return state==="home"&&mode==="pure"&&store.get("skystack-mode",null)==="pure"; })()');
 });
 check('S6 Challenge picker fits all eight rows above navigation at phone width and renders every template', () => fresh.run(
-  '(() => { W=242;H=300;relayout();state="home";challengePicker=true;renderChallengePicker();const fit=CHALLENGE_ROWS.length===8&&CHALLENGE_ROWS.every(r=>r.x>=0&&r.x+r.w<=W&&r.y>=0&&r.y+r.h<NAV_Y);for(const c of CHALLENGE_REGISTRY){startChallenge(c.id);renderHUD(blocks.length);gameOver(c.family==="timed"?"time":"precision");renderGameOver();}return fit; })()'));
+  '(() => { for(const [w,h] of [[180,390],[242,300],[480,270]]){W=w;H=h;relayout();state="home";challengePicker=true;renderChallengePicker();if(CHALLENGE_ROWS.length!==8||CHALLENGE_ROWS.some(r=>r.x<0||r.x+r.w>W||r.y<0||r.y+r.h>=NAV_Y))return false;}for(const c of CHALLENGE_REGISTRY){startChallenge(c.id);renderHUD(blocks.length);gameOver(c.family==="timed"?"time":"precision");renderGameOver();}return true; })()'));
 
 // ---------- S7 content lock, balance audit + technical hardening ----------
 check('S7 freezes explicit first-release catalog, economy, side-grade, session, and technical targets', () => fresh.run(
@@ -1215,7 +1215,9 @@ check('S7 removes the unused loadoutAllowed duplicate and keeps boostPermissions
 check('visual production freezes a coherent canvas palette, rhythm, frame, type, and motion system', () => fresh.run(
   'Object.isFrozen(VISUAL_SYSTEM)&&Object.isFrozen(VISUAL_SYSTEM.palette)&&Object.isFrozen(VISUAL_SYSTEM.spacing)&&Object.isFrozen(VISUAL_SYSTEM.motion)&&VISUAL_SYSTEM.palette.ink==="#0B0E1A"&&VISUAL_SYSTEM.spacing.join(",")==="4,8,12,16,24,32"&&VISUAL_SYSTEM.frame.cut===3&&VISUAL_SYSTEM.type.title===4&&VISUAL_SYSTEM.motion.reducedStatic'));
 check('production Home and stepped global navigation render safely across the locked viewport set', () => fresh.run(
-  '(() => { for(const [w,h] of [[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";prog=0;renderHome();drawNav();prog=TIERS.length;renderHome();if(NAV_H!==24||HERO_CARD.x<0||HERO_CARD.x+HERO_CARD.w>W||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y+MAP_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=NAV_Y)return false;}return true; })()'));
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300]]){W=w;H=h;relayout();state="home";prog=0;renderHome();drawNav();prog=TIERS.length;renderHome();if(NAV_H!==24||HERO_CARD.x<0||HERO_CARD.x+HERO_CARD.w>W||HERO_CARD.y<64||HERO_CARD.h<96||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y+MAP_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=INSTALL_BTN.y||INSTALL_BTN.y+INSTALL_BTN.h>=NAV_Y)return false;}return true; })()'));
+check('Home-linked map, mode, and Challenge surfaces stay clipped, concise, and bounded', () => fresh.run(
+  '(() => { if(MAP_HEAD!==38||modeCompactDesc("challenges")!=="8 FOCUSED RUNS"||challengeCompactDesc("precision10")!=="10 PERFECTS - ONE MISS")return false;for(const [w,h] of [[180,390],[242,300],[480,270]]){W=w;H=h;relayout();state="home";modePicker=true;renderModePicker();challengePicker=true;renderChallengePicker();skyMap=true;renderSkyMap();if(PICK_ROWS.some(r=>r.x<0||r.x+r.w>W||r.y+r.h>=NAV_Y)||CHALLENGE_ROWS.some(r=>r.x<0||r.x+r.w>W||r.y+r.h>=NAV_Y))return false;}return true; })()') && /ctx\.rect\(0,L\.viewTop,W,L\.viewBot-L\.viewTop\);ctx\.clip\(\)/.test(src));
 check('production UI keeps presentation ownership separate from locked mechanics', () =>
   /function pixelFrame\(/.test(src) && /function drawJourneyProgress\(/.test(src) && /function drawNavGlyph\(/.test(src) && fresh.run('mechanicsLockReport().ready&&MECHANICS_LOCK_TARGETS.weeklySeeded===false'));
 check('Home, Shop, Bases, and Me share centered dark frames without entering navigation', () => fresh.run(
@@ -1223,7 +1225,7 @@ check('Home, Shop, Bases, and Me share centered dark frames without entering nav
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v89', () => /const CACHE = 'skystack-v89'/.test(sw));
+check('sw.js cache bumped to v90', () => /const CACHE = 'skystack-v90'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
