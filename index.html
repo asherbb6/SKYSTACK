@@ -41,9 +41,12 @@ function computeSize() {
   H = AR <= 1 ? Math.min(520, Math.max(300, Math.round(180 / AR))) : 320;
   W = AR <= 1 ? Math.max(150, Math.round(H * AR)) : Math.min(960, Math.round(H * AR));
   // integer supersample toward the device's real resolution: art still lands on whole backing
-  // pixels (crisp), but the camera can glide in 1/RS-pixel steps instead of chunky 1px ticks
+  // pixels (crisp), but the camera can glide in 1/RS-pixel steps instead of chunky 1px ticks.
+  // v91: RS snaps to EVEN values (floor, never past the device fit) so the UI's half-pixel
+  // fine grid (VISUAL_SYSTEM.frame.fine) always lands on whole backing pixels and stays crisp.
   const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 4));
-  RS = Math.max(1, Math.min(3, Math.round(Math.min(innerWidth * dpr / Math.max(W, 1), innerHeight * dpr / Math.max(H, 1)))));
+  const fit = Math.min(innerWidth * dpr / Math.max(W, 1), innerHeight * dpr / Math.max(H, 1));
+  RS = Math.max(2, Math.min(4, 2 * Math.floor(fit / 2)));
   canvas.width = W * RS; canvas.height = H * RS;      // resets ctx state
   ctx.setTransform(RS, 0, 0, RS, 0, 0);               // all drawing stays in logical W×H units
   ctx.imageSmoothingEnabled = false;
@@ -176,15 +179,43 @@ const FONT = {
   '<':[2,4,8,16,8,4,2],'>':[8,4,2,1,2,4,8],'/':[1,2,2,4,8,8,16],'%':[17,1,2,4,8,16,17],
   '*':[0,10,4,31,4,10,0],'?':[14,17,1,2,4,0,4]
 };
+// v91 fine-grid type: each 5x7 glyph expands once at boot into a 10x14 corner-smoothed
+// bitmap (Scale2x/EPX) cached as per-row runs. txt() renders those runs at HALF the requested
+// scale unit, so every string keeps its exact metrics (6*sc advance, 7*sc height) while the
+// strokes resolve on the half-pixel fine grid — denser, rounder type with zero reflow.
+const FONT_FINE = (() => {
+  const out = {};
+  for (const ch of Object.keys(FONT)) {
+    const g = FONT[ch];
+    const at = (r, c) => (r < 0 || r > 6 || c < 0 || c > 4) ? 0 : ((g[r] >> (4 - c)) & 1);
+    const grid = [];
+    for (let r = 0; r < 7; r++) {
+      const top = [], bot = [];
+      for (let c = 0; c < 5; c++) {
+        const P = at(r, c), A = at(r - 1, c), B = at(r, c + 1), C = at(r, c - 1), D = at(r + 1, c);
+        top.push((C === A && C !== D && A !== B) ? A : P, (A === B && A !== C && B !== D) ? B : P);
+        bot.push((D === C && D !== B && C !== A) ? C : P, (B === D && B !== A && D !== C) ? D : P);
+      }
+      grid.push(top, bot);
+    }
+    out[ch] = grid.map(row => {
+      const runs = [];
+      for (let c = 0; c < 10; c++) if (row[c]) { let e = c; while (e < 10 && row[e]) e++; runs.push([c, e - c]); c = e - 1; }
+      return runs;
+    });
+  }
+  return out;
+})();
 function txt(text, x, y, sc, color, align) {
   text = String(text).toUpperCase();
   const cw = 6 * sc, totalW = text.length * cw - sc;
   let px = x;
   if (align === 'center') px = Math.round(x - totalW / 2); else if (align === 'right') px = Math.round(x - totalW);
   ctx.fillStyle = color;
+  const u = sc / 2;
   for (const ch of text) {
-    const g = FONT[ch];
-    if (g) for (let r = 0; r < 7; r++) { const b = g[r]; for (let c = 0; c < 5; c++) if (b & (16 >> c)) ctx.fillRect(px + c * sc, y + r * sc, sc, sc); }
+    const g = FONT_FINE[ch];
+    if (g) for (let r = 0; r < 14; r++) { const runs = g[r]; for (let i = 0; i < runs.length; i++) ctx.fillRect(px + runs[i][0] * u, y + r * u, runs[i][1] * u, u); }
     px += cw;
   }
 }
@@ -601,7 +632,7 @@ const VISUAL_SYSTEM = deepFreeze({
   palette:{ink:'#0B0E1A',cave:'#17151D',surface:'#24212B',paper:'#FFF6E8',muted:'#A9A1A5',gold:'#FFD75E',mint:'#62E8B5'},
   spacing:[4,8,12,16,24,32],
   type:{micro:1,title:4},
-  frame:{cut:3,shadow:2},
+  frame:{cut:3,shadow:2,fine:0.5},   // fine = half-pixel UI detail unit (v91); crisp because RS is even
   motion:{quick:12,reveal:24,settle:38,reducedStatic:true}
 });
 
@@ -2244,7 +2275,13 @@ function drawBlock(x, y, w, h, col, isTop, glow, style) {
   }
   if (isTop && flashT > 0) { ctx.globalAlpha = flashT*.85; ctx.fillStyle = '#FFF'; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
 }
-function drawCoin(x, y) { ctx.fillStyle='#B8860B'; ctx.fillRect(x,y,6,6); ctx.fillStyle='#FFD75E'; ctx.fillRect(x+1,y+1,4,4); ctx.fillStyle='#FFF6C8'; ctx.fillRect(x+1,y+1,2,2); }
+function drawCoin(x, y) {
+  // v91 fine grid: chamfered ring, thin rim, shaded base edge + glint — same 6x6 footprint
+  ctx.fillStyle='#B8860B'; ctx.fillRect(x+.5,y,5,6); ctx.fillRect(x,y+.5,6,5);
+  ctx.fillStyle='#FFD75E'; ctx.fillRect(x+1,y+.5,4,5); ctx.fillRect(x+.5,y+1,5,4);
+  ctx.fillStyle='#D9A93F'; ctx.fillRect(x+1,y+4.5,4,.5); ctx.fillRect(x+4.5,y+1.5,.5,3);
+  ctx.fillStyle='#FFF6C8'; ctx.fillRect(x+1,y+1,2,2); ctx.fillRect(x+3.5,y+.5,1,.5);
+}
 function drawIcon(type, x, y, bare) {
   const P = POW[type];
   if (type === 'coin') { drawCoin(x+1, y+1); return; }
@@ -2329,41 +2366,81 @@ function panel(x, y, w, h) {
 // Stepped frame: clipped corners, two-depth surface, and inset keyline. It reads as built pixel
 // craft rather than a rounded web card and becomes the shared grammar for production UI surfaces.
 function pixelFrame(x,y,w,h,fill,accent,strong) {
-  const cut=VISUAL_SYSTEM.frame.cut,shadow=VISUAL_SYSTEM.frame.shadow;
+  const cut=VISUAL_SYSTEM.frame.cut,F=VISUAL_SYSTEM.frame.fine;
+  // layered cast shadow: 1.5px core + 0.5px falloff (same 2px total footprint as v86)
   ctx.fillStyle='rgba(0,0,0,'+(strong?'.42':'.30')+')';
-  ctx.fillRect(x+cut,y+h,w-cut*2,shadow);ctx.fillRect(x+w,y+cut,shadow,h-cut*2);
+  ctx.fillRect(x+cut,y+h,w-cut*2,1.5);ctx.fillRect(x+w,y+cut,1.5,h-cut*2);
+  ctx.fillStyle='rgba(0,0,0,'+(strong?'.18':'.13')+')';
+  ctx.fillRect(x+cut+1,y+h+1.5,w-cut*2-2,F);ctx.fillRect(x+w+1.5,y+cut+1,F,h-cut*2-2);
+  // body keeps the v86 two-rect interior; the hard 3px corner notch is filled with a
+  // half-pixel 45-degree staircase so corners read as crafted chamfers, not big steps
   ctx.fillStyle=fill||'rgba(11,14,26,0.72)';
   ctx.fillRect(x+cut,y,w-cut*2,h);ctx.fillRect(x,y+cut,w,h-cut*2);
-  ctx.fillStyle='rgba(255,246,232,'+(strong?'.20':'.12')+')';
-  ctx.fillRect(x+cut,y,w-cut*2,1);ctx.fillRect(x,y+cut,1,h-cut*2);
-  ctx.fillStyle='rgba(0,0,0,0.32)';
-  ctx.fillRect(x+cut,y+h-1,w-cut*2,1);ctx.fillRect(x+w-1,y+cut,1,h-cut*2);
+  for(let s=0;s<cut*2;s++){
+    const inset=cut-F-s*F,sw=cut-inset,oy=s*F;
+    ctx.fillRect(x+inset,y+oy,sw,F);          ctx.fillRect(x+w-cut,y+oy,sw,F);
+    ctx.fillRect(x+inset,y+h-oy-F,sw,F);      ctx.fillRect(x+w-cut,y+h-oy-F,sw,F);
+  }
+  // dual keylines: bright lit edge + soft secondary (top/left), mirrored two-depth dark (bottom/right)
+  ctx.fillStyle='rgba(255,246,232,'+(strong?'.26':'.16')+')';
+  ctx.fillRect(x+cut,y,w-cut*2,F);ctx.fillRect(x,y+cut,F,h-cut*2);
+  ctx.fillStyle='rgba(255,246,232,'+(strong?'.10':'.06')+')';
+  ctx.fillRect(x+cut,y+F,w-cut*2,F);ctx.fillRect(x+F,y+cut,F,h-cut*2);
+  ctx.fillStyle='rgba(0,0,0,0.34)';
+  ctx.fillRect(x+cut,y+h-F,w-cut*2,F);ctx.fillRect(x+w-F,y+cut,F,h-cut*2);
+  ctx.fillStyle='rgba(0,0,0,0.16)';
+  ctx.fillRect(x+cut,y+h-1,w-cut*2,F);ctx.fillRect(x+w-1,y+cut,F,h-cut*2-F);
   if(accent){
     const aw=Math.min(w-cut*2,strong?48:32),ax=Math.round(x+(w-aw)/2);
     ctx.fillStyle=accent;ctx.fillRect(ax,y,aw,1);
+    ctx.fillRect(ax-F,y+F,F,F);ctx.fillRect(ax+aw-F+F,y+F,F,F);   // stitched end caps
     if(strong)ctx.fillRect(ax+6,y+h-1,Math.max(4,aw-12),1);
   }
 }
 function pixelButton(r,label,primary) {
-  const accent=primary?PLAY_HEX():UI_HEX(),pulse=primary?beatPulse():0;
+  const accent=primary?PLAY_HEX():UI_HEX(),pulse=primary?beatPulse():0,F=VISUAL_SYSTEM.frame.fine,cut=VISUAL_SYSTEM.frame.cut;
   pixelFrame(r.x,r.y,r.w,r.h,primary?playA(.68+pulse*.22):'rgba(11,14,26,0.62)',accent,primary);
+  // fine bevel: pressed-metal ramp under the keyline (light crest, shaded base) so the
+  // control reads as a machined plate instead of a flat tinted rectangle
+  ctx.fillStyle=primary?'rgba(255,246,232,0.18)':'rgba(255,246,232,0.08)';
+  ctx.fillRect(r.x+cut,r.y+1,r.w-cut*2,F);
+  ctx.fillStyle=primary?'rgba(0,0,0,0.20)':'rgba(0,0,0,0.14)';
+  ctx.fillRect(r.x+cut,r.y+r.h-1.5,r.w-cut*2,F);
   const sc=1;
   txt(label,r.x+r.w/2,r.y+Math.floor((r.h-7*sc)/2),sc,primary?'#08301F':VISUAL_SYSTEM.palette.paper,'center');
 }
 function drawNavGlyph(id,cx,y,col) {
+  // v91: same 11x8 bounding boxes, redrawn on the half-pixel fine grid
   ctx.fillStyle=col;
-  if(id==='home') { ctx.fillRect(cx-5,y+4,11,2);ctx.fillRect(cx-3,y+2,7,2);ctx.fillRect(cx-1,y,3,2); }
-  else if(id==='shop') { ctx.fillRect(cx-4,y+1,9,7);ctx.fillStyle=VISUAL_SYSTEM.palette.ink;ctx.fillRect(cx-2,y+3,5,1);ctx.fillRect(cx,y+1,1,7); }
-  else { ctx.fillRect(cx-3,y+1,7,6);ctx.fillRect(cx-2,y,5,8);ctx.fillStyle=VISUAL_SYSTEM.palette.ink;ctx.fillRect(cx-1,y+2,1,2);ctx.fillRect(cx+2,y+2,1,2); }
+  if(id==='home') {                 // stepped peak with a smooth half-pixel slope + lit crest
+    for(let s=0;s<12;s++){ const hw=.5+s*.45; ctx.fillRect(cx-hw,y+s*.5,hw*2,.5); }
+    ctx.fillStyle='rgba(255,246,232,0.45)'; ctx.fillRect(cx-.5,y,1,.5); ctx.fillRect(cx-1,y+.5,2,.5);
+  }
+  else if(id==='shop') {            // supply crate: chamfered plate, fine seams, corner rivets
+    ctx.fillRect(cx-4,y+1.5,9,6);ctx.fillRect(cx-3.5,y+1,8,7);
+    ctx.fillStyle=VISUAL_SYSTEM.palette.ink;
+    ctx.fillRect(cx-2,y+3.5,5,.5);ctx.fillRect(cx,y+1,.5,7);
+    ctx.fillStyle='rgba(255,246,232,0.35)';
+    ctx.fillRect(cx-3,y+1.5,.5,.5);ctx.fillRect(cx+3.5,y+1.5,.5,.5);ctx.fillRect(cx-3,y+7,.5,.5);ctx.fillRect(cx+3.5,y+7,.5,.5);
+  }
+  else {                            // portrait badge: chamfered corners, finer eyes, quiet mouth
+    ctx.fillRect(cx-3,y+1,7,6);ctx.fillRect(cx-2,y,5,8);
+    ctx.fillRect(cx-2.5,y+.5,6,.5);ctx.fillRect(cx-2.5,y+7,6,.5);
+    ctx.fillStyle=VISUAL_SYSTEM.palette.ink;
+    ctx.fillRect(cx-1,y+2,1,2);ctx.fillRect(cx+2,y+2,1,2);ctx.fillRect(cx,y+5.5,2,.5);
+  }
 }
 function drawJourneyProgress(active,x,y,w) {
   const gap=2,segW=Math.max(3,Math.floor((w-gap*(TIERS.length-1))/TIERS.length));
   const total=segW*TIERS.length+gap*(TIERS.length-1),sx=Math.round(x+(w-total)/2);
   ctx.fillStyle='rgba(11,14,26,0.72)';ctx.fillRect(sx-3,y-2,total+6,7);
+  ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(sx-3,y-2,total+6,.5);   // fine lit rim
+  ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(sx-3,y+4.5,total+6,.5);      // fine base shade
   for(let i=0;i<TIERS.length;i++){
-    const on=i===active,done=i<active;
+    const on=i===active,done=i<active,gx=sx+i*(segW+gap);
     ctx.globalAlpha=on?1:(done?.58:.18);ctx.fillStyle=TIERS[i].c;
-    ctx.fillRect(sx+i*(segW+gap),y+(on?0:1),segW,on?3:2);
+    ctx.fillRect(gx,y+(on?0:1),segW,on?3:2);
+    if(on){ctx.fillStyle='rgba(255,246,232,0.5)';ctx.fillRect(gx,y,segW,.5);} // active crest
   }
   ctx.globalAlpha=1;
 }

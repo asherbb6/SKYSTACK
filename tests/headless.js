@@ -1223,11 +1223,26 @@ check('production UI keeps presentation ownership separate from locked mechanics
 check('Home, Shop, Bases, and Me share centered dark frames without entering navigation', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";renderHome();state="shop";shopView="character";renderShop();shopView="base";renderShop();state="me";renderMe();const lastMix=MIX_ROWS[MIX_ROWS.length-1],meW=Math.min(W-PAD*2-16,200),meX=Math.round((W-meW)/2)-8;if(HERO_CARD.x!==Math.round((W-HERO_CARD.w)/2)||SHOP_TABS[0].x+SHOP_TABS[0].w!==SHOP_TABS[1].x||EQUIP_BTN.y+EQUIP_BTN.h>=194||LOAD_CHIPS.some(c=>c.y+c.h>=NAV_Y)||lastMix.plus.y+lastMix.plus.h>=NAV_Y||meX<0||meX+meW+16>W)return false;}return true; })()'));
 
+// ---------- v91 UI fine grid ----------
+check('v91 fine grid: supersample snaps even so half-pixel UI detail stays crisp', () =>
+  /RS = Math\.max\(2, Math\.min\(4, 2 \* Math\.floor\(fit \/ 2\)\)\)/.test(src) &&
+  fresh.run('RS >= 2 && RS % 2 === 0 && VISUAL_SYSTEM.frame.fine === 0.5'));
+check('v91 fine type: every glyph has a cached corner-smoothed expansion with identical metrics', () => fresh.run(
+  '(() => { if (!Object.keys(FONT).every(k => Array.isArray(FONT_FINE[k]) && FONT_FINE[k].length === 14 && FONT_FINE[k].every(r => r.every(run => run[0] >= 0 && run[0] + run[1] <= 10)))) return false;' +
+  // Scale2x proof: the O rim rounds — fine row 1 grows diagonal connectors past row 0, which
+  // naive pixel-doubling (identical paired rows) cannot produce
+  'const o0 = FONT_FINE["O"][0], o1 = FONT_FINE["O"][1]; return o0.length === 1 && o0[0][0] === 2 && o0[0][1] === 6 && o1.length === 1 && o1[0][0] === 1 && o1[0][1] === 8; })()') &&
+  /const cw = 6 \* sc/.test(src));
+check('v91 fine surfaces: chamfered frames, dual keylines, and button bevels render without throwing', () => {
+  fresh.run('pixelFrame(10,10,120,40,null,"#FFD75E",true); pixelFrame(4,4,60,20,"rgba(11,14,26,0.62)",null,false); pixelButton({x:10,y:60,w:100,h:14},"BEGIN CLIMB",true); pixelButton({x:10,y:80,w:100,h:14},"SKY MAP",false); drawNavGlyph("home",20,100,"#FFF6E8"); drawNavGlyph("shop",40,100,"#FFF6E8"); drawNavGlyph("me",60,100,"#FFF6E8"); drawJourneyProgress(3,10,120,140); drawCoin(5,5);');
+  return /frame\.fine/.test(src) && /const inset=cut-F-s\*F/.test(src);
+});
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v90', () => /const CACHE = 'skystack-v90'/.test(sw));
+check('sw.js cache bumped to v91', () => /const CACHE = 'skystack-v91'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
-  /RS = Math\.max\(1, Math\.min\(3,/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
+  /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
