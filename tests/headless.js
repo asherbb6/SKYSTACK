@@ -1238,9 +1238,20 @@ check('v91 fine surfaces: chamfered frames, dual keylines, and button bevels ren
   return /frame\.fine/.test(src) && /const inset=cut-F-s\*F/.test(src);
 });
 
+// ---------- v92 fine icons + symmetry ----------
+check('v92 fine icons: every power-up, star, plate, and speaker renders without throwing', () => {
+  fresh.run('for (const k of Object.keys(POW)) { drawIcon(k, 10, 10, false); drawIcon(k, 30, 10, true); } ' +
+    'drawStarPix(20, 60, 1, true); drawStarPix(40, 60, 2, false); plate3D(4, 80, 60, 9, "#24212B", "#FFD75E"); ' +
+    'muted = false; state = "playing";');
+  return /v92: every power-up icon redrawn on the half-pixel fine grid/.test(src);
+});
+check('v92 symmetry: button labels center exactly and map captions clamp on-screen', () =>
+  /r\.y\+\(r\.h-7\*sc\)\/2/.test(src) && /clamp\(pt\.x, 3\+cpw\/2, W-3-cpw\/2\)/.test(src) &&
+  fresh.run('TUT_LESSONS.every(l => !l.compact || (l.compact.length < l.body.length && l.compact.length*6-1 <= 180-12))'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v91', () => /const CACHE = 'skystack-v91'/.test(sw));
+check('sw.js cache bumped to v92', () => /const CACHE = 'skystack-v92'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
