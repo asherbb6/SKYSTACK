@@ -1433,6 +1433,18 @@ check('v102 bolder accents: foliage crown doubled, taller companion blades, dens
   /taller companion blade/.test(src) &&
   /v102 doubled the density and contrast/.test(src));
 
+// ---------- v103 celestial landmark detail ----------
+check('v103 celestial objects carry the detail-pass markers (Earth, gold, balloons, satellites, asteroids, gate)', () =>
+  /v103: continents gain a sunlit coast edge/.test(src) &&
+  /v103: faceted shards/.test(src) &&
+  /v103: the weather balloons get the v100 sprite treatment/.test(src) &&
+  /v103: crossing satellites get panel grid seams/.test(src) &&
+  /v103: asteroids gain a sunlit chamfer/.test(src) &&
+  /v103: the pillars gain capitals/.test(src));
+check('v103 final gate, Earth limb, and gold fragments render across their bands without throwing', () => fresh.run(
+  '(() => { for (const A2 of [380, 430, 470, 505, 535, 545]) { drawEarthLimb(A2, 1); drawGoldFragments(A2, 1, 40);' +
+  'cameraY = GROUND_Y - A2*BH - (H-100); drawFinalGate(cameraY, 1, 40); } return true; })()'));
+
 // ---------- v97 shop page audit ----------
 check('v97 boost chips sit inside the Run Boosts card with breathing gaps', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
@@ -1521,7 +1533,7 @@ check('v94 Me Progress tab distributes its card across available room instead of
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v102', () => /const CACHE = 'skystack-v102'/.test(sw));
+check('sw.js cache bumped to v103', () => /const CACHE = 'skystack-v103'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

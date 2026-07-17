@@ -2761,9 +2761,19 @@ function drawEarthLimb(A, a) {
     ctx.globalAlpha = .52*vis; ctx.fillStyle = '#245892'; ctx.fillRect(x, top, 2, 3);
     ctx.globalAlpha = .32*vis; ctx.fillStyle = '#86BDF4'; ctx.fillRect(x, top-3, 2, 3);
   }
-  ctx.globalAlpha = .34*vis;
+  // v103: continents gain a sunlit coast edge and drifting cloud streaks pass over the limb —
+  // the flat single-tone blobs read as map markers, not a planet
   for (let k = 0; k < 5; k++) { const cx = Math.round(bhash(k*19+7)*W), t = (cx-W/2)/W, top = horizon + Math.round(t*t*(78+recede*34));
-    if (top < H-3) pixDisc(cx, top + 11 + k*5, 6 + (k%3)*3, k&1 ? '#1D4778' : '#286044'); }
+    if (top >= H-3) continue;
+    const ly = top + 11 + k*5, lr = 6 + (k%3)*3, land = k&1;
+    ctx.globalAlpha = .34*vis; pixDisc(cx, ly, lr, land ? '#1D4778' : '#286044');
+    ctx.globalAlpha = .30*vis; pixDisc(cx - (lr*.3|0), ly - (lr*.35|0), Math.max(2, lr*.5|0), land ? '#2E639E' : '#3A8A5E');   // lit coast side
+    ctx.globalAlpha = .16*vis; ctx.fillStyle = '#DCE9F8';                                       // cloud streaks over the surface
+    ctx.fillRect(cx - lr, ly - 1, lr + 2, 1); ctx.fillRect(cx - (lr>>1), ly + 2, lr, 1);
+  }
+  ctx.globalAlpha = .12*vis; ctx.fillStyle = '#EAF4FF';                                         // one broad weather front along the limb
+  for (let x = 0; x < W; x += 26) { const t = (x - W/2)/W, top = horizon + Math.round(t*t*(78 + recede*34));
+    if (top < H - 2 && bhash(x*7+3) > .4) ctx.fillRect(x, top + 5 + Math.round(bhash(x*13)*8), 12 + Math.round(bhash(x*3)*10), 1); }
   ctx.globalAlpha = 1;
 }
 function drawGoldFragments(A, a, ph) {
@@ -2773,8 +2783,12 @@ function drawGoldFragments(A, a, ph) {
     const side = k&1, lane = 20 + bhash(k*37+11)*Math.max(16, W*.22), x = Math.round(side ? W-lane : lane);
     const y = Math.round(18 + bhash(k*53+17)*(H-36) + (reduceMotion ? 0 : Math.sin(ph*.018+k)*3));
     const tw = reduceMotion ? .72 : .45 + .4*(.5+.5*Math.sin(ph*.07+k*1.7));
+    // v103: faceted shards — a shaded lower-right facet and a hot core make them read as solid
+    // gold catching the light instead of flat plus signs
     ctx.globalAlpha = amount*tw; ctx.fillStyle = k%3 ? '#D9A938' : '#FFF0A8';
-    ctx.fillRect(x, y-2, 2, 5); ctx.fillRect(x-2, y, 5, 2); ctx.fillStyle = '#FFF8D8'; ctx.fillRect(x, y, 1, 1);
+    ctx.fillRect(x, y-2, 2, 5); ctx.fillRect(x-2, y, 5, 2);
+    ctx.fillStyle = '#8B641C'; ctx.fillRect(x+1, y+1, 1, 2); ctx.fillRect(x+1, y+1, 2, 1);     // shaded facet
+    ctx.fillStyle = '#FFF8D8'; ctx.fillRect(x, y, 1, 1); ctx.fillRect(x, y-2, 1, 1);           // hot core + tip glint
   }
   ctx.globalAlpha = 1;
 }
@@ -2789,8 +2803,16 @@ function drawFinalGate(cy, a, ph) {
   ctx.fillRect(lx-7, top+10, 14, 57); ctx.fillRect(rx-7, top+10, 14, 57);
   ctx.fillStyle = '#B98524'; ctx.fillRect(lx-5, top+8, 10, 58); ctx.fillRect(rx-5, top+8, 10, 58);
   ctx.fillStyle = '#F0C85C'; ctx.fillRect(lx-3, top+10, 2, 52); ctx.fillRect(rx-3, top+10, 2, 52);
+  // v103: the pillars gain capitals, base plinths, and offset ring-band shading so they read as
+  // carved ancient columns instead of striped rectangles
+  ctx.fillStyle = '#D6A83C'; ctx.fillRect(lx-8, top+7, 16, 3); ctx.fillRect(rx-8, top+7, 16, 3);          // capitals
+  ctx.fillStyle = '#FFE28A'; ctx.fillRect(lx-8, top+7, 16, 1); ctx.fillRect(rx-8, top+7, 16, 1);
+  ctx.fillRect(lx-9, top+9, 2, 1); ctx.fillRect(rx+7, top+9, 2, 1);                                       // capital lip
   ctx.fillStyle = '#8B641C';
-  for (let y = top+16; y < gy+8; y += 10) { ctx.fillRect(lx-7, y, 14, 2); ctx.fillRect(rx-7, y, 14, 2); }
+  for (let y = top+16; y < gy+8; y += 10) { ctx.fillRect(lx-7, y, 14, 2); ctx.fillRect(rx-7, y, 14, 2);
+    ctx.fillStyle = '#5C4213'; ctx.fillRect(lx-7, y+2, 14, 1); ctx.fillRect(rx-7, y+2, 14, 1); ctx.fillStyle = '#8B641C'; }   // band undershadow
+  ctx.fillStyle = '#5C4213'; ctx.fillRect(lx-9, gy+6, 18, 4); ctx.fillRect(rx-9, gy+6, 18, 4);            // base plinths
+  ctx.fillStyle = '#B98524'; ctx.fillRect(lx-9, gy+6, 18, 1); ctx.fillRect(rx-9, gy+6, 18, 1);
   ctx.globalAlpha = .48*a; ctx.fillStyle = '#D6A83C'; ctx.fillRect(lx, top, rx-lx, 7);
   ctx.globalAlpha = .72*a; ctx.fillStyle = '#FFE28A'; ctx.fillRect(lx+5, top+2, rx-lx-10, 2);
   for (let k = 0; k < 5; k++) { const sx = Math.round(lerp(lx+12,rx-12,k/4)); ctx.globalAlpha = a*(reduceMotion?.65:.42+.35*(.5+.5*Math.sin(ph*.08+k))); ctx.fillStyle='#FFF6C8'; ctx.fillRect(sx-1,top-2,3,3); }
@@ -2844,6 +2866,8 @@ function drawJetStreamBg(cy, a, ph) {   // high thin racing streaks + a jet cros
     if (px > -50 && px < W + 50) {
       for (let t = 0; t < 46; t++) { ctx.globalAlpha = (.42*(1 - t/46))*a; ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fillRect(px+9 + t*3, py+2, 3, 2); }
       ctx.globalAlpha = .75*a; ctx.fillStyle = '#C7D2E6'; ctx.fillRect(px, py, 8, 3); ctx.fillRect(px-3, py+1, 3, 1); ctx.fillRect(px+3, py-2, 2, 2); ctx.fillRect(px+2, py+3, 2, 2);
+      ctx.fillStyle = '#EFF4FC'; ctx.fillRect(px, py, 8, 1);                                   // v103: sunlit fuselage spine
+      ctx.fillStyle = '#8A93AD'; ctx.fillRect(px, py+2, 8, 1); ctx.fillRect(px+3, py-2, 1, 2); // belly + fin shade
       ctx.fillStyle = '#8FB8FF'; ctx.fillRect(px+6, py, 1, 1);
     }
   }
@@ -2864,13 +2888,22 @@ function drawStratosphereBg(cy, a, ph) {   // thin edge-of-space cirrus, slow ri
   const bs = cy*.6, BP = 150, boff = ((bs % BP) + BP) % BP;
   for (let y = -boff - BP; y < H + BP; y += BP) for (let k = 0; k < 2; k++) {
     const row = Math.round((y+bs)/BP), bx = Math.round(24 + bhash(row*13 + k*29)*(W-70) + (reduceMotion?0:Math.sin(ph*.02+row+k)*4)), by = Math.round(y + k*72);
+    // v103: the weather balloons get the v100 sprite treatment — sheen, twin ropes, woven basket
     ctx.globalAlpha = .5*a; pixDisc(bx, by, 6, '#E8823D'); ctx.fillStyle = 'rgba(255,215,120,0.9)'; ctx.fillRect(bx-6, by, 12, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx-1, by+8, 2, 3); ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(bx-2, by+6, 4, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(bx-3, by-4, 2, 2); ctx.fillRect(bx-2, by-5, 1, 1);   // sheen
+    ctx.fillStyle = 'rgba(120,50,20,0.5)'; ctx.fillRect(bx+2, by+2, 2, 2);                     // shaded flank
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(bx-2, by+6, 1, 2); ctx.fillRect(bx+1, by+6, 1, 2);        // twin ropes
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx-1, by+8, 2, 3);
+    ctx.fillStyle = 'rgba(255,246,232,0.5)'; ctx.fillRect(bx-1, by+8, 2, 1);                   // basket rim
+    ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(bx-2, by+6, 4, 1);
   }
   const ds = cy*.6, DP = 300, doff = ((ds % DP) + DP) % DP;                            // relay dish + expanding signal ring
   for (let y = -doff; y < H; y += DP) {
     const dx = 20, dy = Math.round(y);
     ctx.globalAlpha = .55*a; ctx.fillStyle = '#9AA6C2'; ctx.fillRect(dx, dy, 1, 12); pixDisc(dx+4, dy-2, 4, '#C9D2E6'); pixDisc(dx+5, dy-2, 3, '#8A93AD');
+    ctx.fillStyle = '#E8EEF8'; ctx.fillRect(dx+2, dy-5, 2, 1);                                 // v103: lit dish rim + feed spar
+    ctx.fillStyle = '#6A7390'; ctx.fillRect(dx+6, dy-2, 3, 1); ctx.fillRect(dx+8, dy-3, 1, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(dx-1, dy+11, 3, 1);                       // mast foot shadow
     if (!reduceMotion) { const pr = 4 + (ph*.4) % 26; ctx.globalAlpha = (.35*(1 - (pr-4)/26))*a; ctx.fillStyle = '#BFE8FF'; ringFrame(dx+4, dy-2, Math.round(pr)); }
   }
 }
@@ -2886,8 +2919,11 @@ function drawAuroraBg(cy, a, ph) {   // bold waving aurora curtains + big floati
   const s = cy*.5, P = 158, off = ((s % P) + P) % P;
   for (let y = -off; y < H; y += P) for (let k = 0; k < 2; k++) {
     const row = Math.round((y+s)/P), cx = Math.round(bhash(row*7 + k*17)*W), cyy = Math.round(y + k*72);
+    // v103: the big drifting crystals gain chamfered tips and a shaded right facet (v100 style)
     ctx.globalAlpha = .4*a; ctx.fillStyle = '#BFF0FA'; ctx.fillRect(cx, cyy-6, 1, 12); ctx.fillRect(cx-4, cyy, 9, 1); ctx.fillRect(cx-3, cyy-3, 7, 1); ctx.fillRect(cx-3, cyy+3, 7, 1);
-    ctx.globalAlpha = .6*a; ctx.fillStyle = '#FFFFFF'; ctx.fillRect(cx, cyy-2, 1, 4);
+    ctx.fillRect(cx-1, cyy-7, 3, 1); ctx.fillRect(cx-1, cyy+6, 3, 1);                          // chamfered tips
+    ctx.globalAlpha = .3*a; ctx.fillStyle = '#5FA8C4'; ctx.fillRect(cx+1, cyy-2, 1, 5); ctx.fillRect(cx+2, cyy, 2, 1);   // shaded facet
+    ctx.globalAlpha = .6*a; ctx.fillStyle = '#FFFFFF'; ctx.fillRect(cx, cyy-2, 1, 4); ctx.fillRect(cx-2, cyy-1, 1, 1);   // core + spark
   }
 }
 function drawSpaceBg(cy, a, ph) {   // deep cosmos — the last atmosphere gives way to galaxies and a first Earth glimpse
@@ -2907,7 +2943,11 @@ function drawSpaceBg(cy, a, ph) {   // deep cosmos — the last atmosphere gives
   }
   const as = cy*.7, AP = 120, aoff = ((as % AP) + AP) % AP;
   for (let y = -aoff; y < H; y += AP) { const row = Math.round((y+as)/AP), ax = Math.round(bhash(row*3+1)*W + (reduceMotion?0:Math.sin(ph*.02+row)*6)), ay = Math.round(y);
-    ctx.globalAlpha = .5*a; pixDisc(ax, ay, 3, '#5A5468'); ctx.fillStyle = '#3A3648'; ctx.fillRect(ax-1, ay, 2, 1); ctx.fillRect(ax+1, ay-1, 1, 1);
+    // v103: asteroids gain a sunlit chamfer, a crater pit, and a shaded underside
+    ctx.globalAlpha = .5*a; pixDisc(ax, ay, 3, '#5A5468');
+    ctx.fillStyle = '#7E7890'; ctx.fillRect(ax-2, ay-2, 2, 1);                                 // sunlit chamfer
+    ctx.fillStyle = '#3A3648'; ctx.fillRect(ax-1, ay, 2, 1); ctx.fillRect(ax+1, ay-1, 1, 1);   // crater pits
+    ctx.fillStyle = '#282436'; ctx.fillRect(ax-1, ay+2, 3, 1);                                 // shaded underside
   }
   drawEarthLimb(A, a);
   if (q.gold > 0) drawGoldFragments(A, a*.35, ph);
@@ -2919,14 +2959,26 @@ function drawOrbitBg(cy, a, ph) {   // low orbit — a huge planet limb below, s
   for (let y = -soff; y < H*.72; y += SP) {
     const row = Math.round((y+ss)/SP), dir = (row & 1) ? 1 : -1, prog = reduceMotion ? bhash(row*3) : ((ph*.6 + row*90) % (W+80))/(W+80);
     const sx = Math.round(dir > 0 ? -40 + prog*(W+80) : W+40 - prog*(W+80)), sy = Math.round(y);
+    // v103: crossing satellites get panel grid seams, a body glint, an antenna, and a blinking
+    // running light — the bare three-rectangle craft read as noise
     ctx.globalAlpha = .7*a; ctx.fillStyle = '#C7CFE6'; ctx.fillRect(sx-1, sy-1, 3, 3);
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(sx-1, sy-1, 1, 1);                                 // body glint
+    ctx.fillStyle = '#9AA6C2'; ctx.fillRect(sx, sy-3, 1, 2);                                   // antenna mast
     ctx.fillStyle = '#8FB8FF'; ctx.fillRect(sx-6, sy, 4, 2); ctx.fillRect(sx+3, sy, 4, 2);
+    ctx.fillStyle = '#2E4E74'; ctx.fillRect(sx-4, sy, 1, 2); ctx.fillRect(sx+5, sy, 1, 2);     // panel grid seams
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(sx-6, sy, 2, 1); ctx.fillRect(sx+3, sy, 2, 1);   // panel glint
+    if (!reduceMotion && ((ph/10 + row) | 0) % 2 === 0) { ctx.fillStyle = '#62E8B5'; ctx.fillRect(sx+2, sy+1, 1, 1); }   // running light
   }
   if (q.gold > 0) drawGoldFragments(A, a*.62, ph);
   const planet = clamp((A - (TIERS[8].n + 54)) / 36, 0, 1);                           // distant summit world arrives late in orbit
   if (planet > 0) { const px=Math.round(W*.18), py=Math.round(H*.22);
+    // v103: the summit world matches the v100 ringed-planet sprite — night side, ring tips, glint
     ctx.globalAlpha=.34*a*planet; pixDisc(px,py,13,'#6B4B8F'); pixDisc(px-3,py-3,9,'#A578C7');
-    ctx.fillStyle='#D9B66C'; ctx.fillRect(px-21,py,15,2); ctx.fillRect(px+8,py,15,2); }
+    ctx.fillStyle='rgba(40,28,66,0.8)'; ctx.fillRect(px+3,py-8,6,16);                          // night side
+    ctx.fillStyle='#D9B66C'; ctx.fillRect(px-21,py,15,2); ctx.fillRect(px+8,py,15,2);
+    ctx.fillStyle='#8B641C'; ctx.fillRect(px-21,py+1,15,1); ctx.fillRect(px+8,py+1,15,1);      // ring underside shade
+    ctx.fillStyle='rgba(255,246,232,0.6)'; ctx.fillRect(px-22,py,2,1); ctx.fillRect(px+21,py,2,1);   // drooping ring tips
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fillRect(px-7,py-8,4,1); }                      // day-side glint
 }
 function drawStarsBg(cy, a, ph) {   // the summit — a radiant golden gate, huge twinkling stars, a ringed planet
   const A = screenA(cy), q = finalJourneyAt(A);
