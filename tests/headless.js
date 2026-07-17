@@ -1395,6 +1395,21 @@ check('v100 celestial drift sprites are redrawn on the fine grid and render for 
   /v100: every drifting mid-ground sprite redrawn on the half-pixel fine grid/.test(src) &&
   fresh.run('(() => { for (let t2=0;t2<9;t2++) for (const s2 of [0,3,4]) biomeSprite(t2, 60, 60, s2, 10); return true; })()'));
 
+// ---------- v101 ground-world fine-grid detail pass ----------
+check('v101 forest floor, canopy, bark, and landmarks carry the fine-grid pass markers', () =>
+  /v101: fine-grid canopy/.test(src) &&
+  /v101: the forest floor redrawn on the half-pixel fine grid/.test(src) &&
+  /v101: fine-grid bark/.test(src) &&
+  /v101: each landmark redrawn on the half-pixel fine grid/.test(src));
+check('v101 landmark platforms render for every region without throwing', () => fresh.run(
+  '(() => { for (let r2 = 0; r2 <= 10; r2++) drawLandmarkPlatform(W/2, 200, 40, r2); return true; })()'));
+check('v101 base blocks render with and without caps without throwing', () => fresh.run(
+  '(() => { for (let l2 = 0; l2 <= 10; l2++) { drawBaseBlock(40, 100, 60, 14, l2, true); drawBaseBlock(40, 120, 60, 14, l2, false); } return true; })()'));
+check('v101 foliage blobs render at every size incl. below the fine-detail gate', () => fresh.run(
+  '(() => { for (const r2 of [2, 3, 4, 7, 12, 18]) foliageBlob(80, 80, r2, 1); return true; })()'));
+check('v101 grass blades and tufts are two-tone (body + sunlit tip)', () =>
+  /blade body/.test(src) && /sunlit tip leans off-axis/.test(src) && /sunlit tuft tip/.test(src));
+
 // ---------- v97 shop page audit ----------
 check('v97 boost chips sit inside the Run Boosts card with breathing gaps', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
@@ -1483,7 +1498,7 @@ check('v94 Me Progress tab distributes its card across available room instead of
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v100', () => /const CACHE = 'skystack-v100'/.test(sw));
+check('sw.js cache bumped to v101', () => /const CACHE = 'skystack-v101'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

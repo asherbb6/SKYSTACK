@@ -2702,12 +2702,20 @@ function biomeBackdrop(tier, cy, a) {
   ctx.globalAlpha = 1;
 }
 // a solid, rounded, 3-D-shaded clump of leaves (dark base → mid → sun-lit top-left)
+// v101: fine-grid canopy — same disc stack, plus a half-pixel sunlit crown arc up-left and a
+// shaded under-belly seam so every leaf mass reads as a lit volume (used by all trees/boughs/bushes)
 function foliageBlob(cx, cy2, r, a) {
   cx = Math.round(cx); cy2 = Math.round(cy2); r = Math.round(r);
   ctx.globalAlpha = .94*a; pixDisc(cx, cy2, r, '#123A18');
   pixDisc(cx-1, cy2, (r*.86)|0, '#1A4C22'); pixDisc(cx+((r*.4)|0), cy2+((r*.3)|0), (r*.5)|0, '#153F1C');
   pixDisc(cx-2, cy2-2, (r*.62)|0, '#2A7034');
   ctx.globalAlpha = .85*a; pixDisc(cx-((r*.4)|0), cy2-((r*.45)|0), (r*.34)|0, '#49A048');   // sun-lit crown
+  if (r >= 4) {
+    ctx.globalAlpha = .6*a; ctx.fillStyle = '#6ECB54';                                      // crown arc catches the sun
+    ctx.fillRect(cx-((r*.55)|0), cy2-r+.5, (r*.7)|0, .5); ctx.fillRect(cx-((r*.8)|0), cy2-((r*.7)|0)+.5, (r*.4)|0, .5);
+    ctx.globalAlpha = .5*a; ctx.fillStyle = '#0C2810';                                      // under-belly seam
+    ctx.fillRect(cx-((r*.4)|0), cy2+r-1, (r*.85)|0, .5);
+  }
   ctx.globalAlpha = 1;
 }
 // altitude (blocks) at the camera focus — same reference point currentBiome uses
@@ -3541,34 +3549,57 @@ function drawSurfaceGround(ph, yCeil) {
   for (const seg of [[0, cxL], [cxR, W]]) {
     const x0 = seg[0], x1 = seg[1];
     ctx.globalAlpha = 1;
+    // v101: the forest floor redrawn on the half-pixel fine grid — same layout/palette, every
+    // element gains a lit side and a shaded side (dirt strata, two-tone blades, chamfered stones,
+    // stemmed ferns, petaled flowers, gilled mushrooms)
     ctx.fillStyle = '#5A3F2A'; ctx.fillRect(x0, yCeil, x1 - x0, 7);                            // dirt lip
+    ctx.fillStyle = '#4A3320'; ctx.fillRect(x0, yCeil + 2.5, x1 - x0, .5);                     // buried strata seam
     ctx.fillStyle = '#3A2818'; ctx.fillRect(x0, yCeil + 5, x1 - x0, 2);
+    ctx.fillStyle = '#6B4A30';                                                                 // pebble specks in the topsoil
+    for (let dx = x0 + 2; dx < x1 - 2; dx += 9) { if (bhash(dx*23) < .5) continue; ctx.fillRect(dx, yCeil + 1 + bhash(dx*3)*3, 1, .5); }
+    ctx.fillStyle = '#2E1E10';                                                                 // root threads reach into the dark band
+    for (let dx = x0 + 5; dx < x1 - 2; dx += 13) { if (bhash(dx*37) < .55) continue; ctx.fillRect(dx, yCeil + 4.5, .5, 2); }
     ctx.fillStyle = '#3E8A32'; ctx.fillRect(x0, yCeil - 2, x1 - x0, 3);                        // grass base
-    ctx.fillStyle = '#6ECB54';
+    ctx.fillStyle = '#2E6E3A'; ctx.fillRect(x0, yCeil + .5, x1 - x0, .5);                      // grass roots shade into the dirt
     for (let gx = x0; gx < x1; gx += 3) { const gh = 2 + Math.round(bhash(gx*7)*3), sw = reduceMotion ? 0 : Math.round(Math.sin(ph*0.05 + gx)*0.6);
-      ctx.fillRect(gx + sw, yCeil - 2 - gh, 1, gh); }                                          // grass blades
+      ctx.fillStyle = '#4EA344'; ctx.fillRect(gx + sw, yCeil - 2 - gh, 1, gh);                 // blade body
+      ctx.fillStyle = '#7EDB64'; ctx.fillRect(gx + sw + (bhash(gx*11) > .5 ? .5 : 0), yCeil - 2 - gh, .5, 1.5); }   // sunlit tip leans off-axis
     for (let sx = x0 + 7; sx < x1 - 4; sx += 24) {                                             // small stones/moss stay outside the tower opening
       if (bhash(sx*19) < .42) continue;
       ctx.fillStyle = '#45433D'; ctx.fillRect(sx - 2, yCeil - 5, 7, 4); ctx.fillStyle = '#6E6B62'; ctx.fillRect(sx - 1, yCeil - 6, 4, 1);
-      if (bhash(sx*29) > .62) { ctx.fillStyle = '#3B5A27'; ctx.fillRect(sx, yCeil - 7, 4, 2); ctx.fillStyle = '#5D7A38'; ctx.fillRect(sx + 1, yCeil - 8, 2, 1); }
+      ctx.fillStyle = '#8A867A'; ctx.fillRect(sx - .5, yCeil - 6, 2, .5);                      // chamfered sun-catch on the crown
+      ctx.fillStyle = '#2C2A26'; ctx.fillRect(sx - 2, yCeil - 1.5, 7, .5);                     // seated shadow at the grass line
+      if (bhash(sx*29) > .62) { ctx.fillStyle = '#3B5A27'; ctx.fillRect(sx, yCeil - 7, 4, 2); ctx.fillStyle = '#5D7A38'; ctx.fillRect(sx + 1, yCeil - 8, 2, 1);
+        ctx.fillStyle = '#7A9A4A'; ctx.fillRect(sx + 1.5, yCeil - 8, 1, .5); }                 // moss highlight
     }
     for (let fx = x0 + 5; fx < x1 - 7; fx += 17) {                                             // ferns arc out of the grass
       const r = bhash(fx*13); if (r < .5) continue;
       const fh = 4 + Math.round(r*4), sw = reduceMotion ? 0 : Math.sin(ph*0.04 + fx)*0.9;
+      ctx.fillStyle = '#255C30'; ctx.fillRect(fx, yCeil - 3 - fh, 1, fh);                      // centre stem
       ctx.fillStyle = '#2E6E3A';
       for (let s2 = 0; s2 < fh; s2++) { const lean = s2*0.55 + sw*s2/fh;
         ctx.fillRect(Math.round(fx + lean), yCeil - 3 - s2, 1, 1); ctx.fillRect(Math.round(fx - lean), yCeil - 3 - s2, 1, 1); }
+      ctx.fillStyle = '#49A048';                                                               // paired lit leaflet tips at the arc ends
+      const tipL = fh*0.55 + sw; ctx.fillRect(Math.round(fx + tipL), yCeil - 3 - fh + 1, .5, .5); ctx.fillRect(Math.round(fx - tipL), yCeil - 3 - fh + 1, .5, .5);
     }
     for (let px2 = x0 + 10; px2 < x1 - 4; px2 += 21) {                                         // wildflowers on thin stems
       const r = bhash(px2*31); if (r < .45) continue;
       ctx.fillStyle = '#3E8A32'; ctx.fillRect(px2, yCeil - 6, 1, 4);
-      ctx.fillStyle = r > .8 ? '#FF9ED2' : r > .62 ? '#FFD75E' : '#FFF6E8';
-      ctx.fillRect(px2 - 1, yCeil - 8, 3, 2); ctx.fillRect(px2, yCeil - 9, 1, 1);
+      ctx.fillStyle = '#2E6E3A'; ctx.fillRect(px2 + .5, yCeil - 4.5, 1.5, .5);                 // stem leaf
+      const pet = r > .8 ? '#FF9ED2' : r > .62 ? '#FFD75E' : '#FFF6E8';
+      ctx.fillStyle = pet;                                                                     // petal cross instead of a solid lump
+      ctx.fillRect(px2 - 1, yCeil - 8, 3, 2); ctx.fillRect(px2, yCeil - 9, 1, 1); ctx.fillRect(px2, yCeil - 6.5, 1, .5);
+      ctx.fillStyle = r > .8 ? '#B5432E' : '#C98A3E'; ctx.fillRect(px2, yCeil - 7.5, 1, 1);    // flower centre
+      ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(px2 - 1, yCeil - 8, 1, .5);        // petal sun-catch
     }
     for (let mx = x0 + 15; mx < x1 - 5; mx += 37) {                                            // small red-cap mushrooms in the shade
       if (bhash(mx*43) < .55) continue;
       ctx.fillStyle = '#E8E0D0'; ctx.fillRect(mx, yCeil - 3, 1, 2);
-      ctx.fillStyle = '#B5432E'; ctx.fillRect(mx - 1, yCeil - 5, 3, 2); ctx.fillStyle = '#FFF6E8'; ctx.fillRect(mx, yCeil - 5, 1, 1);
+      ctx.fillStyle = '#C8BEA8'; ctx.fillRect(mx + .5, yCeil - 3, .5, 2);                      // stalk shade side
+      ctx.fillStyle = '#B5432E'; ctx.fillRect(mx - 1, yCeil - 5, 3, 2);
+      ctx.fillStyle = '#D86A4A'; ctx.fillRect(mx - 1, yCeil - 5, 3, .5);                       // cap rim light
+      ctx.fillStyle = '#8A2E1E'; ctx.fillRect(mx - 1, yCeil - 3.5, 3, .5);                     // gill line under the cap
+      ctx.fillStyle = '#FFF6E8'; ctx.fillRect(mx, yCeil - 5, 1, 1);
     }
     if (x1 - x0 > 26) {                                                                        // a leafy bush hugs the outer side of each lip
       const bx = x0 === 0 ? x0 + 12 : x1 - 13, br = 6 + Math.round(bhash(bx*17)*3);
@@ -3594,11 +3625,22 @@ function rootedTree(t, seed) {
   ctx.fillStyle = '#3A2616';            ctx.fillRect(x, trunkTop, w, y1 - trunkTop);           // solid trunk
   ctx.fillStyle = 'rgba(96,66,36,0.55)';ctx.fillRect(x + w - 2, trunkTop, 2, y1 - trunkTop);   // lit right edge
   ctx.fillStyle = 'rgba(0,0,0,0.32)';   ctx.fillRect(x, trunkTop, 2, y1 - trunkTop);           // shadow left edge
+  // v101: fine-grid bark — short nicks alternate sides down the trunk so the wood reads grained
+  ctx.fillStyle = 'rgba(20,10,4,0.55)';
+  for (let ny = trunkTop + 6; ny < y1 - 3; ny += 9) {
+    const nk = bhash(ny*13 + x); if (nk < .25) continue;
+    const nx = (ny/9 & 1) ? x + 2 + nk*(w-5) : x + 1.5 + nk*(w-5);
+    ctx.fillRect(nx, ny + nk*4, w > 7 ? 2.5 : 1.5, .5);
+  }
+  ctx.fillStyle = 'rgba(140,100,60,0.35)';                                                     // lit grain flecks near the sun edge
+  for (let ny = trunkTop + 10; ny < y1 - 4; ny += 14) { if (bhash(ny*7 + x) < .45) continue; ctx.fillRect(x + w - 3, ny, 1, 1.5); }
   const P = Math.max(20, Math.round(34 * t.s));
   for (let by = topY + 10; by < y1; by += P) {                                                 // branch nodes + connected foliage
     if (by < -20 || by > H + 20) continue;
     const nd = Math.round((baseY - by) / P), side = (nd & 1) ? 1 : -1, br = Math.round(16 * t.s);
     ctx.fillStyle = '#3A2616'; ctx.fillRect(side > 0 ? x + w : x - br, by, br, 3); ctx.fillRect(side > 0 ? x + w + br - 3 : x - br, by - 6, 3, 8);
+    ctx.fillStyle = 'rgba(96,66,36,0.5)'; ctx.fillRect(side > 0 ? x + w : x - br, by, br, .5);        // branch top catches light
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';    ctx.fillRect(side > 0 ? x + w : x - br, by + 2.5, br, .5);  // branch underside shadow
     foliageBlob(side > 0 ? x + w + br : x - br, by - 3, 15 * t.s, 1);
     foliageBlob(x + (w >> 1), by - 8 * t.s, 12 * t.s, 1);
   }
@@ -3675,6 +3717,7 @@ function drawTreeline(cy) {
   for (let x = 2; x < W; x += 7) {
     const hgt = 4 + Math.round(bhash(x*11)*6);
     ctx.fillRect(x, yCeil - 2 - hgt, 5, hgt);
+    if (bhash(x*17) > .55) { ctx.fillStyle = '#31582F'; ctx.fillRect(x + 1, yCeil - 2 - hgt, 2.5, .5); ctx.fillStyle = '#25482A'; }   // v101: sparse sunlit crown tips
   }
 }
 // slim background trunks between the main trees — silhouettes that thicken the forest.
@@ -3720,7 +3763,11 @@ function drawForestBand(cy, ph) {
     const fx = bhash(seed) * (W - 20) + 10 + Math.sin(ph * .03 + k) * 6;
     const fy = worldY(CANOPY_A1, cy) + ((ph * (0.4 + bhash(seed * 3) * 0.5) + k * 53) % span);
     if (fy < -10 || fy > H + 10) continue;
-    ctx.fillStyle = k % 2 ? '#3FBF5A' : '#C98A3E'; ctx.fillRect(Math.round(fx), Math.round(fy), 2, 1);
+    // v101: leaves are a lit blade + a tiny stem px that flips with the drift direction
+    const lx2 = Math.round(fx), ly2 = Math.round(fy), flip = Math.sin(ph * .03 + k) > 0;
+    ctx.fillStyle = k % 2 ? '#3FBF5A' : '#C98A3E'; ctx.fillRect(lx2, ly2, 2, 1);
+    ctx.fillStyle = k % 2 ? '#6ECB54' : '#E0B060'; ctx.fillRect(lx2 + (flip ? 1 : 0), ly2, 1, .5);
+    ctx.fillStyle = k % 2 ? '#255C30' : '#8A5A28'; ctx.fillRect(lx2 + (flip ? -0.5 : 2), ly2 + .5, .5, .5);
   }
   for (let A = WISP_A0; A <= WISP_A1; A += 3) {                                                // the first thin wisps herald CLOUD NINE
     const y = worldY(A, cy); if (y < -20 || y > H + 20) continue;
@@ -3994,39 +4041,62 @@ function drawBaseBlock(x, y, w, h, lvl, cap) {
   ctx.fillStyle = 'rgba(0,0,0,0.28)';       ctx.fillRect(x, y, 2, h);        // shadow (left)
   ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(x + w - 2, y, 2, h);// lit (right)
   ctx.fillStyle = 'rgba(0,0,0,0.18)';       for (let bx2 = x + 4; bx2 < x + w - 3; bx2 += 8) ctx.fillRect(bx2, y + (h>>1), 1, 1);  // speckle
-  if (cap) { ctx.fillStyle = th.t; ctx.fillRect(x, y, w, 3); ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(x, y, w, 1); }   // themed platform surface
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';       ctx.fillRect(x, y + h - 2.5, w, .5);              // v101: buried strata seam near the base
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'; for (let bx2 = x + 6; bx2 < x + w - 4; bx2 += 11) ctx.fillRect(bx2, y + 2.5, 1.5, .5);  // v101: faint lit flecks
+  if (cap) { ctx.fillStyle = th.t; ctx.fillRect(x, y, w, 3); ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(x, y, w, 1);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x, y + 2.5, w, .5); }   // themed platform surface, seated with a contact shadow
 }
 // a compact themed LANDMARK the campaign level starts on — a real cloud / branch / rock /
 // deck (NOT a tall pillar), sitting under the single starting block. cx = block centre, topY = block bottom.
 function drawLandmarkPlatform(cx, topY, bw, region) {
   const pw = Math.round(bw * 1.7), x = Math.round(cx - pw / 2), y = Math.round(topY);
   ctx.globalAlpha = 1;
+  // v101: each landmark redrawn on the half-pixel fine grid — same footprint and concept, one
+  // lit edge + one shaded edge apiece
   if (region === 4) {                                                    // CLOUD NINE — fluffy cloud bank
     pixDisc(cx, y + 3, Math.round(pw * 0.32), '#FFFFFF');
     for (let k = -1; k <= 1; k++) pixDisc(cx + k * Math.round(pw * 0.34), y + 8, Math.round(pw * 0.26), 'rgba(240,247,255,0.96)');
     ctx.globalAlpha = 0.5; pixDisc(cx - Math.round(pw * 0.22), y + 3, Math.round(pw * 0.15), 'rgba(206,224,242,0.9)'); ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(cx - Math.round(pw*0.16), y + 3 - Math.round(pw*0.32) + .5, Math.round(pw*0.3), .5);   // sunlit crown
+    ctx.fillStyle = 'rgba(126,160,200,0.45)'; ctx.fillRect(cx - Math.round(pw*0.3), y + 8 + Math.round(pw*0.26) - 1, Math.round(pw*0.6), .5);     // soft belly shade
   } else if (region === 2 || region === 3) {                             // TREETOPS / LOWER SKY — a tree branch; the high bough is barer, up in open air
     ctx.fillStyle = '#3A2616'; ctx.fillRect(x, y + 2, pw, region === 3 ? 5 : 6);
     ctx.fillStyle = 'rgba(96,66,36,0.6)'; ctx.fillRect(x, y + 2, pw, 1);
+    ctx.fillStyle = 'rgba(20,10,4,0.5)';                                 // bark nicks along the bough
+    for (let nx = x + 3; nx < x + pw - 3; nx += 8) { if (bhash(nx*7) < .35) continue; ctx.fillRect(nx, y + 3.5 + bhash(nx*3)*2, 2, .5); }
     ctx.fillStyle = '#25130A'; ctx.fillRect(x, y + (region === 3 ? 6 : 7), pw, 1);
     const nl = region === 3 ? 2 : 4;
-    for (let k = 0; k < nl; k++) { const lx = x + Math.round(pw * (region === 3 ? 0.2 + k * 0.6 : 0.12 + k * 0.26)); pixDisc(lx, y + 11, region === 3 ? 5 : 7, '#2E6E3A'); pixDisc(lx - 3, y + 9, region === 3 ? 4 : 5, '#49A048'); }
+    for (let k = 0; k < nl; k++) { const lx = x + Math.round(pw * (region === 3 ? 0.2 + k * 0.6 : 0.12 + k * 0.26)); pixDisc(lx, y + 11, region === 3 ? 5 : 7, '#2E6E3A'); pixDisc(lx - 3, y + 9, region === 3 ? 4 : 5, '#49A048');
+      ctx.fillStyle = '#6ECB54'; ctx.fillRect(lx - 5, y + (region === 3 ? 5 : 4) + .5, 3, .5); }   // leaf-cluster sun-catch
     if (region === 3) { ctx.globalAlpha = 0.5; pixDisc(x + pw + 9, y + 2, 4, '#FFFFFF'); pixDisc(x - 9, y + 6, 3, '#FFFFFF'); ctx.globalAlpha = 1; }   // first wisps drift past the bough
   } else if (region === 0) {                                             // CAVES — a rocky ledge
     ctx.fillStyle = '#4A4048'; ctx.fillRect(x, y, pw, 9);
     ctx.fillStyle = '#5E525A'; ctx.fillRect(x, y, pw, 2);
+    ctx.fillStyle = '#6E626A'; ctx.fillRect(x + 1, y, Math.round(pw*0.4), .5);                 // lit lip
+    ctx.fillStyle = '#38303C';                                                                 // hairline cracks in the face
+    for (let kx = x + 4; kx < x + pw - 4; kx += 9) { if (bhash(kx*13) < .4) continue; ctx.fillRect(kx, y + 3, .5, 3 + bhash(kx*5)*2); ctx.fillRect(kx + .5, y + 5.5, 1.5, .5); }
+    if (bhash(x*11) > .35) { ctx.fillStyle = '#3B5A27'; ctx.fillRect(x + Math.round(pw*0.7), y + .5, 3, 1); ctx.fillStyle = '#5D7A38'; ctx.fillRect(x + Math.round(pw*0.7) + .5, y + .5, 1.5, .5); }   // moss patch on the lip
     ctx.fillStyle = '#2C2530'; for (let sx = x; sx < x + pw; sx += 5) { const d = Math.round(bhash(sx) * 6); ctx.fillRect(sx, y + 9, 3, d); }   // jagged underside
   } else if (region >= 8) {                                             // SPACE / ORBIT / STARS — a satellite deck
     ctx.fillStyle = '#33313E'; ctx.fillRect(x, y, pw, 8);
     ctx.fillStyle = '#5A5468'; ctx.fillRect(x, y, pw, 2);
+    ctx.fillStyle = '#8A84A0'; ctx.fillRect(x, y, pw, .5);                                     // rim light along the deck edge
+    ctx.fillStyle = '#262432';                                                                 // hull plate seams
+    for (let kx = x + 5; kx < x + pw - 3; kx += 8) ctx.fillRect(kx, y + 2, .5, 6);
     ctx.fillStyle = '#8FB8FF'; ctx.fillRect(x - 7, y + 2, 6, 3); ctx.fillRect(x + pw + 1, y + 2, 6, 3);   // solar panels
+    ctx.fillStyle = '#2E4E74'; ctx.fillRect(x - 4.5, y + 2, .5, 3); ctx.fillRect(x + pw + 3.5, y + 2, .5, 3);   // panel grid seams
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(x - 7, y + 2, 2, .5); ctx.fillRect(x + pw + 1, y + 2, 2, .5);   // panel glint
     ctx.fillStyle = '#3A3648'; ctx.fillRect(x - 1, y + 2, 1, 3); ctx.fillRect(x + pw, y + 2, 1, 3);
   } else {                                                               // SURFACE / JET STREAM / STRATOSPHERE / AURORA — themed slab
     const th = BASE_THEMES[clamp(region, 0, BASE_THEMES.length - 1)];
     ctx.fillStyle = th.b; ctx.fillRect(x, y, pw, 9);
     ctx.fillStyle = th.t; ctx.fillRect(x, y, pw, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(x, y, pw, .5);                       // cap catches the light
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(x, y + 5.5, pw, .5);                      // slab strata seam
     ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(x, y + 9, pw, 2);
-    if (region === 1) { ctx.fillStyle = '#6ECB54'; for (let gx = x; gx < x + pw; gx += 3) ctx.fillRect(gx, y - 2, 1, 2 + Math.round(bhash(gx) * 3)); }   // grass tufts
+    if (region === 1) { for (let gx = x; gx < x + pw; gx += 3) { const gh = 2 + Math.round(bhash(gx) * 3);
+      ctx.fillStyle = '#4EA344'; ctx.fillRect(gx, y - 2 - gh + 2, 1, gh);                      // tuft body
+      ctx.fillStyle = '#7EDB64'; ctx.fillRect(gx + (bhash(gx*11) > .5 ? .5 : 0), y - 2 - gh + 2, .5, 1); } }   // sunlit tuft tip
   }
   ctx.globalAlpha = 1;
 }
