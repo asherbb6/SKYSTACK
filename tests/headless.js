@@ -1275,6 +1275,17 @@ check('v94 banner/toast render as a shared HUD notification strip below the HUD 
 check('v94 notification strip sits directly under the HUD block, not mid-play-column', () => fresh.run(
   '(() => { W=320;H=480;relayout(); return NOTIFY_Y >= 60 && NOTIFY_Y <= 76; })()'));
 
+check('banner/toast overlap fix: toast drops to a second row below the banner instead of sharing NOTIFY_Y', () =>
+  /function drawNotifyStrip\(text, alpha, accent, yOff/.test(src) &&
+  /NOTIFY_Y \+ yOff/.test(src) &&
+  /drawNotifyStrip\(toastMsg, Math\.min\(1, toastT\*2\), 'rgba\(255,246,232,0\.4\)', bannerT > 0 \? 16 : 0\)/.test(src) &&
+  fresh.run(
+    '(() => { W=320;H=480;relayout(); bannerT=1; toastT=1; ' +
+    'let ys = []; const orig = drawNotifyStrip; drawNotifyStrip = (t,a,c,off) => ys.push(NOTIFY_Y + (off||0)); ' +
+    'if (bannerT > 0) drawNotifyStrip(bannerText, 1, "#FFD75E"); ' +
+    'if (toastT > 0) drawNotifyStrip(toastMsg, 1, "rgba(255,246,232,0.4)", bannerT > 0 ? 16 : 0); ' +
+    'drawNotifyStrip = orig; return ys.length === 2 && ys[0] !== ys[1]; })()'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 check('sw.js cache bumped to v93', () => /const CACHE = 'skystack-v93'/.test(sw));
