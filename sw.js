@@ -1,5 +1,5 @@
-// SKYSTACK service worker — network-first app shell (fresh code when online, cache when offline).
-const CACHE = 'skystack-v94';
+﻿// SKYSTACK service worker â€” network-first app shell (fresh code when online, cache when offline).
+const CACHE = 'skystack-v95';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
