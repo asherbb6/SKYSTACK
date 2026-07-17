@@ -1263,6 +1263,11 @@ check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 ever
   /drawCoin\(W\/2 - 30, FAIL_REV\.y \+ 7\.5\)/.test(src) && /drawCoin\(W\/2-24, 127\.5\)/.test(src) &&
   /drawCoin\(W\/2 - 32, REVIVE_BTN\.y \+ 8\.5\)/.test(src));
 
+// ---------- v94 HUD margin + notification placement ----------
+check('v94 campaign HUD row keeps a 7px side margin (not edge-flush)', () =>
+  /txt\(cp\.startAltitude\?cp\.name\.split\(' '\)\[0\]\+' CP':'GROUND',7,33/.test(src) &&
+  /txt\(\(cp\.scoreMultiplier\+'X SCORE'\)\.replace\('0\.','\.'\),W-7,33/.test(src));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 check('sw.js cache bumped to v93', () => /const CACHE = 'skystack-v93'/.test(sw));

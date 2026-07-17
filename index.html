@@ -5188,9 +5188,9 @@ function renderHUD(h) {
   if (runLevel >= 0) {   // campaign HUD: the goal + a slim progress bar
     const goal = TIERS[runLevel].n, from = runLaunch;
     const cp=runContext.checkpointSnapshot;
-    txt(cp.startAltitude?cp.name.split(' ')[0]+' CP':'GROUND',4,33,1,'rgba(255,246,232,0.62)','left');
+    txt(cp.startAltitude?cp.name.split(' ')[0]+' CP':'GROUND',7,33,1,'rgba(255,246,232,0.62)','left');
     txt('L' + (runLevel+1) + ' GOAL ' + goal*METERS_PER + 'M', W/2, 33, 1, TIERS[runLevel].c, 'center');
-    txt((cp.scoreMultiplier+'X SCORE').replace('0.','.'),W-4,33,1,'rgba(255,246,232,0.62)','right');
+    txt((cp.scoreMultiplier+'X SCORE').replace('0.','.'),W-7,33,1,'rgba(255,246,232,0.62)','right');
     const bw = Math.min(W - 80, 120), bx = Math.round(W/2 - bw/2);
     const pct = clamp((h - from) / (goal - from), 0, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx, 43, bw, 3);
