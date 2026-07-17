@@ -2471,24 +2471,33 @@ function pixelButton(r,label,primary) {
   txt(label,r.x+r.w/2,r.y+(r.h-7*sc)/2,sc,primary?'#08301F':VISUAL_SYSTEM.palette.paper,'center');
 }
 function drawNavGlyph(id,cx,y,col) {
-  // v91: same 11x8 bounding boxes, redrawn on the half-pixel fine grid
+  // v91: same 11x8 bounding boxes, redrawn on the half-pixel fine grid (v98 detail pass)
   ctx.fillStyle=col;
-  if(id==='home') {                 // stepped peak with a smooth half-pixel slope + lit crest
+  if(id==='home') {                 // stepped peak: half-pixel slope, shaded east face, snow crest
     for(let s=0;s<12;s++){ const hw=.5+s*.45; ctx.fillRect(cx-hw,y+s*.5,hw*2,.5); }
-    ctx.fillStyle='rgba(255,246,232,0.45)'; ctx.fillRect(cx-.5,y,1,.5); ctx.fillRect(cx-1,y+.5,2,.5);
+    ctx.fillStyle='rgba(0,0,0,0.26)'; for(let s=5;s<12;s++){ const hw=.5+s*.45; ctx.fillRect(cx+hw-1,y+s*.5,1,.5); }
+    ctx.fillStyle='rgba(255,246,232,0.5)'; ctx.fillRect(cx-.5,y,1,.5); ctx.fillRect(cx-1,y+.5,2,.5); ctx.fillRect(cx-1.5,y+1,1.5,.5);
   }
-  else if(id==='shop') {            // supply crate: chamfered plate, fine seams, corner rivets
-    ctx.fillRect(cx-4,y+1.5,9,6);ctx.fillRect(cx-3.5,y+1,8,7);
+  else if(id==='shop') {            // shopping cart: grip, slatted basket, tapered base, twin wheels
+    ctx.fillRect(cx-5.5,y+1,2,.5); ctx.fillRect(cx-4,y+1.5,.5,1);
+    ctx.fillRect(cx-4.5,y+2.5,9,.5);
+    ctx.fillRect(cx-4,y+3,8,2.5);
+    ctx.fillRect(cx-3.5,y+5.5,7,.5);
+    ctx.fillStyle='rgba(255,246,232,0.35)'; ctx.fillRect(cx-4,y+3,8,.5);
     ctx.fillStyle=VISUAL_SYSTEM.palette.ink;
-    ctx.fillRect(cx-2,y+3.5,5,.5);ctx.fillRect(cx,y+1,.5,7);
-    ctx.fillStyle='rgba(255,246,232,0.35)';
-    ctx.fillRect(cx-3,y+1.5,.5,.5);ctx.fillRect(cx+3.5,y+1.5,.5,.5);ctx.fillRect(cx-3,y+7,.5,.5);ctx.fillRect(cx+3.5,y+7,.5,.5);
+    ctx.fillRect(cx-2,y+3.5,.5,2);ctx.fillRect(cx,y+3.5,.5,2);ctx.fillRect(cx+2,y+3.5,.5,2);
+    ctx.fillStyle=col;
+    ctx.fillRect(cx-2.5,y+6.5,1.5,1.5);ctx.fillRect(cx+1.5,y+6.5,1.5,1.5);
+    ctx.fillStyle=VISUAL_SYSTEM.palette.ink;
+    ctx.fillRect(cx-2,y+7,.5,.5);ctx.fillRect(cx+2,y+7,.5,.5);
   }
-  else {                            // portrait badge: chamfered corners, finer eyes, quiet mouth
+  else {                            // portrait badge: hair cap, finer eyes, quiet smile
     ctx.fillRect(cx-3,y+1,7,6);ctx.fillRect(cx-2,y,5,8);
     ctx.fillRect(cx-2.5,y+.5,6,.5);ctx.fillRect(cx-2.5,y+7,6,.5);
+    ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(cx-2,y+.5,5,1.5);
     ctx.fillStyle=VISUAL_SYSTEM.palette.ink;
-    ctx.fillRect(cx-1,y+2,1,2);ctx.fillRect(cx+2,y+2,1,2);ctx.fillRect(cx,y+5.5,2,.5);
+    ctx.fillRect(cx-1,y+2.5,1,1.5);ctx.fillRect(cx+2,y+2.5,1,1.5);
+    ctx.fillRect(cx-.5,y+5.5,3,.5);ctx.fillRect(cx-1,y+5,.5,.5);ctx.fillRect(cx+2.5,y+5,.5,.5);
   }
 }
 function drawJourneyProgress(active,x,y,w) {
@@ -2511,7 +2520,7 @@ function drawNav() {
   for (const t of NAV_TABS) {
     const active = state === t.id;
     const col=active?UI_HEX():'rgba(255,246,232,0.46)',cx=Math.round(t.x+t.w/2);
-    if(active){ctx.fillStyle=uiA(.12);ctx.fillRect(t.x+3,NAV_Y+2,t.w-6,NAV_H-3);ctx.fillStyle=UI_HEX();ctx.fillRect(t.x+12,NAV_Y,t.w-24,2);ctx.fillRect(cx-7,NAV_Y+21,14,1);}
+    if(active){ctx.fillStyle=uiA(.12);ctx.fillRect(t.x+3,NAV_Y+2,t.w-6,NAV_H-3);ctx.fillStyle=UI_HEX();ctx.fillRect(t.x+12,NAV_Y,t.w-24,2);ctx.fillRect(cx-7,NAV_Y+22,14,1);}   // v98: underline sits 1px clear of the label (glyphs end at +21)
     drawNavGlyph(t.id,cx,NAV_Y+3,col);
     txt(t.label,cx,NAV_Y+14,1,col,'center');
     if(t!==NAV_TABS[NAV_TABS.length-1]){ctx.fillStyle='rgba(255,246,232,0.07)';ctx.fillRect(t.x+t.w-1,NAV_Y+5,1,NAV_H-10);}
@@ -3878,8 +3887,21 @@ function render() {
     }
   }
   if (dark < .58 && (menu || h < 200)) {   // clouds/birds belong to the lower sky — gone once SPACE begins
-    ctx.globalAlpha = (.58-dark)*.95; ctx.fillStyle = '#FFF6E8';
-    for (const c of clouds) { const cyy = Math.floor(c.y - (menu?tick*.3:cy*.4)); if (cyy<-20||cyy>H+20) continue; const cx=Math.floor(c.x); ctx.fillRect(cx,cyy,Math.floor(c.w),5); ctx.fillRect(cx+4,cyy-3,Math.floor(c.w*.6),3); ctx.fillRect(cx+2,cyy+5,Math.floor(c.w*.75),3); }
+    ctx.globalAlpha = (.58-dark)*.95;
+    for (const c of clouds) {   // v98: rounded half-pixel lobes with a sunlit crown and a soft underbelly
+      const cyy = Math.floor(c.y - (menu?tick*.3:cy*.4)); if (cyy<-20||cyy>H+20) continue;
+      const cx=Math.floor(c.x), cw=Math.floor(c.w), tp=Math.floor(cw*.6), bt=Math.floor(cw*.75);
+      ctx.fillStyle = '#FFF6E8';
+      ctx.fillRect(cx,cyy,cw,5); ctx.fillRect(cx+.5,cyy-.5,cw-1,6);                      // body, corners rounded
+      ctx.fillRect(cx+4,cyy-3,tp,3); ctx.fillRect(cx+4.5,cyy-3.5,tp-1,1);                // top puff, rounded crown
+      ctx.fillRect(cx+3.5,cyy-2.5,tp+1,2);
+      ctx.fillRect(cx+Math.floor(cw*.55),cyy-1.5,Math.floor(cw*.35),1.5);                // trailing shoulder lump
+      ctx.fillRect(cx+2,cyy+5,bt,2.5); ctx.fillRect(cx+3,cyy+7.5,Math.floor(cw*.5),.5);  // base skirt, tapered
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fillRect(cx+5,cyy-3,Math.floor(tp*.6),.5); ctx.fillRect(cx+1.5,cyy+.5,3,.5);   // sun-lit crowns
+      ctx.fillStyle = 'rgba(126,160,200,0.30)';
+      ctx.fillRect(cx+1.5,cyy+4.5,cw-3,.5); ctx.fillRect(cx+3,cyy+7,Math.floor(cw*.55),.5);  // shaded underbelly
+    }
     ctx.globalAlpha = 1;
     if (dark < .4 && (menu || h > SURF_A)) { for (const b of birds) drawBird(b.x, b.y, b.s, tick*.22 + b.ph, 'rgba(38,28,54,0.78)'); }   // birds ride the daytime sky, never underground
   }
@@ -4334,56 +4356,89 @@ function mapNode3D(x, y, r, face, side) {
 }
 // pixel vignette for each stage, drawn in the row's right column
 function drawStageDeco(i, x, y) {
+  // v98: every stage emblem redrawn on the half-pixel fine grid — same footprints and concepts,
+  // with chamfers, one lit edge, and one shaded edge each so they read at emblem size
   const c = TIERS[i].c, ph = reduceMotion ? 0 : tick;
   ctx.fillStyle = c;
-  if (i === 0) {        // caves: rocky mouth + torch
-    ctx.fillRect(x-4, y-4, 8, 2); ctx.fillRect(x-5, y-2, 2, 6); ctx.fillRect(x+3, y-2, 2, 6);
-    ctx.fillStyle = '#141022'; ctx.fillRect(x-3, y-2, 6, 6);
+  if (i === 0) {        // caves: chamfered rock mouth, mossy lintel, live torch
+    ctx.fillRect(x-4.5, y-4, 9, 2); ctx.fillRect(x-4, y-4.5, 8, .5);
+    ctx.fillRect(x-5, y-2.5, 2, 6.5); ctx.fillRect(x+3, y-2.5, 2, 6.5);
+    ctx.fillRect(x-5.5, y-2, .5, 5); ctx.fillRect(x+5, y-2, .5, 5);
+    ctx.fillStyle = '#141022'; ctx.fillRect(x-3, y-2.5, 6, 6.5);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x-3, y-2.5, .5, 6.5);
+    ctx.fillStyle = '#4F7A46'; ctx.fillRect(x-3.5, y-4.5, 1.5, .5); ctx.fillRect(x+1, y-4.5, 2, .5);
     const fl = reduceMotion ? 0 : Math.floor(ph/9)%2;
-    ctx.fillStyle = '#E0863A'; ctx.fillRect(x-1, y-1-fl, 2, 2); ctx.fillStyle = '#FFD75E'; ctx.fillRect(x-1, y-fl, 1, 1);
-  } else if (i === 1) { // surface: two young trees on the meadow
-    ctx.fillRect(x+1, y-4, 4, 3); ctx.fillRect(x, y-2, 6, 2);
-    ctx.fillRect(x-5, y-1, 4, 2);
+    ctx.fillStyle = '#E0863A'; ctx.fillRect(x-1, y-1-fl, 2, 2); ctx.fillRect(x-.5, y-1.5-fl, 1, .5);
+    ctx.fillStyle = '#FFD75E'; ctx.fillRect(x-1, y-fl, 1, 1); ctx.fillRect(x-.5, y-.5-fl, .5, .5);
+  } else if (i === 1) { // surface: two young trees, rounded crowns, grass tufts
+    ctx.fillRect(x+1, y-4, 4, 3); ctx.fillRect(x+1.5, y-4.5, 3, .5); ctx.fillRect(x+.5, y-3.5, 5, 2);
+    ctx.fillRect(x, y-2, 6, 2);
+    ctx.fillRect(x-5, y-1, 4, 2); ctx.fillRect(x-4.5, y-1.5, 3, .5);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x+1.5, y-4, 1.5, .5); ctx.fillRect(x-4.5, y-1, 1, .5);
     ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x+2, y, 2, 4); ctx.fillRect(x-4, y+1, 1, 3);
+    ctx.fillStyle = '#4F7A46'; ctx.fillRect(x-1.5, y+3.5, 1.5, .5); ctx.fillRect(x+4.5, y+3.5, 1, .5);
   } else if (i === 2) { // treetops: one broad canopy + a perched bird
-    ctx.fillRect(x-5, y-2, 10, 3); ctx.fillRect(x-3, y-4, 7, 2); ctx.fillRect(x-1, y-5, 3, 1);
-    ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x-1, y+1, 2, 3);
-    ctx.fillStyle = '#141022'; ctx.fillRect(x+3, y-5, 2, 1); ctx.fillRect(x+4, y-6, 1, 1);
-  } else if (i === 3) { // lower sky: birds climbing into open air + a wisp
+    ctx.fillRect(x-5, y-2, 10, 3); ctx.fillRect(x-4.5, y-2.5, 9, .5);
+    ctx.fillRect(x-3, y-4, 7, 2); ctx.fillRect(x-2.5, y-4.5, 6, .5);
+    ctx.fillRect(x-1, y-5, 3, 1); ctx.fillRect(x-.5, y-5.5, 2, .5);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(x-2, y-5, 2, .5);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(x-5, y+.5, 10, .5);
+    ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x-1, y+1, 2, 3); ctx.fillRect(x-1.5, y+3.5, 3, .5);
+    ctx.fillStyle = '#141022'; ctx.fillRect(x+3, y-5, 2, 1); ctx.fillRect(x+4, y-6, 1, 1); ctx.fillRect(x+5, y-5.5, .5, .5);
+  } else if (i === 3) { // lower sky: gulls climbing into open air + a curled wisp
     const up = reduceMotion ? 0 : Math.floor(ph/10)%2;
     ctx.fillStyle = '#141022';
-    ctx.fillRect(x-5, y-1+(up?-1:0), 2, 1); ctx.fillRect(x-3, y-1, 1, 1); ctx.fillRect(x-2, y-1+(up?-1:0), 2, 1);
-    ctx.fillRect(x+1, y-4+(up?0:-1), 2, 1); ctx.fillRect(x+3, y-4, 1, 1); ctx.fillRect(x+4, y-4+(up?0:-1), 2, 1);
+    ctx.fillRect(x-5, y-1+(up?-1:0), 2, 1); ctx.fillRect(x-5.5, y-1.5+(up?-1:0), .5, .5);
+    ctx.fillRect(x-3, y-1, 1, 1); ctx.fillRect(x-2, y-1+(up?-1:0), 2, 1); ctx.fillRect(x-.5, y-1.5+(up?-1:0), .5, .5);
+    ctx.fillRect(x+1, y-4+(up?0:-1), 2, 1); ctx.fillRect(x+.5, y-4.5+(up?0:-1), .5, .5);
+    ctx.fillRect(x+3, y-4, 1, 1); ctx.fillRect(x+4, y-4+(up?0:-1), 2, 1); ctx.fillRect(x+5.5, y-4.5+(up?0:-1), .5, .5);
     ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(x-4, y+3, 8, 1); ctx.fillRect(x-1, y+2, 4, 1);
-  } else if (i === 4) { // cloud nine: puffy cloud
-    ctx.fillRect(x-5, y, 10, 2); ctx.fillRect(x-3, y-2, 5, 2); ctx.fillRect(x+2, y-1, 3, 1);
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x-4, y-1, 2, 1);
-  } else if (i === 5) { // jet stream: tiny jet + speed dashes
-    ctx.fillRect(x-5, y-3, 4, 1); ctx.fillRect(x-4, y+3, 5, 1);
-    ctx.fillRect(x-1, y-1, 5, 2); ctx.fillRect(x+1, y-2, 1, 1); ctx.fillRect(x, y+1, 2, 1);
-    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-1, 1, 1);
-  } else if (i === 6) { // stratosphere: weather balloon with basket
-    ctx.fillRect(x-2, y-5, 4, 3); ctx.fillRect(x-3, y-4, 6, 2);
-    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-1, y-1, 1, 2); ctx.fillRect(x+1, y-1, 1, 2);
+    ctx.fillRect(x-4.5, y+3.5, .5, .5); ctx.fillRect(x+3.5, y+2.5, .5, .5);
+  } else if (i === 4) { // cloud nine: puffy cloud, rounded lobes, shaded belly
+    ctx.fillRect(x-5, y, 10, 2); ctx.fillRect(x-4.5, y-.5, 9, .5);
+    ctx.fillRect(x-3, y-2, 5, 2); ctx.fillRect(x-2.5, y-2.5, 4, .5);
+    ctx.fillRect(x+2, y-1, 3, 1); ctx.fillRect(x+2.5, y-1.5, 2, .5);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x-2, y-2, 2, .5); ctx.fillRect(x-4, y-.5, 2, .5);
+    ctx.fillStyle = 'rgba(126,160,200,0.35)'; ctx.fillRect(x-4.5, y+1.5, 9, .5);
+  } else if (i === 5) { // jet stream: tiny jet, tapered contrails, tail fin
+    ctx.fillRect(x-5, y-3, 4, 1); ctx.fillRect(x-6, y-2.5, 1, .5);
+    ctx.fillRect(x-4, y+3, 5, 1); ctx.fillRect(x-5, y+3.5, 1, .5);
+    ctx.fillRect(x-1, y-1, 5, 2); ctx.fillRect(x+4, y-.5, .5, 1);
+    ctx.fillRect(x+1, y-2, 1, 1); ctx.fillRect(x+.5, y-2.5, .5, .5);
+    ctx.fillRect(x, y+1, 2, 1);
+    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-1, 1, 1); ctx.fillRect(x+2.5, y-.5, 1, .5);
+  } else if (i === 6) { // stratosphere: weather balloon, sheen, rigging, woven basket
+    ctx.fillRect(x-2, y-5, 4, 3); ctx.fillRect(x-3, y-4, 6, 2); ctx.fillRect(x-1.5, y-5.5, 3, .5);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x-1.5, y-5, 1, 1);
+    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-1, y-1.5, .5, 2.5); ctx.fillRect(x+1.5, y-1.5, .5, 2.5);
     ctx.fillStyle = '#8A5A2C'; ctx.fillRect(x-1, y+1, 3, 2);
-  } else if (i === 7) { // aurora: waving two-tone ribbons
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x-.5, y+1.5, 2, .5);
+  } else if (i === 7) { // aurora: waving two-tone ribbons with soft echoes
     for (let k = 0; k < 4; k++) {
       const wob = Math.round(Math.sin(ph*.06 + k*1.8)*1.5);
       ctx.fillStyle = k % 2 ? '#C77EFF' : c;
       ctx.fillRect(x-4+k*3, y-4+wob, 1, 7);
+      ctx.globalAlpha = .4; ctx.fillRect(x-3+k*3, y-3+wob, .5, 5); ctx.globalAlpha = 1;
     }
-  } else if (i === 8) { // space: star cluster + comet
-    ctx.fillRect(x-3, y-2, 1, 1); ctx.fillRect(x+2, y-4, 2, 2); ctx.fillRect(x-1, y+1, 1, 1); ctx.fillRect(x+3, y+2, 1, 1);
-    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-5, y+3, 3, 1); ctx.fillRect(x-2, y+2, 1, 1);
-  } else if (i === 9) { // orbit: shaded ringed planet + orbiting moon
+  } else if (i === 8) { // space: star cluster + comet with a spark head
+    ctx.fillRect(x-3, y-2, 1, 1); ctx.fillRect(x+2, y-4, 2, 2); ctx.fillRect(x+2.5, y-4.5, 1, .5);
+    ctx.fillRect(x-1, y+1, 1, 1); ctx.fillRect(x+3, y+2, 1, 1);
+    ctx.fillRect(x-4.5, y-4, .5, .5); ctx.fillRect(x+.5, y-.5, .5, .5);
+    ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(x-5, y+3, 3, 1); ctx.fillRect(x-2, y+2, 1, 1); ctx.fillRect(x-5.5, y+3.5, .5, .5);
+    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x-1.5, y+2.5, .5, .5);
+  } else if (i === 9) { // orbit: chamfered ringed planet, terminator shade, orbiting moon
     ctx.fillRect(x-2, y-2, 4, 4); ctx.fillRect(x-1, y-3, 2, 6);
-    ctx.fillStyle = dkHex(c, .55); ctx.fillRect(x, y, 2, 2);
+    ctx.fillRect(x-2.5, y-1, .5, 2); ctx.fillRect(x+2, y-1, .5, 2);
+    ctx.fillStyle = dkHex(c, .55); ctx.fillRect(x, y, 2, 2); ctx.fillRect(x+.5, y-1, 1.5, 1);
     ctx.fillStyle = 'rgba(255,246,232,0.55)'; ctx.fillRect(x-4, y, 3, 1); ctx.fillRect(x+2, y, 3, 1);
+    ctx.fillRect(x-4.5, y+.5, 1, .5); ctx.fillRect(x+4, y+.5, 1, .5);
     ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x + Math.round(Math.cos(ph*.07)*5), y + Math.round(Math.sin(ph*.07)*3), 1, 1);
-  } else {              // the stars: big star with sparkles
+  } else {              // the stars: big star, chamfered points, bright core, drifting glints
     ctx.fillRect(x-1, y-4, 2, 8); ctx.fillRect(x-4, y-1, 8, 2); ctx.fillRect(x-2, y-2, 4, 4);
+    ctx.fillRect(x-.5, y-4.5, 1, .5); ctx.fillRect(x-.5, y+4, 1, .5);
+    ctx.fillRect(x-4.5, y-.5, .5, 1); ctx.fillRect(x+4, y-.5, .5, 1);
     ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fillRect(x-1, y-1, 2, 2);
-    if (!reduceMotion && Math.floor(tick/14)%2===0) { ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-4, 1, 1); ctx.fillRect(x-5, y+3, 1, 1); }
+    if (!reduceMotion && Math.floor(tick/14)%2===0) { ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+4, y-4, 1, 1); ctx.fillRect(x-5, y+3, 1, 1); ctx.fillRect(x+4.5, y-3.5, .5, .5); }
   }
 }
 // blend a hex color toward white by f (0..1) -> 'rgb(...)'

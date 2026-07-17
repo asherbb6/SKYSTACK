@@ -1348,6 +1348,21 @@ check('v96 in-run strips share one 0.82 backing opacity (visibility pass)', () =
   /rgba\(11,14,26,0\.82\)';ctx\.fillRect\(4,y,W-8,30\)/.test(src) &&              // modifier strip
   /rgba\(11,14,26,0\.82\)'; ctx\.fillRect\(0, H-29, W, 29\)/.test(src));          // tutorial strip
 
+// ---------- v98 icon/cloud/nav art detail ----------
+check('v98 shop nav glyph is a shopping cart with twin wheels, not a crate', () =>
+  /shopping cart: grip, slatted basket/.test(src) &&
+  /ctx\.fillRect\(cx-2\.5,y\+6\.5,1\.5,1\.5\);ctx\.fillRect\(cx\+1\.5,y\+6\.5,1\.5,1\.5\)/.test(src) &&
+  !/supply crate: chamfered plate/.test(src));
+check('v98 active nav underline sits 1px clear of the label glyphs', () =>
+  /ctx\.fillRect\(cx-7,NAV_Y\+22,14,1\)/.test(src) && !/ctx\.fillRect\(cx-7,NAV_Y\+21,14,1\)/.test(src));
+check('v98 menu clouds render rounded fine-grid lobes with crown and underbelly shading', () =>
+  /rounded half-pixel lobes with a sunlit crown/.test(src) && /rgba\(126,160,200,0\.30\)/.test(src));
+check('v98 stage emblems are redrawn on the fine grid and render at emblem and map scales', () => {
+  fresh.run('for (let i=0;i<TIERS.length;i++) { drawStageDeco(i, 100, 100); drawStageDecoScaled(i, 60, 60, 2); } ' +
+    'for (const s of ["home","shop","me"]) { state = s; drawNav(); } state = "home";');
+  return /v98: every stage emblem redrawn on the half-pixel fine grid/.test(src);
+});
+
 // ---------- v97 shop page audit ----------
 check('v97 boost chips sit inside the Run Boosts card with breathing gaps', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
