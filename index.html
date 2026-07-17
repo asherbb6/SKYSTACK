@@ -1827,7 +1827,7 @@ const PAD = 6;
 const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
-    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y;
+    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
@@ -1883,7 +1883,13 @@ function relayout() {
   SKIN_R = { x: Math.min(W-PAD-20, Math.round(W/2)+60), y:66, w:20, h:26 };
   EQUIP_BTN = { x:W/2-46, y:138, w:92, h:18 };
   SHOP_DETAIL_BTN = { x:W/2-70, y:160, w:140, h:18 };
-  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: 210, w: 52, h: 26, id: l.id, cost: l.cost }));
+  // v94: boosts card height grows with leftover room (was capped flat at 78, leaving tall
+  // viewports with a big empty gap below the card); the chip row shifts down with the taller
+  // card so its content redistributes instead of staying pinned near the top. At the old
+  // minimum height the chip row lands exactly at v93's y=210.
+  BOOST_CARD_H = Math.min(clamp(Math.round((NAV_Y-198)*.55),78,160), NAV_Y-198);
+  const boostChipY = 210 + Math.max(0, Math.round((BOOST_CARD_H - 78) * .35));
+  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: boostChipY, w: 52, h: 26, id: l.id, cost: l.cost }));
   // me
   const meW = Math.min(W - PAD*2-16, 200), meX = Math.round((W - meW)/2);
   const meTabW=Math.floor(meW/2);
@@ -4794,7 +4800,7 @@ function renderShop() {
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
   const shopW=Math.min(W-16,220),shopX=Math.round((W-shopW)/2);
   pixelFrame(shopX,40,shopW,144,'rgba(11,14,26,0.78)',RARE_COL[sk.rare],false);
-  pixelFrame(shopX,190,shopW,Math.min(78,NAV_Y-198),'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.gold,false);
+  pixelFrame(shopX,190,shopW,BOOST_CARD_H,'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.gold,false);
   const dotsW = CHARACTER_REGISTRY.length*6-2, ddx = Math.round(W/2 - dotsW/2);
   for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 41, 4, 3); }
   for (let i = 0; i < Math.min(demo.n, 4); i++) {
@@ -4832,11 +4838,11 @@ function renderShop() {
   // boosts section
   txt('RUN BOOSTS', W/2, 194, 1, '#FFD75E', 'center');
   if (!canUseLoadout(mode) && mode === 'pure') {
-    txt(W<220?'PURE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PURE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt(W<220?'SKILL ONLY - 1.5X SCORE':'PURE IS SKILL ONLY - 1.5X SCORE', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt(W<220?'PURE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PURE', W/2, LOAD_CHIPS[0].y+10, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt(W<220?'SKILL ONLY - 1.5X SCORE':'PURE IS SKILL ONLY - 1.5X SCORE', W/2, LOAD_CHIPS[0].y+22, 1, 'rgba(255,246,232,0.4)', 'center');
   } else if (!canUseLoadout(mode) && mode === 'practice') {
-    txt(W<220?'PRACTICE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PRACTICE', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt(W<220?'GUIDED CLASSIC RULES':'GUIDED RUNS USE CLASSIC RULES', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt(W<220?'PRACTICE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PRACTICE', W/2, LOAD_CHIPS[0].y+10, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt(W<220?'GUIDED CLASSIC RULES':'GUIDED RUNS USE CLASSIC RULES', W/2, LOAD_CHIPS[0].y+22, 1, 'rgba(255,246,232,0.4)', 'center');
   } else if (canUseLoadout(mode)) {
     for (const c of LOAD_CHIPS) {
       const on = loadout[c.id], afford = coins >= c.cost;
@@ -4849,10 +4855,10 @@ function renderShop() {
       if (on) txt('OK', c.x+c.w/2, c.y+16, 1, VISUAL_SYSTEM.palette.mint, 'center');
       else { drawCoin(c.x+14, c.y+16.5); txt(c.cost, c.x+23, c.y+16, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
     }
-    if(NAV_Y>=268){txt(shopInfo, W/2, 242, 1, 'rgba(255,246,232,0.6)', 'center');txt('LOCKS WHEN CLIMB STARTS', W/2, 254, 1, 'rgba(255,246,232,0.4)', 'center');}
+    if(NAV_Y>=268){txt(shopInfo, W/2, LOAD_CHIPS[0].y+32, 1, 'rgba(255,246,232,0.6)', 'center');txt('LOCKS WHEN CLIMB STARTS', W/2, LOAD_CHIPS[0].y+44, 1, 'rgba(255,246,232,0.4)', 'center');}
   } else {
-    txt(W<220?'DAILY: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN DAILY', W/2, 220, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt(W<220?'SAME FAIR RUN FOR ALL':'EVERYONE GETS THE SAME FAIR RUN', W/2, 232, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt(W<220?'DAILY: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN DAILY', W/2, LOAD_CHIPS[0].y+10, 1, 'rgba(255,246,232,0.5)', 'center');
+    txt(W<220?'SAME FAIR RUN FOR ALL':'EVERYONE GETS THE SAME FAIR RUN', W/2, LOAD_CHIPS[0].y+22, 1, 'rgba(255,246,232,0.4)', 'center');
   }
 }
 

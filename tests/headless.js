@@ -1300,6 +1300,13 @@ check('v94 Home Climb Orders panel grows with available room instead of leaving 
   'if(H > 280 && above > 110) return false;' +
   'if(MISS_PANEL.y + MISS_PANEL.h >= INSTALL_BTN.y || INSTALL_BTN.y + INSTALL_BTN.h >= NAV_Y) return false;} return true; })()'));
 
+check('v94 Shop Run Boosts card grows with available room instead of capping at 78', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300],[180,427],[180,520]]){W=w;H=h;relayout();state="shop";shopView="character";renderShop();' +
+  'const avail = NAV_Y - 198;' +
+  'if(BOOST_CARD_H !== Math.min(clamp(Math.round(avail*.55),78,160), avail)) return false;' +
+  'if(BOOST_CARD_H < Math.min(78, avail)) return false;' +   // never below the old fixed height when room allows
+  'if(LOAD_CHIPS.some(c => c.y + c.h > 190 + BOOST_CARD_H - 2 || c.y + c.h >= NAV_Y)) return false;} return true; })()'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 check('sw.js cache bumped to v93', () => /const CACHE = 'skystack-v93'/.test(sw));
