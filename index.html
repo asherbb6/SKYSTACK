@@ -1876,20 +1876,21 @@ function relayout() {
   const missY=H<=280?MAP_BTN.y+MAP_BTN.h+2:Math.min(NAV_Y-4-missH,Math.max(MAP_BTN.y+MAP_BTN.h+12,MAP_BTN.y+MAP_BTN.h+Math.round(missSlack*.45)));
   MISS_PANEL = { x: Math.round((W-missW)/2), y:missY, w:missW, h:missH, rowGap:missRowGap };   // compact summary; full list opens on tap
   INSTALL_BTN = { x:W/2-42, y:Math.min(NAV_Y-18,Math.max(MISS_PANEL.y+MISS_PANEL.h+4,H-58)), w:84, h:14 };
-  // shop
-  const shopTabW=Math.min(90,Math.floor((W-30)/2));
-  SHOP_TABS=['character','base'].map((id,i)=>({id,x:Math.round(W/2-shopTabW)+i*shopTabW,y:22,w:shopTabW,h:14}));
-  SKIN_L = { x: Math.max(PAD, Math.round(W/2)-80), y:66, w:20, h:26 };   // arrows hug the preview, not the screen edge
-  SKIN_R = { x: Math.min(W-PAD-20, Math.round(W/2)+60), y:66, w:20, h:26 };
-  EQUIP_BTN = { x:W/2-46, y:138, w:92, h:18 };
-  SHOP_DETAIL_BTN = { x:W/2-70, y:160, w:140, h:18 };
+  // shop — v97: buttons shrunk to their content, 2px breathing gap between the tabs, and at the
+  // narrow phone width the tab pair lines up with the cards' inner edges (9..171 at W=180)
+  const shopTabW=Math.min(80,Math.floor((W-20)/2));
+  SHOP_TABS=['character','base'].map((id,i)=>({id,x:Math.round(W/2)+(i?1:-shopTabW-1),y:22,w:shopTabW,h:14}));
+  SKIN_L = { x: Math.max(PAD, Math.round(W/2)-78), y:68, w:18, h:22 };   // arrows hug the preview, not the screen edge
+  SKIN_R = { x: Math.min(W-PAD-18, Math.round(W/2)+60), y:68, w:18, h:22 };
+  EQUIP_BTN = { x:W/2-42, y:140, w:84, h:16 };
+  SHOP_DETAIL_BTN = { x:W/2-66, y:161, w:132, h:16 };
   // v94: boosts card height grows with leftover room (was capped flat at 78, leaving tall
   // viewports with a big empty gap below the card); the chip row shifts down with the taller
   // card so its content redistributes instead of staying pinned near the top. At the old
   // minimum height the chip row lands exactly at v93's y=210.
   BOOST_CARD_H = Math.min(clamp(Math.round((NAV_Y-198)*.55),78,160), NAV_Y-198);
   const boostChipY = 210 + Math.max(0, Math.round((BOOST_CARD_H - 78) * .35));
-  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 84 + i * 56), y: boostChipY, w: 52, h: 26, id: l.id, cost: l.cost }));
+  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 79 + i * 54), y: boostChipY, w: 50, h: 24, id: l.id, cost: l.cost }));   // v97: sits INSIDE the boosts card at W=180 (11..169 vs inner 9..171)
   // me
   const meW = Math.min(W - PAD*2-16, 200), meX = Math.round((W - meW)/2);
   const meTabW=Math.floor(meW/2);
@@ -4816,13 +4817,13 @@ function renderShop() {
   pixelFrame(shopX,40,shopW,144,'rgba(11,14,26,0.78)',RARE_COL[sk.rare],false);
   pixelFrame(shopX,190,shopW,BOOST_CARD_H,'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.gold,false);
   const dotsW = CHARACTER_REGISTRY.length*6-2, ddx = Math.round(W/2 - dotsW/2);
-  for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 41, 4, 3); }
+  for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 45, 4, 3); }   // v97: clear of the card's top frame
   for (let i = 0; i < Math.min(demo.n, 4); i++) {
     const col = sk.base(i, hueBase);
     const w2 = 50 - i*6;
     drawBlock(Math.round(W/2-w2/2), 92 - i*10, w2, 9, col, false, 0, sk.style);
   }
-  if (!isOwned) { const ly = 48; ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-6,ly,12,10); ctx.fillStyle='#FFF6E8'; ctx.fillRect(W/2-4,ly-3,8,4); ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-2,ly-2,4,3); ctx.fillStyle='#FFD75E'; ctx.fillRect(W/2-1,ly+3,2,4); }
+  if (!isOwned) { const ly = 53; ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-6,ly,12,10); ctx.fillStyle='#FFF6E8'; ctx.fillRect(W/2-4,ly-3,8,4); ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-2,ly-2,4,3); ctx.fillStyle='#FFD75E'; ctx.fillRect(W/2-1,ly+3,2,4); }
   pixelFrame(SKIN_L.x,SKIN_L.y,SKIN_L.w,SKIN_L.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
   pixelFrame(SKIN_R.x,SKIN_R.y,SKIN_R.w,SKIN_R.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
   txt('<', SKIN_L.x+SKIN_L.w/2, 76, 1, 'rgba(255,246,232,0.85)', 'center');
@@ -4833,21 +4834,21 @@ function renderShop() {
 
   if (isEquipped) {
     pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)','rgba(255,246,232,0.26)',false);
-    txt('EQUIPPED', W/2, EQUIP_BTN.y+6, 1, 'rgba(255,246,232,0.6)', 'center');
+    txt('EQUIPPED', W/2, EQUIP_BTN.y+5, 1, 'rgba(255,246,232,0.6)', 'center');
   } else if (isOwned) {
     pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',VISUAL_SYSTEM.palette.mint,true);
-    txt('EQUIP', W/2, EQUIP_BTN.y+6, 1, VISUAL_SYSTEM.palette.mint, 'center');
+    txt('EQUIP', W/2, EQUIP_BTN.y+5, 1, VISUAL_SYSTEM.palette.mint, 'center');
   } else {
     const afford = coins >= sk.cost;
     pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);
     const ic = afford ? VISUAL_SYSTEM.palette.gold : 'rgba(255,246,232,0.6)';
-    txt('UNLOCK', W/2 - 14, EQUIP_BTN.y+6, 1, ic, 'center');
-    drawCoin(W/2 + 8, EQUIP_BTN.y+6.5); txt(sk.cost, W/2 + 17, EQUIP_BTN.y+6, 1, ic, 'left');
+    txt('UNLOCK', W/2 - 14, EQUIP_BTN.y+5, 1, ic, 'center');
+    drawCoin(W/2 + 8, EQUIP_BTN.y+5.5); txt(sk.cost, W/2 + 17, EQUIP_BTN.y+5, 1, ic, 'left');
   }
 
   pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.22)',false);
-  txt(passive.name,SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+6,1,isEquipped?'#62E8B5':'#FFF6E8','left');
-  txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+6,1,'rgba(255,246,232,0.52)','right');
+  txt(passive.name,SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+5,1,isEquipped?'#62E8B5':'#FFF6E8','left');
+  txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
 
   // boosts section
   txt('RUN BOOSTS', W/2, 194, 1, '#FFD75E', 'center');
@@ -4862,12 +4863,12 @@ function renderShop() {
       const on = loadout[c.id], afford = coins >= c.cost;
       pixelFrame(c.x,c.y,c.w,c.h,on?'rgba(98,232,181,0.14)':'rgba(7,8,15,0.72)',on?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.18)',on);
       const IP = POW[c.id];                            // circular badge, same style as in-world pickups
-      pixDisc(c.x+7, c.y+7, 6, on ? '#08301F' : IP.c2);
-      pixDisc(c.x+7, c.y+7, 5, on ? 'rgba(0,0,0,0.35)' : '#141022');
+      pixDisc(c.x+7, c.y+7, 5, on ? '#08301F' : IP.c2);   // v97: r5 badge clears the chip frame
+      pixDisc(c.x+7, c.y+7, 4, on ? 'rgba(0,0,0,0.35)' : '#141022');
       drawIcon(c.id, c.x+3, c.y+3, true);
-      txt(POW_NAME[c.id], c.x+14, c.y+5, 1, on ? VISUAL_SYSTEM.palette.mint : '#FFF6E8', 'left');
-      if (on) txt('OK', c.x+c.w/2, c.y+16, 1, VISUAL_SYSTEM.palette.mint, 'center');
-      else { drawCoin(c.x+14, c.y+16.5); txt(c.cost, c.x+23, c.y+16, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
+      txt(POW_NAME[c.id], c.x+14, c.y+4, 1, on ? VISUAL_SYSTEM.palette.mint : '#FFF6E8', 'left');
+      if (on) txt('OK', c.x+c.w/2, c.y+13, 1, VISUAL_SYSTEM.palette.mint, 'center');
+      else { drawCoin(c.x+14, c.y+13.5); txt(c.cost, c.x+23, c.y+13, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
     }
     if(NAV_Y>=268){txt(shopInfo, W/2, LOAD_CHIPS[0].y+32, 1, 'rgba(255,246,232,0.6)', 'center');txt('LOCKS WHEN CLIMB STARTS', W/2, LOAD_CHIPS[0].y+44, 1, 'rgba(255,246,232,0.4)', 'center');}
   } else {
@@ -4914,20 +4915,20 @@ function renderBaseShop(){
   const shopW=Math.min(W-16,220),shopX=Math.round((W-shopW)/2);
   pixelFrame(shopX,40,shopW,144,'rgba(11,14,26,0.78)',b.accent,false);
   pixelFrame(shopX,190,shopW,Math.min(78,NAV_Y-198),'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.mint,false);
-  const dotsW=BASE_REGISTRY.length*8-2,dx=Math.round(W/2-dotsW/2);
-  for(let i=0;i<BASE_REGISTRY.length;i++){ctx.fillStyle=i===basePreviewIdx?'#FFF6E8':'rgba(255,246,232,0.3)';ctx.fillRect(dx+i*8,43,6,3);}
+  const dotsW=BASE_REGISTRY.length*6-2,dx=Math.round(W/2-dotsW/2);
+  for(let i=0;i<BASE_REGISTRY.length;i++){ctx.fillStyle=i===basePreviewIdx?'#FFF6E8':'rgba(255,246,232,0.3)';ctx.fillRect(dx+i*6,45,4,3);}   // v97: same dot style + clearance as the character pager
   ctx.fillStyle='#2D2016';ctx.fillRect(W/2-44,92,88,7);ctx.fillStyle='#57422F';ctx.fillRect(W/2-44,92,88,2);
   drawBaseCosmetic(W/2,92,50,b.id);drawBlock(W/2-25,78,50,BH,{h:210,s:18,l:62},false,0,'facet');
   pixelFrame(SKIN_L.x,SKIN_L.y,SKIN_L.w,SKIN_L.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
   pixelFrame(SKIN_R.x,SKIN_R.y,SKIN_R.w,SKIN_R.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
   txt('<',SKIN_L.x+SKIN_L.w/2,76,1,'rgba(255,246,232,0.85)','center');txt('>',SKIN_R.x+SKIN_R.w/2,76,1,'rgba(255,246,232,0.85)','center');
   txt(b.name,W/2,108,1,'#FFF6E8','center');txt('COSMETIC BASE',W/2,120,1,b.accent,'center');
-  if(isEquipped){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)','rgba(255,246,232,0.26)',false);txt('EQUIPPED',W/2,EQUIP_BTN.y+6,1,'rgba(255,246,232,0.6)','center');}
-  else if(isOwned){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',VISUAL_SYSTEM.palette.mint,true);txt('EQUIP',W/2,EQUIP_BTN.y+6,1,VISUAL_SYSTEM.palette.mint,'center');}
-  else {const afford=coins>=b.cost;pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);const c=afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.6)';txt('UNLOCK',W/2-14,EQUIP_BTN.y+6,1,c,'center');drawCoin(W/2+8,EQUIP_BTN.y+6.5);txt(b.cost,W/2+17,EQUIP_BTN.y+6,1,c,'left');}
+  if(isEquipped){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)','rgba(255,246,232,0.26)',false);txt('EQUIPPED',W/2,EQUIP_BTN.y+5,1,'rgba(255,246,232,0.6)','center');}
+  else if(isOwned){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',VISUAL_SYSTEM.palette.mint,true);txt('EQUIP',W/2,EQUIP_BTN.y+5,1,VISUAL_SYSTEM.palette.mint,'center');}
+  else {const afford=coins>=b.cost;pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);const c=afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.6)';txt('UNLOCK',W/2-14,EQUIP_BTN.y+5,1,c,'center');drawCoin(W/2+8,EQUIP_BTN.y+5.5);txt(b.cost,W/2+17,EQUIP_BTN.y+5,1,c,'left');}
   pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?b.accent:'rgba(255,246,232,0.22)',false);
-  txt('BASE DETAILS',SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+6,1,isEquipped?b.accent:'#FFF6E8','left');
-  txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+6,1,'rgba(255,246,232,0.52)','right');
+  txt('BASE DETAILS',SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+5,1,isEquipped?b.accent:'#FFF6E8','left');
+  txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
   txt('BASE RULES',W/2,194,1,'#62E8B5','center');
   txt('COSMETIC ONLY',W/2,214,1,'#62E8B5','center');
   txt('NO GAMEPLAY EFFECT',W/2,228,1,'rgba(255,246,232,0.65)','center');
