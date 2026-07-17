@@ -1827,10 +1827,11 @@ const PAD = 6;
 const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
-    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN;
+    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
+  NOTIFY_Y = 66;   // directly under the wind/balance/modifier HUD row (all end by y=62)
   NAV_TABS = [
     { id:'home', label:'HOME' },
     { id:'shop', label:'SHOP' },
@@ -3772,6 +3773,16 @@ function renderRegionIntro() {
   ctx.globalAlpha = 1;
 }
 
+function drawNotifyStrip(text, alpha, accent) {
+  const tw = Math.min(W - 16, text.length * 6 + 16);
+  const x = Math.round(W/2 - tw/2);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(11,14,26,0.82)'; ctx.fillRect(x, NOTIFY_Y, tw, 14);
+  ctx.fillStyle = accent; ctx.fillRect(x, NOTIFY_Y, tw, 1); ctx.fillRect(x, NOTIFY_Y + 13, tw, 1);
+  txt(text, W/2, NOTIFY_Y + 4, 1, '#FFF6E8', 'center');
+  ctx.globalAlpha = 1;
+}
+
 // ---------- background & world render ----------
 function render() {
   const h = blocks.length;
@@ -3866,14 +3877,10 @@ function render() {
 
   if (bannerT > 0) {
     const a = Math.min(1,bannerT*2.2)*(bannerT>.85?(1-bannerT)/.15:1);
-    ctx.globalAlpha = Math.max(0,a); ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(0,84,W,22);
-    ctx.fillStyle='#FFD75E'; ctx.fillRect(0,84,W,1); ctx.fillRect(0,105,W,1);
-    txt(bannerText, W/2, 91, 1, '#FFF6E8', 'center'); ctx.globalAlpha = 1;
+    drawNotifyStrip(bannerText, Math.max(0,a), '#FFD75E');
   }
   if (toastT > 0 && toastMsg) {
-    ctx.globalAlpha = Math.min(1, toastT*2);
-    ctx.fillStyle = 'rgba(11,14,26,0.85)'; ctx.fillRect(W/2-50, 148, 100, 16);
-    txt(toastMsg, W/2, 153, 1, '#FFF6E8', 'center'); ctx.globalAlpha = 1;
+    drawNotifyStrip(toastMsg, Math.min(1, toastT*2), 'rgba(255,246,232,0.4)');
   }
   if (fadeT > 0) { ctx.globalAlpha = fadeT; ctx.fillStyle = '#0B0E1A'; ctx.fillRect(0,0,W,H); ctx.globalAlpha = 1; }
 }

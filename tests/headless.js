@@ -1268,6 +1268,13 @@ check('v94 campaign HUD row keeps a 7px side margin (not edge-flush)', () =>
   /txt\(cp\.startAltitude\?cp\.name\.split\(' '\)\[0\]\+' CP':'GROUND',7,33/.test(src) &&
   /txt\(\(cp\.scoreMultiplier\+'X SCORE'\)\.replace\('0\.','\.'\),W-7,33/.test(src));
 
+check('v94 banner/toast render as a shared HUD notification strip below the HUD block', () =>
+  /function drawNotifyStrip\(/.test(src) &&
+  /bannerT > 0.*drawNotifyStrip\(bannerText/.test(src.replace(/\r?\n/g, ' ')) &&
+  /toastT > 0.*drawNotifyStrip\(toastMsg/.test(src.replace(/\r?\n/g, ' ')));
+check('v94 notification strip sits directly under the HUD block, not mid-play-column', () => fresh.run(
+  '(() => { W=320;H=480;relayout(); return NOTIFY_Y >= 60 && NOTIFY_Y <= 76; })()'));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 check('sw.js cache bumped to v93', () => /const CACHE = 'skystack-v93'/.test(sw));
