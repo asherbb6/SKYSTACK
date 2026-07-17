@@ -5195,7 +5195,7 @@ function renderModifierHUD(h) {
   if (!runContext||!runContext.modifierPermissions.enabled) return;
   const m=runContext.modifiers.find(x=>{const p=modifierRuntime(x);return p&&(p.status==='active'||p.status==='announced');});
   if (!m) return;
-  const p=modifierRuntime(m), active=p.status==='active', y=H-(tutStep>=0?126:44);
+  const p=modifierRuntime(m), active=p.status==='active', y=H-(tutStep>=0?61:31);
   ctx.fillStyle='rgba(11,14,26,0.76)';ctx.fillRect(4,y,W-8,30);
   ctx.fillStyle=active?'rgba(255,215,94,0.8)':'rgba(94,200,242,0.75)';ctx.fillRect(4,y,W-8,1);
   const head=active?m.name+' - '+Math.max(0,m.endAltitude-h+1)+' BLOCKS':'UP NEXT '+m.name+' IN '+Math.max(0,m.startAltitude-h);
@@ -5266,11 +5266,11 @@ function renderHUD(h) {
   // first-run / PRACTICE onboarding: compact, world-readable, and replayable
   if (tutStep >= 0) {
     const lesson = TUT_LESSONS[Math.min(tutStep, TUT_LESSONS.length-1)];
-    ctx.fillStyle = 'rgba(11,14,26,0.62)'; ctx.fillRect(0, H-94, W, 29);
-    ctx.fillStyle = 'rgba(255,215,94,0.55)'; ctx.fillRect(0, H-94, W, 1);
-    txt((m.practice ? 'PRACTICE ' : '') + lesson.title, W/2, H-88, 1, '#FFD75E', 'center');
+    ctx.fillStyle = 'rgba(11,14,26,0.62)'; ctx.fillRect(0, H-29, W, 29);
+    ctx.fillStyle = 'rgba(255,215,94,0.55)'; ctx.fillRect(0, H-29, W, 1);
+    txt((m.practice ? 'PRACTICE ' : '') + lesson.title, W/2, H-23, 1, '#FFD75E', 'center');
     const lbody = (lesson.compact && lesson.body.length*6-1 > W-12) ? lesson.compact : lesson.body;
-    txt(lbody, W/2, H-76, 1, '#FFF6E8', 'center');
+    txt(lbody, W/2, H-11, 1, '#FFF6E8', 'center');
   }
   // sound toggle
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(SND_BTN.x-1,SND_BTN.y-1,SND_BTN.w+2,SND_BTN.h+2);

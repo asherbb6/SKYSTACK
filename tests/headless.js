@@ -1287,6 +1287,13 @@ check('banner/toast overlap fix: toast drops to a second row below the banner in
     'if (toastT > 0) drawNotifyStrip(toastMsg, 1, "rgba(255,246,232,0.4)", bannerT > 0 ? 16 : 0); ' +
     'drawNotifyStrip = orig; return ys.length === 2 && ys[0] !== ys[1]; })()'));
 
+// ---------- v95 in-run bottom overlays sit at the very bottom of the screen ----------
+check('v95 tutorial hint strip is flush with the bottom edge, not floating mid-tower', () =>
+  /ctx\.fillRect\(0, H-29, W, 29\)/.test(src) &&
+  !/ctx\.fillRect\(0, H-94, W, 29\)/.test(src));
+check('v95 modifier HUD hugs the bottom and stacks just above an active tutorial strip', () =>
+  /y=H-\(tutStep>=0\?61:31\)/.test(src));
+
 // ---------- v94 Home/Shop/Me dead space ----------
 // NOTE: computeSize() caps logical H at 520 and maps real phones to ~180-wide logical canvases
 // (390x844 CSS -> 180x390 logical, 403x956 CSS -> 180x427). Tall-viewport fixtures below use
