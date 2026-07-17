@@ -1863,11 +1863,18 @@ function relayout() {
     ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) + i*26, w: rowW, h: 20 }));
   FAIL_REV = { x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) - 26, w: rowW, h: 20 };
   const missW = Math.min(W - PAD*2, 200);
-  // v93: panel height budgets real content — 5 top pad + header 7 + 2 + divider 1 + 3 + two
-  // 10px rows + 5 bottom pad = 40 (was 36, which left the last row 1px off the frame)
+  // v94: the mission row gap grows with the leftover room (was a flat 10px) so the panel fills
+  // more of a tall screen instead of floating as a small fixed box between two voids; capped at
+  // 22 so the two rows never drift apart on a big desktop window. Height keeps v93's symmetric
+  // padding: rows draw at y+18 and y+18+gap with 7px glyphs, so h = 18 + gap + 7 + 5.
   const homeRoom = NAV_Y - (MAP_BTN.y + MAP_BTN.h) - 40;
-  const missY=H<=280?MAP_BTN.y+MAP_BTN.h+2:Math.min(NAV_Y-44,Math.max(MAP_BTN.y+MAP_BTN.h+12,Math.round(MAP_BTN.y+MAP_BTN.h+homeRoom*.48)));
-  MISS_PANEL = { x: Math.round((W-missW)/2), y:missY, w:missW, h:40 };   // compact summary; full list opens on tap
+  const missRowGap = clamp(Math.round(homeRoom*.16), 10, 22);
+  const missH = 30 + missRowGap;
+  // center the panel between the MAP/EXTRAS row and the install slot using its REAL height
+  // (v93 centered a fixed 40px box at homeRoom*.48, which dumped all growth below the panel)
+  const missSlack = NAV_Y - (MAP_BTN.y + MAP_BTN.h) - missH - 22;
+  const missY=H<=280?MAP_BTN.y+MAP_BTN.h+2:Math.min(NAV_Y-4-missH,Math.max(MAP_BTN.y+MAP_BTN.h+12,MAP_BTN.y+MAP_BTN.h+Math.round(missSlack*.45)));
+  MISS_PANEL = { x: Math.round((W-missW)/2), y:missY, w:missW, h:missH, rowGap:missRowGap };   // compact summary; full list opens on tap
   INSTALL_BTN = { x:W/2-42, y:Math.min(NAV_Y-18,Math.max(MISS_PANEL.y+MISS_PANEL.h+4,H-58)), w:84, h:14 };
   // shop
   const shopTabW=Math.min(90,Math.floor((W-30)/2));
@@ -4143,7 +4150,7 @@ function renderHome() {
   txt('VIEW ALL >',MISS_PANEL.x+MISS_PANEL.w-7,MISS_PANEL.y+5,1,'rgba(255,246,232,0.50)','right');
   ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(MISS_PANEL.x+6,MISS_PANEL.y+14,MISS_PANEL.w-12,1);
   for (let i=0;i<Math.min(2,missions.length);i++) {
-    const mm = missions[i], rowY = MISS_PANEL.y + 18 + i*10;
+    const mm = missions[i], rowY = MISS_PANEL.y + 18 + i*MISS_PANEL.rowGap;
     ctx.fillStyle=i===0?UI_HEX():'rgba(255,246,232,0.28)';ctx.fillRect(MISS_PANEL.x+7,rowY+2,2,2);
     txt(MDEF[mm.key].text(mm.target), MISS_PANEL.x + 13, rowY, 1, 'rgba(255,246,232,0.82)', 'left');
     drawCoin(MISS_PANEL.x + MISS_PANEL.w - 24, rowY + .5);   // 6px coin centered on 7px digits

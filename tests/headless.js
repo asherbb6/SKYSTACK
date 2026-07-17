@@ -703,7 +703,7 @@ check('renderHome (hero card) runs for fresh, veteran and conquered profiles', (
   return true;
 });
 check('compact Home keeps title, hero details, climb button, and missions in separate lanes', () => fresh.run(
-  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270]]){W=w;H=h;relayout();if(HERO_CARD.y<64||HERO_CARD.h<96||PLAY_BTN.y<HERO_CARD.y+70||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y<=HERO_CARD.y+HERO_CARD.h||MODE_BTN.y+MODE_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=INSTALL_BTN.y||INSTALL_BTN.y+INSTALL_BTN.h>=NAV_Y||MISS_PANEL.h!==40)return false;}return true; })()'));   // h 36->40 in v93: symmetric 5px padding for both mission rows
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270]]){W=w;H=h;relayout();if(HERO_CARD.y<64||HERO_CARD.h<96||PLAY_BTN.y<HERO_CARD.y+70||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y<=HERO_CARD.y+HERO_CARD.h||MODE_BTN.y+MODE_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=INSTALL_BTN.y||INSTALL_BTN.y+INSTALL_BTN.h>=NAV_Y||MISS_PANEL.h!==30+MISS_PANEL.rowGap)return false;}return true; })()'));   // v94: h grows with the row gap; symmetric 5px padding still holds
 check('compact Missions and Shop detail surfaces render and remain dismissible', () => fresh.run(
   '(() => { W=242;H=300;relayout();state="home";missionsOpen=true;renderMissionsOverlay();const mp={x:2,y:2};pos=()=>mp;pressDown({});if(missionsOpen)return false;state="shop";shopView="character";shopDetailOpen=true;renderShopDetail();pressDown({});if(shopDetailOpen)return false;shopView="base";shopDetailOpen=true;renderShopDetail();return SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h<190; })()'));
 check('Me volume mixer renders and stays above navigation on narrow portrait screens', () => fresh.run(
@@ -1251,9 +1251,10 @@ check('v92 symmetry: button labels center exactly and map captions clamp on-scre
 
 // ---------- v93 Climb Orders breathing room + coin baselines ----------
 check('v93 Climb Orders panel budgets symmetric padding for both mission rows', () => fresh.run(
-  // rows draw at y+18 and y+28 (7px glyphs): bottom pad = h - (28+7) must equal the 5px top pad
+  // rows draw at y+18 and y+18+rowGap (7px glyphs): bottom pad = h - (18+rowGap+7) must equal the
+  // 5px top pad (v94 parameterized the gap; at the 10px minimum this is exactly v93's h of 40)
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300]]){W=w;H=h;relayout();' +
-  'if(MISS_PANEL.h !== 40 || MISS_PANEL.h - 35 !== 5 || MISS_PANEL.y+MISS_PANEL.h >= INSTALL_BTN.y || INSTALL_BTN.y+INSTALL_BTN.h >= NAV_Y) return false;} return true; })()'));
+  'if(MISS_PANEL.h - (18 + MISS_PANEL.rowGap + 7) !== 5 || MISS_PANEL.y+MISS_PANEL.h >= INSTALL_BTN.y || INSTALL_BTN.y+INSTALL_BTN.h >= NAV_Y) return false;} return true; })()'));
 check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 everywhere)', () =>
   /drawCoin\(MISS_PANEL\.x \+ MISS_PANEL\.w - 24, rowY \+ \.5\)/.test(src) &&
   /drawCoin\(PAD, 5\.5\)/.test(src) && /drawCoin\(22, 7\.5\)/.test(src) &&
@@ -1285,6 +1286,19 @@ check('banner/toast overlap fix: toast drops to a second row below the banner in
     'if (bannerT > 0) drawNotifyStrip(bannerText, 1, "#FFD75E"); ' +
     'if (toastT > 0) drawNotifyStrip(toastMsg, 1, "rgba(255,246,232,0.4)", bannerT > 0 ? 16 : 0); ' +
     'drawNotifyStrip = orig; return ys.length === 2 && ys[0] !== ys[1]; })()'));
+
+// ---------- v94 Home/Shop/Me dead space ----------
+// NOTE: computeSize() caps logical H at 520 and maps real phones to ~180-wide logical canvases
+// (390x844 CSS -> 180x390 logical, 403x956 CSS -> 180x427). Tall-viewport fixtures below use
+// REACHABLE logical shapes: [180,427] (the window that exposed the bug) and [180,520] (max H).
+check('v94 Home Climb Orders panel grows with available room instead of leaving it empty', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300],[180,427],[180,520]]){W=w;H=h;relayout();state="home";renderHome();' +
+  'const room = NAV_Y - (MAP_BTN.y + MAP_BTN.h) - 40;' +
+  'if(MISS_PANEL.rowGap !== clamp(Math.round(room*.16),10,22)) return false;' +
+  'if(MISS_PANEL.h !== 30 + MISS_PANEL.rowGap) return false;' +
+  'const above = MISS_PANEL.y - (MAP_BTN.y + MAP_BTN.h);' +
+  'if(H > 280 && above > 110) return false;' +
+  'if(MISS_PANEL.y + MISS_PANEL.h >= INSTALL_BTN.y || INSTALL_BTN.y + INSTALL_BTN.h >= NAV_Y) return false;} return true; })()'));
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
