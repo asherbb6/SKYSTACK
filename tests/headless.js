@@ -1266,8 +1266,7 @@ check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 ever
 
 // ---------- v94 HUD margin + notification placement ----------
 check('v94 campaign HUD row keeps a 7px side margin (not edge-flush)', () =>
-  /txt\(cp\.startAltitude\?cp\.name\.split\(' '\)\[0\]\+' CP':'GROUND',7,33/.test(src) &&
-  /txt\(\(cp\.scoreMultiplier\+'X SCORE'\)\.replace\('0\.','\.'\),W-7,33/.test(src));
+  /txt\(lft,7,33/.test(src) && /txt\(rgt,W-7,33/.test(src));   // v96 parameterized the labels; the 7px anchors are the invariant
 
 check('v94 banner/toast render as a shared HUD notification strip below the HUD block', () =>
   /function drawNotifyStrip\(/.test(src) &&
@@ -1293,6 +1292,61 @@ check('v95 tutorial hint strip is flush with the bottom edge, not floating mid-t
   !/ctx\.fillRect\(0, H-94, W, 29\)/.test(src));
 check('v95 modifier HUD hugs the bottom and stacks just above an active tutorial strip', () =>
   /y=H-\(tutStep>=0\?61:31\)/.test(src));
+
+// ---------- v96 in-run HUD overlap audit ----------
+// txt() is instrumented to capture every glyph box renderHUD draws; any pair of boxes that
+// intersect (or any box leaving the screen) fails. Shadow copies (black text) are excluded.
+check('v96 campaign HUD text never overlaps or leaves the screen (worst-case labels)', () => fresh.run(
+  '(() => { const overl=(a,b)=>a.y<b.y+7*b.sc&&b.y<a.y+7*a.sc&&a.x0<b.x1&&b.x0<a.x1;' +
+  'for (const [w,hh] of [[180,390],[242,300],[320,480],[480,270],[180,520]]) { W=w;H=hh;relayout();' +
+  'for (const [lvl,cpId] of [[0,null],[7,"checkpoint-6"],[10,"checkpoint-9"]]) {' +
+  'runContext=createRunContext({mode:"level",campaignLevel:lvl,checkpointId:cpId,startingAltitude:lvl?TIERS[lvl-1].n:0,seed:9,skill:.5,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'runLevel=lvl; runLaunch=runContext.startingAltitude; coins=123456; score=999999; combo=9; wind={dir:1,t:10,dur:100}; balance=0; tutStep=-1;' +
+  'initModifierRuntime(); const mm=runContext.modifiers[0]; if (mm) modifierRuntime(mm).status="announced";' +
+  'const calls=[]; const orig=txt;' +
+  'txt=(t,x,y,sc,col,al)=>{sc=sc||1;t=String(t);const tw2=t.length*6*sc-sc;const x0=al==="center"?Math.round(x-tw2/2):al==="right"?Math.round(x-tw2):x;if(String(col).indexOf("0,0,0")<0)calls.push({t,x0,x1:x0+tw2,y,sc});};' +
+  'try { renderHUD(runLaunch+2); } finally { txt=orig; }' +
+  'for (const c of calls) if (c.x0 < 0 || c.x1 > W) return false;' +
+  'for (let i2=0;i2<calls.length;i2++) for (let j2=i2+1;j2<calls.length;j2++) if (overl(calls[i2],calls[j2])) return false;' +
+  '} } return true; })()'));
+
+check('v96 challenge HUD text never overlaps LIVES or leaves the screen', () => fresh.run(
+  '(() => { const overl=(a,b)=>a.y<b.y+7*b.sc&&b.y<a.y+7*a.sc&&a.x0<b.x1&&b.x0<a.x1;' +
+  'for (const [w,hh] of [[180,390],[242,300],[320,480],[480,270]]) { W=w;H=hh;relayout();' +
+  'for (const id of ["three-lives","unstable20","time60"]) {' +
+  'const cd=challengeById(id);' +
+  'runContext=createRunContext({mode:cd.mode,challengeId:id,startingAltitude:0,seed:5,skill:.5,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'initChallengeRuntime(); runLevel=-1; coins=88; score=1234; combo=3; wind=null; balance=0; tutStep=-1; shield=2; timeLeft=3600;' +
+  'const calls=[]; const orig=txt;' +
+  'txt=(t,x,y,sc,col,al)=>{sc=sc||1;t=String(t);const tw2=t.length*6*sc-sc;const x0=al==="center"?Math.round(x-tw2/2):al==="right"?Math.round(x-tw2):x;if(String(col).indexOf("0,0,0")<0)calls.push({t,x0,x1:x0+tw2,y,sc});};' +
+  'try { renderHUD(8); } finally { txt=orig; }' +
+  'for (const c of calls) if (c.x0 < 0 || c.x1 > W) return false;' +
+  'for (let i2=0;i2<calls.length;i2++) for (let j2=i2+1;j2<calls.length;j2++) if (overl(calls[i2],calls[j2])) return false;' +
+  '} } return true; })()'));
+
+check('v96 balance warning and combo share one lane: danger outranks the celebration', () => fresh.run(
+  '(() => { W=180;H=390;relayout();' +
+  'runContext=createRunContext({mode:"level",campaignLevel:0,startingAltitude:0,seed:1,skill:.5,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'runLevel=0;runLaunch=0;coins=10;score=10;combo=9;wind=null;tutStep=-1;tick=0;balance=TOPPLE*0.9;' +
+  'const at55=[];const orig=txt;txt=(t,x,y)=>{if(y===55)at55.push(String(t));};' +
+  'try{renderHUD(10);}finally{txt=orig;}' +
+  'return at55.length===1 && at55[0]==="BALANCE!"; })()'));
+
+check('v96 notification boxes carry a full 1px outline, not just top/bottom lines', () =>
+  /ctx\.fillRect\(x, y, 1, 14\); ctx\.fillRect\(x \+ tw - 1, y, 1, 14\)/.test(src) &&
+  /ctx\.fillRect\(4,y,W-8,1\);ctx\.fillRect\(4,y\+29,W-8,1\);ctx\.fillRect\(4,y,1,30\);ctx\.fillRect\(W-5,y,1,30\)/.test(src));
+
+check('v96 modifier banners fit on screen: activation is name-only, telegraph has no duplicate banner', () =>
+  /p\.status='active'; bannerText=m\.name; bannerT=1/.test(src) &&
+  !/bannerText='UP NEXT: '/.test(src));
+
+check('v96 notification strip clamps its text to the screen width', () =>
+  /while \(text\.length > 1 && text\.length \* 6 \+ 16 > W - 16\) text = text\.slice\(0, -1\)/.test(src));
+
+check('v96 in-run strips share one 0.82 backing opacity (visibility pass)', () =>
+  /rgba\(11,14,26,0\.82\)'; ctx\.fillRect\(x, y, tw, 14\)/.test(src) &&           // banner/toast strip
+  /rgba\(11,14,26,0\.82\)';ctx\.fillRect\(4,y,W-8,30\)/.test(src) &&              // modifier strip
+  /rgba\(11,14,26,0\.82\)'; ctx\.fillRect\(0, H-29, W, 29\)/.test(src));          // tutorial strip
 
 // ---------- v94 Home/Shop/Me dead space ----------
 // NOTE: computeSize() caps logical H at 520 and maps real phones to ~180-wide logical canvases

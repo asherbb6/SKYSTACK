@@ -1103,9 +1103,9 @@ function updateModifiersForPlacement(h,outcome) {
   if (!runContext||!runContext.modifierPermissions.enabled) return;
   for (const m of runContext.modifiers) {
     const p=modifierRuntime(m); if (!p||p.status==='complete'||p.status==='failed') continue;
-    if (h>=m.announceAltitude&&p.status==='pending') { p.status='announced'; bannerText='UP NEXT: '+m.name; bannerT=1; }
+    if (h>=m.announceAltitude&&p.status==='pending') { p.status='announced'; }   // the bottom strip carries the telegraph — no duplicate banner
     if (h>=m.startAltitude&&h<=m.endAltitude) {
-      if (p.status!=='active') { p.status='active'; bannerText=m.name+' - '+m.rule; bannerT=1; }
+      if (p.status!=='active') { p.status='active'; bannerText=m.name; bannerT=1; }   // rule lives in the bottom strip; name-only always fits on screen
       p.placements++;
       if (outcome&&outcome.perfect) { p.perfects++; p.streak++; p.bestStreak=Math.max(p.bestStreak,p.streak); }
       else { p.streak=0; p.misses++; }
@@ -1831,7 +1831,7 @@ let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HER
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
-  NOTIFY_Y = 66;   // directly under the wind/balance/modifier HUD row (all end by y=62)
+  NOTIFY_Y = 74;   // directly under the full HUD column (combo lane ends 62, wind glyphs end 69)
   NAV_TABS = [
     { id:'home', label:'HOME' },
     { id:'shop', label:'SHOP' },
@@ -3798,12 +3798,16 @@ function renderRegionIntro() {
 
 function drawNotifyStrip(text, alpha, accent, yOff) {
   yOff = yOff || 0;
+  text = String(text);
+  while (text.length > 1 && text.length * 6 + 16 > W - 16) text = text.slice(0, -1);   // never wider than the screen
   const tw = Math.min(W - 16, text.length * 6 + 16);
   const x = Math.round(W/2 - tw/2);
   const y = NOTIFY_Y + yOff;
   ctx.globalAlpha = alpha;
   ctx.fillStyle = 'rgba(11,14,26,0.82)'; ctx.fillRect(x, y, tw, 14);
-  ctx.fillStyle = accent; ctx.fillRect(x, y, tw, 1); ctx.fillRect(x, y + 13, tw, 1);
+  ctx.fillStyle = accent;   // full 1px outline — the strip floats free of the screen edges
+  ctx.fillRect(x, y, tw, 1); ctx.fillRect(x, y + 13, tw, 1);
+  ctx.fillRect(x, y, 1, 14); ctx.fillRect(x + tw - 1, y, 1, 14);
   txt(text, W/2, y + 4, 1, '#FFF6E8', 'center');
   ctx.globalAlpha = 1;
 }
@@ -5196,44 +5200,58 @@ function renderModifierHUD(h) {
   const m=runContext.modifiers.find(x=>{const p=modifierRuntime(x);return p&&(p.status==='active'||p.status==='announced');});
   if (!m) return;
   const p=modifierRuntime(m), active=p.status==='active', y=H-(tutStep>=0?61:31);
-  ctx.fillStyle='rgba(11,14,26,0.76)';ctx.fillRect(4,y,W-8,30);
-  ctx.fillStyle=active?'rgba(255,215,94,0.8)':'rgba(94,200,242,0.75)';ctx.fillRect(4,y,W-8,1);
-  const head=active?m.name+' - '+Math.max(0,m.endAltitude-h+1)+' BLOCKS':'UP NEXT '+m.name+' IN '+Math.max(0,m.startAltitude-h);
+  const fitW=s=>s.length*6-1<=W-16;   // text budget inside the 4px-inset strip with 4px inner pads
+  ctx.fillStyle='rgba(11,14,26,0.82)';ctx.fillRect(4,y,W-8,30);
+  ctx.fillStyle=active?'rgba(255,215,94,0.8)':'rgba(94,200,242,0.75)';   // full 1px outline — the strip floats free of the screen edges
+  ctx.fillRect(4,y,W-8,1);ctx.fillRect(4,y+29,W-8,1);ctx.fillRect(4,y,1,30);ctx.fillRect(W-5,y,1,30);
+  const blocksLeft=Math.max(0,m.endAltitude-h+1), inN=Math.max(0,m.startAltitude-h);
+  let head=active?m.name+' - '+blocksLeft+' BLOCKS':'UP NEXT '+m.name+' IN '+inN;
+  if (!fitW(head)) head=active?m.name+' - '+blocksLeft:'NEXT '+m.name+' IN '+inN;
   txt(head,W/2,y+5,1,active?'#FFD75E':'#BFE8FF','center');
-  txt((active?modifierProgressText(m,p):m.rule)+' - +'+m.rewardCoins,W/2,y+16,1,'#FFF6E8','center');
+  const rbase=active?modifierProgressText(m,p):m.rule;
+  const rtext=fitW(rbase+' - +'+m.rewardCoins)?rbase+' - +'+m.rewardCoins:rbase;
+  txt(rtext,W/2,y+16,1,'#FFF6E8','center');
   const lane=modifierLaneBounds(m,active&&(m.family==='target'));
   ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(8,y+26,W-16,2);
   ctx.fillStyle=active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(lane.left),y+25,Math.max(2,Math.round(lane.right-lane.left)),3);
-  if (m.family==='gust') txt(m.direction>0?'WIND >':'< WIND',m.direction>0?W-8:8,y+16,1,'#BFE8FF',m.direction>0?'right':'left');
+  if (m.family==='gust' && Math.round(W/2-(rtext.length*6-1)/2) >= 48)   // draw the wind tag only when it clears the rule text
+    txt(m.direction>0?'WIND >':'< WIND',m.direction>0?W-9:9,y+16,1,'#BFE8FF',m.direction>0?'right':'left');
 }
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
   const m = activeMode();
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(PAUSE_BTN.x-1,PAUSE_BTN.y-1,PAUSE_BTN.w+2,PAUSE_BTN.h+2);
   ctx.fillStyle='#FFF6E8'; ctx.fillRect(PAUSE_BTN.x+3,PAUSE_BTN.y+3,3,8); ctx.fillRect(PAUSE_BTN.x+8,PAUSE_BTN.y+3,3,8);
-  drawCoin(22, 7.5); txt(coins, 31, 7, 1, '#FFD75E', 'left');
+  const tW=s=>String(s).length*6-1;   // fine-font width at scale 1
+  const coinLbl = coins > 9999 ? Math.floor(coins/1000)+'K' : coins > 999 ? (Math.floor(coins/100)/10)+'K' : coins;   // <=4 chars: never reaches a 6-digit score
+  drawCoin(22, 7.5); txt(coinLbl, 31, 7, 1, '#FFD75E', 'left');
   txt(score, W/2+1, 6, 2, shadow, 'center'); txt(score, W/2, 5, 2, '#FFF6E8', 'center');
   if (m.time) { const s = Math.ceil(timeLeft/60); txt(s+'S', W-24, 7, 1, s<=10?(Math.floor(tick/8)%2?'#FF5E7E':'#FFD75E'):'rgba(255,246,232,0.9)', 'right'); }
   txt(h*METERS_PER+'M', W/2, 22, 1, 'rgba(255,246,232,0.8)', 'center');
   const challenge=activeChallenge();
-  if(challenge){txt(challenge.name+' - '+challengeProgressText(),W/2,33,1,'#FFD75E','center');if(challenge.lives)txt('LIVES '+(shield+1),4,33,1,'#62E8B5','left');}
+  if(challenge){
+    const lives=challenge.lives?'LIVES '+(shield+1):'';
+    let ct=challenge.name+' - '+challengeProgressText();
+    if (Math.round(W/2-tW(ct)/2) < (lives?7+tW(lives)+5:6) || W/2+tW(ct)/2 > W-6) ct=challengeProgressText();   // compact: the persistent objective, never overlapping LIVES or the edges
+    txt(ct,W/2,33,1,'#FFD75E','center');
+    if(lives)txt(lives,7,33,1,'#62E8B5','left');
+  }
   if (runLevel >= 0) {   // campaign HUD: the goal + a slim progress bar
     const goal = TIERS[runLevel].n, from = runLaunch;
     const cp=runContext.checkpointSnapshot;
-    txt(cp.startAltitude?cp.name.split(' ')[0]+' CP':'GROUND',7,33,1,'rgba(255,246,232,0.62)','left');
-    txt('L' + (runLevel+1) + ' GOAL ' + goal*METERS_PER + 'M', W/2, 33, 1, TIERS[runLevel].c, 'center');
-    txt((cp.scoreMultiplier+'X SCORE').replace('0.','.'),W-7,33,1,'rgba(255,246,232,0.62)','right');
+    let lft=cp.startAltitude?cp.name.split(' ')[0]+' CP':'GROUND',
+        mid='L'+(runLevel+1)+' GOAL '+goal*METERS_PER+'M',
+        rgt=(cp.scoreMultiplier+'X SCORE').replace('0.','.');
+    if (7+tW(lft)+5 > Math.round(W/2-tW(mid)/2) || Math.round(W/2+tW(mid)/2)+5 > W-7-tW(rgt)) {   // compact: three labels can't share the row
+      lft=cp.startAltitude?'CP':'GROUND'; mid='GOAL '+goal*METERS_PER+'M'; rgt=(cp.scoreMultiplier+'X').replace('0.','.');
+    }
+    txt(lft,7,33,1,'rgba(255,246,232,0.62)','left');
+    txt(mid, W/2, 33, 1, TIERS[runLevel].c, 'center');
+    txt(rgt,W-7,33,1,'rgba(255,246,232,0.62)','right');
     const bw = Math.min(W - 80, 120), bx = Math.round(W/2 - bw/2);
     const pct = clamp((h - from) / (goal - from), 0, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx, 43, bw, 3);
     ctx.fillStyle = TIERS[runLevel].c; ctx.fillRect(bx, 43, Math.round(bw*pct), 3);
-  }
-  if (combo > 1) {
-    const lbl = nova ? 'NOVA X' : fever ? 'FEVER X' : combo >= 7 ? 'BLAZING X' : 'COMBO X';
-    const col2 = nova ? (Math.floor(tick/4)%2 ? '#FFFFFF' : 'hsl('+((tick*14)%360)+',100%,80%)')
-               : fever ? ('hsl('+((tick*8)%360)+',100%,75%)')
-               : combo >= 7 ? '#FF9E3D' : (combo>=5?'#FF7E6B':'#FFD75E');
-    txt(lbl+combo, W/2, runLevel >= 0 ? 50 : challenge?45:33, 1, col2, 'center');
   }
   let ix = 4;
   for (let i=0;i<shield;i++) { drawIcon('shield', ix, 20); ix += 10; }
@@ -5241,20 +5259,28 @@ function renderHUD(h) {
   if (slowBlocks > 0) { drawIcon('slow', ix, 20); ix += 10; }
   if (auraBlocks > 0) { drawIcon('aura', ix, 20); ix += 10; }
   if (goldenNext || (slider && slider.golden)) { drawIcon('gold', ix, 20); ix += 10; }
+  let balanceDanger = false;
   if ((m.fail || m.practice) && h > 5) {
     const bp = clamp(balance/TOPPLE, -1, 1);
     if (Math.abs(bp) > 0.22) {
       ctx.globalAlpha = Math.min(1, (Math.abs(bp) - 0.22) * 5);
-      const bmW=54, bmX=W/2-bmW/2, bmY=44;
+      const bmW=54, bmX=W/2-bmW/2, bmY=49;   // lane below the campaign progress bar (43..46), above the combo lane (55)
       ctx.fillStyle='rgba(0,0,0,0.32)'; ctx.fillRect(bmX-1,bmY-1,bmW+2,5);
       ctx.fillStyle='rgba(255,246,232,0.25)'; ctx.fillRect(bmX+bmW/2, bmY-1, 1, 5);
       const px = bmX + bmW/2 + bp*(bmW/2-1);
-      const danger = Math.abs(bp) > 0.72;
-      ctx.fillStyle = danger ? (Math.floor(tick/6)%2?'#FF5E7E':'#FFD75E') : '#62E8B5';
+      balanceDanger = Math.abs(bp) > 0.72;
+      ctx.fillStyle = balanceDanger ? (Math.floor(tick/6)%2?'#FF5E7E':'#FFD75E') : '#62E8B5';
       ctx.fillRect(Math.round(px-1), bmY-1, 3, 5);
       ctx.globalAlpha = 1;
-      if (danger && Math.floor(tick/10)%2===0) txt(m.practice ? 'AUTO STEADY' : 'BALANCE!', W/2, 52, 1, m.practice ? '#62E8B5' : '#FF5E7E', 'center');
+      if (balanceDanger && Math.floor(tick/10)%2===0) txt(m.practice ? 'AUTO STEADY' : 'BALANCE!', W/2, 55, 1, m.practice ? '#62E8B5' : '#FF5E7E', 'center');
     }
+  }
+  if (combo > 1 && !balanceDanger) {   // one shared lane: the balance warning outranks the combo celebration
+    const lbl = nova ? 'NOVA X' : fever ? 'FEVER X' : combo >= 7 ? 'BLAZING X' : 'COMBO X';
+    const col2 = nova ? (Math.floor(tick/4)%2 ? '#FFFFFF' : 'hsl('+((tick*14)%360)+',100%,80%)')
+               : fever ? ('hsl('+((tick*8)%360)+',100%,75%)')
+               : combo >= 7 ? '#FF9E3D' : (combo>=5?'#FF7E6B':'#FFD75E');
+    txt(lbl+combo, W/2, 55, 1, col2, 'center');
   }
   if (wind) {
     const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI);
@@ -5266,7 +5292,7 @@ function renderHUD(h) {
   // first-run / PRACTICE onboarding: compact, world-readable, and replayable
   if (tutStep >= 0) {
     const lesson = TUT_LESSONS[Math.min(tutStep, TUT_LESSONS.length-1)];
-    ctx.fillStyle = 'rgba(11,14,26,0.62)'; ctx.fillRect(0, H-29, W, 29);
+    ctx.fillStyle = 'rgba(11,14,26,0.82)'; ctx.fillRect(0, H-29, W, 29);
     ctx.fillStyle = 'rgba(255,215,94,0.55)'; ctx.fillRect(0, H-29, W, 1);
     txt((m.practice ? 'PRACTICE ' : '') + lesson.title, W/2, H-23, 1, '#FFD75E', 'center');
     const lbody = (lesson.compact && lesson.body.length*6-1 > W-12) ? lesson.compact : lesson.body;
