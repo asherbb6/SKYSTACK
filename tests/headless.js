@@ -1307,6 +1307,17 @@ check('v94 Shop Run Boosts card grows with available room instead of capping at 
   'if(BOOST_CARD_H < Math.min(78, avail)) return false;' +   // never below the old fixed height when room allows
   'if(LOAD_CHIPS.some(c => c.y + c.h > 190 + BOOST_CARD_H - 2 || c.y + c.h >= NAV_Y)) return false;} return true; })()'));
 
+check('v94 Me Progress tab distributes its card across available room instead of leaving it empty', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300],[180,427],[180,520]]){W=w;H=h;relayout();state="me";meView="progress";renderMe();' +
+  'const extra = clamp(Math.round((NAV_Y-216)*.5), 0, 72);' +
+  'if(ME_PROG.h !== 168 + extra) return false;' +
+  'const cardBottom = 42 + ME_PROG.h;' +
+  'if(cardBottom > NAV_Y - 6) return false;' +
+  'const statsBottom = ME_PROG.lifeY + 12 + 3*ME_PROG.statGap + 7;' +
+  'if(statsBottom > cardBottom - 8) return false;' +                    // stats stay inside the card
+  'if(H >= 390 && ME_PROG.h < 220) return false;' +                     // tall shapes actually grow
+  'if(ME_BADGES_BTN.y !== ME_PROG.achY - 3) return false;} return true; })()'));   // tap region tracks the grid
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 check('sw.js cache bumped to v93', () => /const CACHE = 'skystack-v93'/.test(sw));

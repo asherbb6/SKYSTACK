@@ -1827,7 +1827,7 @@ const PAD = 6;
 const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
-    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H;
+    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H, ME_PROG;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
@@ -1894,7 +1894,17 @@ function relayout() {
   const meW = Math.min(W - PAD*2-16, 200), meX = Math.round((W - meW)/2);
   const meTabW=Math.floor(meW/2);
   ME_TABS=['progress','settings'].map((id,i)=>({id,x:meX+i*meTabW,y:22,w:meTabW,h:14}));
-  ME_BADGES_BTN={x:meX,y:72,w:meW,h:40};
+  // v94: the Progress card grows with leftover room (was a fixed 168 ending ~200px above the
+  // nav on tall screens) and its section anchors spread proportionally so the extra height
+  // becomes breathing room between sections, not one void at the bottom. meExtra=0 reproduces
+  // v93's layout exactly (achievements 75/88, collections 122, LIFETIME 142, 12px stat rows).
+  const meExtra = clamp(Math.round((NAV_Y-216)*.5), 0, 72);
+  ME_PROG = { h: 168 + meExtra,
+    achY:  75 + Math.round(meExtra*.2),
+    collY: 122 + Math.round(meExtra*.5),
+    lifeY: 142 + Math.round(meExtra*.72),
+    statGap: 12 + Math.round(meExtra*.09) };
+  ME_BADGES_BTN={x:meX,y:ME_PROG.achY-3,w:meW,h:40};
   TOGGLES = ['sound','music','haptics'].map((id, i) => ({ id, x: meX+meW-30, y: 66 + i * 18, w: 30, h: 11 }));
   MIX_ROWS = ['music','sfx'].map((id, i) => {
     const y = 130 + i * 20, minus = { x:meX+meW-88, y, w:13, h:11 };
@@ -4975,24 +4985,24 @@ function renderMe() {
     return;
   }
 
-  pixelFrame(mx-8,42,meW+16,168,'rgba(11,14,26,0.80)',UI_HEX(),true);
+  pixelFrame(mx-8,42,meW+16,ME_PROG.h,'rgba(11,14,26,0.80)',UI_HEX(),true);
   txt('LEVEL '+lvl.level,mx,49,1,'#FFF6E8','left');txt(lvl.xp+'/'+xpNeed(),mx+meW,49,1,'rgba(255,246,232,0.6)','right');
   ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(mx,60,meW,6);ctx.fillStyle='#62E8B5';ctx.fillRect(mx+1,61,Math.max(0,Math.round((meW-2)*clamp(lvl.xp/xpNeed(),0,1))),4);
   const nextAch=ACH.filter(a=>achDone.indexOf(a.id)===-1),doneAch=ACH.filter(a=>achDone.indexOf(a.id)!==-1).reverse(),shownAch=nextAch.concat(doneAch).slice(0,4);
-  txt('ACHIEVEMENTS',mx,75,1,UI_HEX(),'left');txt(achDone.filter(id=>ACH.some(a=>a.id===id)).length+'/'+ACH.length+' >',mx+meW,75,1,'rgba(255,246,232,0.55)','right');
+  txt('ACHIEVEMENTS',mx,ME_PROG.achY,1,UI_HEX(),'left');txt(achDone.filter(id=>ACH.some(a=>a.id===id)).length+'/'+ACH.length+' >',mx+meW,ME_PROG.achY,1,'rgba(255,246,232,0.55)','right');
   for(let i=0;i<shownAch.length;i++){
-    const a=shownAch[i],done=achDone.indexOf(a.id)!==-1,col=i%2,row=Math.floor(i/2),ax=mx+col*cw,ay=88+row*14;
+    const a=shownAch[i],done=achDone.indexOf(a.id)!==-1,col=i%2,row=Math.floor(i/2),ax=mx+col*cw,ay=ME_PROG.achY+13+row*14;
     ctx.fillStyle=done?'#FFD75E':'rgba(255,246,232,0.18)';ctx.fillRect(ax,ay,7,7);
     const name=W<220?a.name.replace('FIRST FLIGHT','FIRST RUN').replace(' FLIGHTS',' RUNS').replace('REACH ','').replace('COMBO ',''):a.name;
     txt(name,ax+10,ay,1,done?'#FFF6E8':'rgba(255,246,232,0.46)','left');
   }
   const known=collectionState.completed.filter(id=>COLLECTION_REGISTRY.some(c=>c.id===id)).length,nextSet=COLLECTION_REGISTRY.find(c=>collectionState.completed.indexOf(c.id)===-1)||COLLECTION_REGISTRY[COLLECTION_REGISTRY.length-1];
   const setProgress=nextSet.progress(),setNow=Math.min(coinAmount(setProgress[0]),coinAmount(setProgress[1]));
-  ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(mx-2,116,meW+4,1);
-  txt((W<220?'SETS ':'COLLECTIONS ')+known+'/'+COLLECTION_REGISTRY.length,mx,122,1,UI_HEX(),'left');txt(nextSet.name+' '+setNow+'/'+coinAmount(setProgress[1]),mx+meW,122,1,'rgba(255,246,232,0.6)','right');
-  txt('LIFETIME',mx,142,1,UI_HEX(),'left');
+  ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(mx-2,ME_PROG.collY-6,meW+4,1);
+  txt((W<220?'SETS ':'COLLECTIONS ')+known+'/'+COLLECTION_REGISTRY.length,mx,ME_PROG.collY,1,UI_HEX(),'left');txt(nextSet.name+' '+setNow+'/'+coinAmount(setProgress[1]),mx+meW,ME_PROG.collY,1,'rgba(255,246,232,0.6)','right');
+  txt('LIFETIME',mx,ME_PROG.lifeY,1,UI_HEX(),'left');
   const rows=[['RUNS',stats.games],['BLOCKS',stats.blocks],['COINS',stats.coins],['COMBO','X'+stats.maxCombo],['BEST M',bestHeight*METERS_PER+'M'],['BEST P',fmtPts(best)],['BREAKS',stats.skybreaks],['STREAK',stats.streakBest]];
-  for(let i=0;i<rows.length;i++){const col=i%2,row=Math.floor(i/2),rx=mx+col*cw,ry=154+row*12;txt(rows[i][0],rx,ry,1,'rgba(255,246,232,0.55)','left');txt(rows[i][1],rx+cw-6,ry,1,'#FFF6E8','right');}
+  for(let i=0;i<rows.length;i++){const col=i%2,row=Math.floor(i/2),rx=mx+col*cw,ry=ME_PROG.lifeY+12+row*ME_PROG.statGap;txt(rows[i][0],rx,ry,1,'rgba(255,246,232,0.55)','left');txt(rows[i][1],rx+cw-6,ry,1,'#FFF6E8','right');}
 }
 
 function renderMeDetail(){
