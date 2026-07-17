@@ -1221,7 +1221,7 @@ check('Home-linked map, mode, and Challenge surfaces stay clipped, concise, and 
 check('production UI keeps presentation ownership separate from locked mechanics', () =>
   /function pixelFrame\(/.test(src) && /function drawJourneyProgress\(/.test(src) && /function drawNavGlyph\(/.test(src) && fresh.run('mechanicsLockReport().ready&&MECHANICS_LOCK_TARGETS.weeklySeeded===false'));
 check('Home, Shop, Bases, and Me share centered dark frames without entering navigation', () => fresh.run(
-  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";renderHome();state="shop";shopView="character";renderShop();shopView="base";renderShop();state="me";renderMe();const lastMix=MIX_ROWS[MIX_ROWS.length-1],meW=Math.min(W-PAD*2-16,200),meX=Math.round((W-meW)/2)-8;if(HERO_CARD.x!==Math.round((W-HERO_CARD.w)/2)||SHOP_TABS[0].x+SHOP_TABS[0].w+2!==SHOP_TABS[1].x||EQUIP_BTN.y+EQUIP_BTN.h>=194||LOAD_CHIPS.some(c=>c.y+c.h>=NAV_Y)||lastMix.plus.y+lastMix.plus.h>=NAV_Y||meX<0||meX+meW+16>W)return false;}return true; })()'));
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";renderHome();state="shop";shopView="character";renderShop();shopView="base";renderShop();state="me";renderMe();const lastMix=MIX_ROWS[MIX_ROWS.length-1],meW=Math.min(W-PAD*2-16,200),meX=Math.round((W-meW)/2)-8;if(HERO_CARD.x!==Math.round((W-HERO_CARD.w)/2)||SHOP_TABS[0].x+SHOP_TABS[0].w+6!==SHOP_TABS[1].x||EQUIP_BTN.y+EQUIP_BTN.h>=BOOST_TOP||LOAD_CHIPS.some(c=>c.y+c.h>=NAV_Y)||lastMix.plus.y+lastMix.plus.h>=NAV_Y||meX<0||meX+meW+16>W)return false;}return true; })()'));
 
 // ---------- v91 UI fine grid ----------
 check('v91 fine grid: supersample snaps even so half-pixel UI detail stays crisp', () =>
@@ -1367,25 +1367,44 @@ check('v98 stage emblems are redrawn on the fine grid and render at emblem and m
 check('v97 boost chips sit inside the Run Boosts card with breathing gaps', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
   'const shopW=Math.min(W-16,220), shopX=Math.round((W-shopW)/2);' +
-  'if(LOAD_CHIPS[0].x < shopX+2) return false;' +
-  'if(LOAD_CHIPS[2].x+LOAD_CHIPS[2].w > shopX+shopW-2) return false;' +
+  'if(LOAD_CHIPS[0].x < shopX+4) return false;' +   // v99: 4-5px comfortable clearance
+  'if(LOAD_CHIPS[2].x+LOAD_CHIPS[2].w > shopX+shopW-4) return false;' +
   'for(let i2=1;i2<3;i2++) if(LOAD_CHIPS[i2].x - (LOAD_CHIPS[i2-1].x+LOAD_CHIPS[i2-1].w) < 3) return false;' +
   '} return true; })()'));
 
-check('v97 shop tabs split around center with a 2px gap and equal widths', () => fresh.run(
+check('v97 shop tabs split around center with a visible gap and equal widths', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
   'const a=SHOP_TABS[0], b=SHOP_TABS[1];' +
-  'if(b.x-(a.x+a.w)!==2 || a.w!==b.w) return false;' +
+  'if(b.x-(a.x+a.w)!==6 || a.w!==b.w) return false;' +   // v99: 6px gap
   'if(Math.abs((a.x + b.x+b.w)/2 - W/2) > 1) return false; } return true; })()'));
 
 check('v97 skin pager dots clear the card frame and match across both shop views', () =>
-  /ctx\.fillRect\(ddx\+i\*6, 45, 4, 3\)/.test(src) && /ctx\.fillRect\(dx\+i\*6,45,4,3\)/.test(src));
+  /ctx\.fillRect\(ddx\+i\*6, SHOP_TOP\+5, 4, 3\)/.test(src) && /ctx\.fillRect\(dx\+i\*6,SHOP_TOP\+5,4,3\)/.test(src));
 
 check('v97 equip/detail buttons nest inside the hero card with gaps', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
   'if(EQUIP_BTN.y+EQUIP_BTN.h+2 > SHOP_DETAIL_BTN.y) return false;' +
-  'if(SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h > 180) return false;' +
+  'if(SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h > SHOP_TOP+140) return false;' +
   'if(SKIN_L.x+SKIN_L.w >= SKIN_R.x) return false; } return true; })()'));
+
+// ---------- v99 centered shop/home layout + stacked boost chips ----------
+check('v99 shop cards center vertically: the void above equals the void below (±2)', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[180,427],[180,520],[320,480]]){W=w;H=h;relayout();' +
+  'const above = SHOP_TOP - 40, below = NAV_Y - 4 - (BOOST_TOP + BOOST_CARD_H);' +
+  'if(above < 0 || Math.abs(above - below) > 2) return false;' +
+  'if(BOOST_TOP !== SHOP_TOP + 150) return false; } return true; })()'));
+check('v99 boost chips stack icon-over-name-over-price on tall screens', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[180,427],[180,520],[320,480]]){W=w;H=h;relayout();' +
+  'if(LOAD_CHIPS[0].h !== 34 || LOAD_CHIPS[0].w !== 44) return false;' +
+  'if(LOAD_CHIPS[1].x - LOAD_CHIPS[0].x !== 54) return false;' +
+  'if(LOAD_CHIPS[2].y + LOAD_CHIPS[2].h > BOOST_TOP + BOOST_CARD_H - 4) return false;} return true; })()') &&
+  /v99 stacked chip: badge over name over price/.test(src));
+check('v99 home column splits its lower space into equal thirds on tall screens', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[180,427],[180,520],[242,300]]){W=w;H=h;relayout();' +
+  'const g1 = MISS_PANEL.y - (MAP_BTN.y + MAP_BTN.h);' +
+  'const g2 = INSTALL_BTN.y - (MISS_PANEL.y + MISS_PANEL.h);' +
+  'const g3 = NAV_Y - (INSTALL_BTN.y + INSTALL_BTN.h);' +
+  'if(Math.abs(g1-g2) > 1 || Math.abs(g3-g1) > 2) return false; } return true; })()'));
 
 check('v97 shop text never overlaps or leaves the screen (both views, owned and unowned)', () => fresh.run(
   '(() => { const overl=(a,b)=>a.y<b.y+7*b.sc&&b.y<a.y+7*a.sc&&a.x0<b.x1&&b.x0<a.x1;' +
@@ -1415,9 +1434,9 @@ check('v94 Home Climb Orders panel grows with available room instead of leaving 
 check('v94 Shop Run Boosts card grows with available room instead of capping at 78', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300],[180,427],[180,520]]){W=w;H=h;relayout();state="shop";shopView="character";renderShop();' +
   'const avail = NAV_Y - 198;' +
-  'if(BOOST_CARD_H !== Math.min(clamp(Math.round(avail*.55),78,160), avail)) return false;' +
-  'if(BOOST_CARD_H < Math.min(78, avail)) return false;' +   // never below the old fixed height when room allows
-  'if(LOAD_CHIPS.some(c => c.y + c.h > 190 + BOOST_CARD_H - 2 || c.y + c.h >= NAV_Y)) return false;} return true; })()'));
+  'if(BOOST_CARD_H !== Math.min(clamp(Math.round(avail*.55),84,160), avail)) return false;' +   // v99: min 84 fits the stacked chip column
+  'if(BOOST_CARD_H < Math.min(84, avail)) return false;' +   // never below the stacked minimum when room allows
+  'if(LOAD_CHIPS.some(c => c.y + c.h > BOOST_TOP + BOOST_CARD_H - 2 || c.y + c.h >= NAV_Y)) return false;} return true; })()'));
 
 check('v94 Me Progress tab distributes its card across available room instead of leaving it empty', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300],[180,427],[180,520]]){W=w;H=h;relayout();state="me";meView="progress";renderMe();' +

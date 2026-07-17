@@ -1827,7 +1827,7 @@ const PAD = 6;
 const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
-    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H, ME_PROG;
+    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H, ME_PROG, SHOP_TOP, BOOST_TOP;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
@@ -1870,27 +1870,35 @@ function relayout() {
   const homeRoom = NAV_Y - (MAP_BTN.y + MAP_BTN.h) - 40;
   const missRowGap = clamp(Math.round(homeRoom*.16), 10, 22);
   const missH = 30 + missRowGap;
-  // center the panel between the MAP/EXTRAS row and the install slot using its REAL height
-  // (v93 centered a fixed 40px box at homeRoom*.48, which dumped all growth below the panel)
-  const missSlack = NAV_Y - (MAP_BTN.y + MAP_BTN.h) - missH - 22;
-  const missY=H<=280?MAP_BTN.y+MAP_BTN.h+2:Math.min(NAV_Y-4-missH,Math.max(MAP_BTN.y+MAP_BTN.h+12,MAP_BTN.y+MAP_BTN.h+Math.round(missSlack*.45)));
+  // v99: the space under the MAP/EXTRAS row splits into equal thirds around the missions panel
+  // and the install slot, so a tall phone reads as a centered column instead of panel-then-void
+  const homeGap = Math.max(4, Math.floor((NAV_Y - (MAP_BTN.y + MAP_BTN.h) - missH - 14) / 3));
+  const missY=H<=280?MAP_BTN.y+MAP_BTN.h+2:Math.min(NAV_Y-4-missH,MAP_BTN.y+MAP_BTN.h+homeGap);
   MISS_PANEL = { x: Math.round((W-missW)/2), y:missY, w:missW, h:missH, rowGap:missRowGap };   // compact summary; full list opens on tap
-  INSTALL_BTN = { x:W/2-42, y:Math.min(NAV_Y-18,Math.max(MISS_PANEL.y+MISS_PANEL.h+4,H-58)), w:84, h:14 };
-  // shop — v97: buttons shrunk to their content, 2px breathing gap between the tabs, and at the
-  // narrow phone width the tab pair lines up with the cards' inner edges (9..171 at W=180)
-  const shopTabW=Math.min(80,Math.floor((W-20)/2));
-  SHOP_TABS=['character','base'].map((id,i)=>({id,x:Math.round(W/2)+(i?1:-shopTabW-1),y:22,w:shopTabW,h:14}));
-  SKIN_L = { x: Math.max(PAD, Math.round(W/2)-78), y:68, w:18, h:22 };   // arrows hug the preview, not the screen edge
-  SKIN_R = { x: Math.min(W-PAD-18, Math.round(W/2)+60), y:68, w:18, h:22 };
-  EQUIP_BTN = { x:W/2-42, y:140, w:84, h:16 };
-  SHOP_DETAIL_BTN = { x:W/2-66, y:161, w:132, h:16 };
-  // v94: boosts card height grows with leftover room (was capped flat at 78, leaving tall
-  // viewports with a big empty gap below the card); the chip row shifts down with the taller
-  // card so its content redistributes instead of staying pinned near the top. At the old
-  // minimum height the chip row lands exactly at v93's y=210.
-  BOOST_CARD_H = Math.min(clamp(Math.round((NAV_Y-198)*.55),78,160), NAV_Y-198);
-  const boostChipY = 210 + Math.max(0, Math.round((BOOST_CARD_H - 78) * .35));
-  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - 79 + i * 54), y: boostChipY, w: 50, h: 24, id: l.id, cost: l.cost }));   // v97: sits INSIDE the boosts card at W=180 (11..169 vs inner 9..171)
+  INSTALL_BTN = { x:W/2-42, y:Math.min(NAV_Y-18,MISS_PANEL.y+MISS_PANEL.h+(H<=280?4:homeGap)), w:84, h:14 };
+  // shop — v99: the two cards float vertically CENTERED between the tabs and the nav (SHOP_OFF),
+  // the tab pair splits around center with a 6px gap (still aligned with the cards' inner edges
+  // at the phone width), and every button keeps 4-5px clearance from its card frame
+  const shopTabW=Math.min(80,Math.floor((W-24)/2));
+  SHOP_TABS=['character','base'].map((id,i)=>({id,x:Math.round(W/2)+(i?3:-shopTabW-3),y:22,w:shopTabW,h:14}));
+  // v94 grow rule kept; min 78→84 so the stacked chip column always fits when it engages
+  BOOST_CARD_H = Math.min(clamp(Math.round((NAV_Y-198)*.55),84,160), NAV_Y-198);
+  const SHOP_OFF = Math.max(0, Math.floor((NAV_Y - 40 - (150 + BOOST_CARD_H) - 4) / 2));
+  SHOP_TOP = 40 + SHOP_OFF;          // hero card top (was fixed 40)
+  BOOST_TOP = SHOP_TOP + 150;        // boosts card top (was fixed 190)
+  SKIN_L = { x: Math.max(PAD, Math.round(W/2)-78), y:SHOP_TOP+28, w:18, h:22 };   // arrows hug the preview, not the screen edge
+  SKIN_R = { x: Math.min(W-PAD-18, Math.round(W/2)+60), y:SHOP_TOP+28, w:18, h:22 };
+  EQUIP_BTN = { x:W/2-42, y:SHOP_TOP+100, w:84, h:16 };
+  SHOP_DETAIL_BTN = { x:W/2-66, y:SHOP_TOP+121, w:132, h:16 };
+  // v99 stacked boost chips (icon over name over price) whenever the card affords the 34px
+  // column; the v97 horizontal 24px chip remains the short-viewport fallback
+  const chipStacked = BOOST_CARD_H >= 84;
+  const chipW = chipStacked ? 44 : 50, chipH = chipStacked ? 34 : 24, chipStep = chipW + (chipStacked ? 10 : 4);
+  const chipsW = chipW*3 + (chipStep-chipW)*2;
+  const boostChipY = BOOST_TOP + (chipStacked
+    ? 18 + Math.max(0, Math.round((BOOST_CARD_H - 84) * .3))
+    : 20 + Math.max(0, Math.round((BOOST_CARD_H - 78) * .35)));
+  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - chipsW/2 + i * chipStep), y: boostChipY, w: chipW, h: chipH, id: l.id, cost: l.cost }));
   // me
   const meW = Math.min(W - PAD*2-16, 200), meX = Math.round((W - meW)/2);
   const meTabW=Math.floor(meW/2);
@@ -4869,23 +4877,23 @@ function renderShop() {
   // functional Character Select; current block skins are the temporary character art
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
   const shopW=Math.min(W-16,220),shopX=Math.round((W-shopW)/2);
-  pixelFrame(shopX,40,shopW,144,'rgba(11,14,26,0.78)',RARE_COL[sk.rare],false);
-  pixelFrame(shopX,190,shopW,BOOST_CARD_H,'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.gold,false);
+  pixelFrame(shopX,SHOP_TOP,shopW,144,'rgba(11,14,26,0.78)',RARE_COL[sk.rare],false);
+  pixelFrame(shopX,BOOST_TOP,shopW,BOOST_CARD_H,'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.gold,false);
   const dotsW = CHARACTER_REGISTRY.length*6-2, ddx = Math.round(W/2 - dotsW/2);
-  for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, 45, 4, 3); }   // v97: clear of the card's top frame
+  for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, SHOP_TOP+5, 4, 3); }   // v97: clear of the card's top frame
   for (let i = 0; i < Math.min(demo.n, 4); i++) {
     const col = sk.base(i, hueBase);
     const w2 = 50 - i*6;
-    drawBlock(Math.round(W/2-w2/2), 92 - i*10, w2, 9, col, false, 0, sk.style);
+    drawBlock(Math.round(W/2-w2/2), SHOP_TOP+52 - i*10, w2, 9, col, false, 0, sk.style);
   }
-  if (!isOwned) { const ly = 53; ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-6,ly,12,10); ctx.fillStyle='#FFF6E8'; ctx.fillRect(W/2-4,ly-3,8,4); ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-2,ly-2,4,3); ctx.fillStyle='#FFD75E'; ctx.fillRect(W/2-1,ly+3,2,4); }
+  if (!isOwned) { const ly = SHOP_TOP+13; ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-6,ly,12,10); ctx.fillStyle='#FFF6E8'; ctx.fillRect(W/2-4,ly-3,8,4); ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-2,ly-2,4,3); ctx.fillStyle='#FFD75E'; ctx.fillRect(W/2-1,ly+3,2,4); }
   pixelFrame(SKIN_L.x,SKIN_L.y,SKIN_L.w,SKIN_L.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
   pixelFrame(SKIN_R.x,SKIN_R.y,SKIN_R.w,SKIN_R.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
-  txt('<', SKIN_L.x+SKIN_L.w/2, 76, 1, 'rgba(255,246,232,0.85)', 'center');
-  txt('>', SKIN_R.x+SKIN_R.w/2, 76, 1, 'rgba(255,246,232,0.85)', 'center');
-  txt(sk.name, W/2, 108, 1, '#FFF6E8', 'center');
-  txt(sk.rare+' - '+sk.role, W/2, 118, 1, RARE_COL[sk.rare], 'center');
-  txt('MASTERY '+masteryLevel(sk.id), W/2, 128, 1, 'rgba(255,246,232,0.55)', 'center');
+  txt('<', SKIN_L.x+SKIN_L.w/2, SKIN_L.y+8, 1, 'rgba(255,246,232,0.85)', 'center');
+  txt('>', SKIN_R.x+SKIN_R.w/2, SKIN_R.y+8, 1, 'rgba(255,246,232,0.85)', 'center');
+  txt(sk.name, W/2, SHOP_TOP+68, 1, '#FFF6E8', 'center');
+  txt(sk.rare+' - '+sk.role, W/2, SHOP_TOP+78, 1, RARE_COL[sk.rare], 'center');
+  txt('MASTERY '+masteryLevel(sk.id), W/2, SHOP_TOP+88, 1, 'rgba(255,246,232,0.55)', 'center');
 
   if (isEquipped) {
     pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)','rgba(255,246,232,0.26)',false);
@@ -4906,7 +4914,7 @@ function renderShop() {
   txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
 
   // boosts section
-  txt('RUN BOOSTS', W/2, 194, 1, '#FFD75E', 'center');
+  txt('RUN BOOSTS', W/2, BOOST_TOP+4, 1, '#FFD75E', 'center');
   if (!canUseLoadout(mode) && mode === 'pure') {
     txt(W<220?'PURE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PURE', W/2, LOAD_CHIPS[0].y+10, 1, 'rgba(255,246,232,0.5)', 'center');
     txt(W<220?'SKILL ONLY - 1.5X SCORE':'PURE IS SKILL ONLY - 1.5X SCORE', W/2, LOAD_CHIPS[0].y+22, 1, 'rgba(255,246,232,0.4)', 'center');
@@ -4918,14 +4926,24 @@ function renderShop() {
       const on = loadout[c.id], afford = coins >= c.cost;
       pixelFrame(c.x,c.y,c.w,c.h,on?'rgba(98,232,181,0.14)':'rgba(7,8,15,0.72)',on?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.18)',on);
       const IP = POW[c.id];                            // circular badge, same style as in-world pickups
-      pixDisc(c.x+7, c.y+7, 5, on ? '#08301F' : IP.c2);   // v97: r5 badge clears the chip frame
-      pixDisc(c.x+7, c.y+7, 4, on ? 'rgba(0,0,0,0.35)' : '#141022');
-      drawIcon(c.id, c.x+3, c.y+3, true);
-      txt(POW_NAME[c.id], c.x+14, c.y+4, 1, on ? VISUAL_SYSTEM.palette.mint : '#FFF6E8', 'left');
-      if (on) txt('OK', c.x+c.w/2, c.y+13, 1, VISUAL_SYSTEM.palette.mint, 'center');
-      else { drawCoin(c.x+14, c.y+13.5); txt(c.cost, c.x+23, c.y+13, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
+      if (c.h >= 34) {   // v99 stacked chip: badge over name over price — nothing sits side-by-side
+        pixDisc(c.x+c.w/2, c.y+9, 5, on ? '#08301F' : IP.c2);
+        pixDisc(c.x+c.w/2, c.y+9, 4, on ? 'rgba(0,0,0,0.35)' : '#141022');
+        drawIcon(c.id, c.x+c.w/2-4, c.y+5, true);
+        txt(POW_NAME[c.id], c.x+c.w/2, c.y+16, 1, on ? VISUAL_SYSTEM.palette.mint : '#FFF6E8', 'center');
+        if (on) txt('OK', c.x+c.w/2, c.y+25, 1, VISUAL_SYSTEM.palette.mint, 'center');
+        else { drawCoin(c.x+c.w/2-10, c.y+25.5); txt(c.cost, c.x+c.w/2-2, c.y+25, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
+      } else {           // v97 horizontal chip: the short-viewport fallback
+        pixDisc(c.x+7, c.y+7, 5, on ? '#08301F' : IP.c2);   // v97: r5 badge clears the chip frame
+        pixDisc(c.x+7, c.y+7, 4, on ? 'rgba(0,0,0,0.35)' : '#141022');
+        drawIcon(c.id, c.x+3, c.y+3, true);
+        txt(POW_NAME[c.id], c.x+14, c.y+4, 1, on ? VISUAL_SYSTEM.palette.mint : '#FFF6E8', 'left');
+        if (on) txt('OK', c.x+c.w/2, c.y+13, 1, VISUAL_SYSTEM.palette.mint, 'center');
+        else { drawCoin(c.x+14, c.y+13.5); txt(c.cost, c.x+23, c.y+13, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
+      }
     }
-    if(NAV_Y>=268){txt(shopInfo, W/2, LOAD_CHIPS[0].y+32, 1, 'rgba(255,246,232,0.6)', 'center');txt('LOCKS WHEN CLIMB STARTS', W/2, LOAD_CHIPS[0].y+44, 1, 'rgba(255,246,232,0.4)', 'center');}
+    const chipBot = LOAD_CHIPS[0].y + LOAD_CHIPS[0].h;
+    if (chipBot + 27 <= BOOST_TOP + BOOST_CARD_H - 3) { txt(shopInfo, W/2, chipBot+8, 1, 'rgba(255,246,232,0.6)', 'center'); txt('LOCKS WHEN CLIMB STARTS', W/2, chipBot+20, 1, 'rgba(255,246,232,0.4)', 'center'); }
   } else {
     txt(W<220?'DAILY: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN DAILY', W/2, LOAD_CHIPS[0].y+10, 1, 'rgba(255,246,232,0.5)', 'center');
     txt(W<220?'SAME FAIR RUN FOR ALL':'EVERYONE GETS THE SAME FAIR RUN', W/2, LOAD_CHIPS[0].y+22, 1, 'rgba(255,246,232,0.4)', 'center');
@@ -4968,26 +4986,27 @@ function renderChallengePicker() {
 function renderBaseShop(){
   const b=BASE_REGISTRY[basePreviewIdx], isOwned=ownedBases.indexOf(b.id)!==-1, isEquipped=b.id===baseId;
   const shopW=Math.min(W-16,220),shopX=Math.round((W-shopW)/2);
-  pixelFrame(shopX,40,shopW,144,'rgba(11,14,26,0.78)',b.accent,false);
-  pixelFrame(shopX,190,shopW,Math.min(78,NAV_Y-198),'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.mint,false);
+  const rulesH=Math.min(78,NAV_Y-198);
+  pixelFrame(shopX,SHOP_TOP,shopW,144,'rgba(11,14,26,0.78)',b.accent,false);
+  pixelFrame(shopX,BOOST_TOP,shopW,rulesH,'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.mint,false);
   const dotsW=BASE_REGISTRY.length*6-2,dx=Math.round(W/2-dotsW/2);
-  for(let i=0;i<BASE_REGISTRY.length;i++){ctx.fillStyle=i===basePreviewIdx?'#FFF6E8':'rgba(255,246,232,0.3)';ctx.fillRect(dx+i*6,45,4,3);}   // v97: same dot style + clearance as the character pager
-  ctx.fillStyle='#2D2016';ctx.fillRect(W/2-44,92,88,7);ctx.fillStyle='#57422F';ctx.fillRect(W/2-44,92,88,2);
-  drawBaseCosmetic(W/2,92,50,b.id);drawBlock(W/2-25,78,50,BH,{h:210,s:18,l:62},false,0,'facet');
+  for(let i=0;i<BASE_REGISTRY.length;i++){ctx.fillStyle=i===basePreviewIdx?'#FFF6E8':'rgba(255,246,232,0.3)';ctx.fillRect(dx+i*6,SHOP_TOP+5,4,3);}   // v97: same dot style + clearance as the character pager
+  ctx.fillStyle='#2D2016';ctx.fillRect(W/2-44,SHOP_TOP+52,88,7);ctx.fillStyle='#57422F';ctx.fillRect(W/2-44,SHOP_TOP+52,88,2);
+  drawBaseCosmetic(W/2,SHOP_TOP+52,50,b.id);drawBlock(W/2-25,SHOP_TOP+38,50,BH,{h:210,s:18,l:62},false,0,'facet');
   pixelFrame(SKIN_L.x,SKIN_L.y,SKIN_L.w,SKIN_L.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
   pixelFrame(SKIN_R.x,SKIN_R.y,SKIN_R.w,SKIN_R.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
-  txt('<',SKIN_L.x+SKIN_L.w/2,76,1,'rgba(255,246,232,0.85)','center');txt('>',SKIN_R.x+SKIN_R.w/2,76,1,'rgba(255,246,232,0.85)','center');
-  txt(b.name,W/2,108,1,'#FFF6E8','center');txt('COSMETIC BASE',W/2,120,1,b.accent,'center');
+  txt('<',SKIN_L.x+SKIN_L.w/2,SKIN_L.y+8,1,'rgba(255,246,232,0.85)','center');txt('>',SKIN_R.x+SKIN_R.w/2,SKIN_R.y+8,1,'rgba(255,246,232,0.85)','center');
+  txt(b.name,W/2,SHOP_TOP+68,1,'#FFF6E8','center');txt('COSMETIC BASE',W/2,SHOP_TOP+80,1,b.accent,'center');
   if(isEquipped){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)','rgba(255,246,232,0.26)',false);txt('EQUIPPED',W/2,EQUIP_BTN.y+5,1,'rgba(255,246,232,0.6)','center');}
   else if(isOwned){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',VISUAL_SYSTEM.palette.mint,true);txt('EQUIP',W/2,EQUIP_BTN.y+5,1,VISUAL_SYSTEM.palette.mint,'center');}
   else {const afford=coins>=b.cost;pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);const c=afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.6)';txt('UNLOCK',W/2-14,EQUIP_BTN.y+5,1,c,'center');drawCoin(W/2+8,EQUIP_BTN.y+5.5);txt(b.cost,W/2+17,EQUIP_BTN.y+5,1,c,'left');}
   pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?b.accent:'rgba(255,246,232,0.22)',false);
   txt('BASE DETAILS',SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+5,1,isEquipped?b.accent:'#FFF6E8','left');
   txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
-  txt('BASE RULES',W/2,194,1,'#62E8B5','center');
-  txt('COSMETIC ONLY',W/2,214,1,'#62E8B5','center');
-  txt('NO GAMEPLAY EFFECT',W/2,228,1,'rgba(255,246,232,0.65)','center');
-  if(NAV_Y>=260)txt('PURE + DAILY SAFE',W/2,242,1,'rgba(255,246,232,0.52)','center');
+  txt('BASE RULES',W/2,BOOST_TOP+4,1,'#62E8B5','center');
+  txt('COSMETIC ONLY',W/2,BOOST_TOP+24,1,'#62E8B5','center');
+  txt('NO GAMEPLAY EFFECT',W/2,BOOST_TOP+38,1,'rgba(255,246,232,0.65)','center');
+  if(rulesH>=62)txt('PURE + DAILY SAFE',W/2,BOOST_TOP+52,1,'rgba(255,246,232,0.52)','center');
 }
 
 function renderShopDetail(){
