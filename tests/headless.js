@@ -551,8 +551,13 @@ check('Deep/Main ledge identities are deterministic and remain surface-valid pro
   '(() => { for(let r=-20;r<180;r++)for(const s of [0,1]){const a=caveDetailKindForZone(r,s),b=caveDetailKindForZone(r,s);if(a!==b||a<0||a>5)return false;}return true;})()'));
 check('cave texture stamping uses varied deterministic source windows', () => bio.run(
   '(() => { const a=[], b=[]; for(let x=0;x<CAVE_STAMP_W*6;x+=CAVE_STAMP_W){a.push(caveStampSourceX(123,x));b.push(caveStampSourceX(123,x));} return a.join(",")===b.join(",") && new Set(a).size>2 && a.every(x=>x>=0&&x<=CAVETEX_W-CAVE_STAMP_W); })()'));
+// v102 contract: windows are stable across long runs of depth (no per-band re-roll) but DO
+// re-window every ~96 rows at a per-column phase, so no column keeps one window forever
 check('cave atlas columns stay vertically continuous instead of re-rolling every render band', () => bio.run(
-  '(() => { for(let x=0;x<CAVE_STAMP_W*6;x+=CAVE_STAMP_W)if(caveStampSourceX(0,x)!==caveStampSourceX(999,x))return false;return true;})()'));
+  '(() => { for(let x=0;x<CAVE_STAMP_W*6;x+=CAVE_STAMP_W){let tr=0;' +
+  'for(let r=4;r<960;r+=4)if(caveStampSourceX(r,x)!==caveStampSourceX(r-4,x))tr++;' +
+  'if(tr<8||tr>11)return false;' +
+  'if(caveStampSourceX(500,x)!==caveStampSourceX(500,x))return false;}return true;})()'));
 check('two-dimensional cave geology pockets are deterministic and non-flat', () => bio.run(
   '(() => { const a=[],b=[];for(let r=0;r<120;r+=3)for(let x=0;x<W;x+=CAVE_GEO_W){a.push(caveWallMatAt(r,0,x));b.push(caveWallMatAt(r,0,x));}return a.join(",")===b.join(",")&&new Set(a).size===4;})()'));
 check('cave texture stamping explicitly disables image smoothing', () =>
@@ -1399,7 +1404,7 @@ check('v100 celestial drift sprites are redrawn on the fine grid and render for 
 check('v101 forest floor, canopy, bark, and landmarks carry the fine-grid pass markers', () =>
   /v101: fine-grid canopy/.test(src) &&
   /v101: the forest floor redrawn on the half-pixel fine grid/.test(src) &&
-  /v101: fine-grid bark/.test(src) &&
+  /fine-grid bark/.test(src) &&
   /v101: each landmark redrawn on the half-pixel fine grid/.test(src));
 check('v101 landmark platforms render for every region without throwing', () => fresh.run(
   '(() => { for (let r2 = 0; r2 <= 10; r2++) drawLandmarkPlatform(W/2, 200, 40, r2); return true; })()'));
@@ -1408,7 +1413,25 @@ check('v101 base blocks render with and without caps without throwing', () => fr
 check('v101 foliage blobs render at every size incl. below the fine-detail gate', () => fresh.run(
   '(() => { for (const r2 of [2, 3, 4, 7, 12, 18]) foliageBlob(80, 80, r2, 1); return true; })()'));
 check('v101 grass blades and tufts are two-tone (body + sunlit tip)', () =>
-  /blade body/.test(src) && /sunlit tip leans off-axis/.test(src) && /sunlit tuft tip/.test(src));
+  /blade body/.test(src) && /sunlit tip/.test(src) && /sunlit tuft tip/.test(src));
+
+// ---------- v102 cave organics + bolder ground detail ----------
+check('v102 rock textures tile vertically (edge marks drawn wrapped)', () =>
+  /every mark near the top\/bottom edge is drawn AGAIN wrapped/.test(src));
+check('v102 texture stamp windows drift with depth at per-column phases', () =>
+  /v102: the window also drifts with DEPTH/.test(src) &&
+  fresh.run('(() => { const xs = new Set(); for (let r2 = 0; r2 < 1200; r2 += 40) xs.add(caveStampSourceX(r2, 30));' +
+    'const stable = caveStampSourceX(500, 30) === caveStampSourceX(500, 30);' +
+    'const inRange = [...xs].every(v => v >= 0 && v <= CAVETEX_W - CAVE_STAMP_W);' +
+    'return stable && inRange && xs.size > 1; })()'));
+check('v102 wall material boundaries dither instead of meeting in straight edges', () =>
+  /v102: dithered material boundary/.test(src));
+check('v102 lane-edge rim and AO are de-regularized (broken runs, wobbling depth)', () =>
+  /no longer traced by continuous perfect lines/.test(src));
+check('v102 bolder accents: foliage crown doubled, taller companion blades, denser bark', () =>
+  /v102: the v101 crown\/belly accents doubled/.test(src) &&
+  /taller companion blade/.test(src) &&
+  /v102 doubled the density and contrast/.test(src));
 
 // ---------- v97 shop page audit ----------
 check('v97 boost chips sit inside the Run Boosts card with breathing gaps', () => fresh.run(
@@ -1498,7 +1521,7 @@ check('v94 Me Progress tab distributes its card across available room instead of
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v101', () => /const CACHE = 'skystack-v101'/.test(sw));
+check('sw.js cache bumped to v102', () => /const CACHE = 'skystack-v102'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

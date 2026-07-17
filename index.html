@@ -2711,10 +2711,13 @@ function foliageBlob(cx, cy2, r, a) {
   pixDisc(cx-2, cy2-2, (r*.62)|0, '#2A7034');
   ctx.globalAlpha = .85*a; pixDisc(cx-((r*.4)|0), cy2-((r*.45)|0), (r*.34)|0, '#49A048');   // sun-lit crown
   if (r >= 4) {
-    ctx.globalAlpha = .6*a; ctx.fillStyle = '#6ECB54';                                      // crown arc catches the sun
-    ctx.fillRect(cx-((r*.55)|0), cy2-r+.5, (r*.7)|0, .5); ctx.fillRect(cx-((r*.8)|0), cy2-((r*.7)|0)+.5, (r*.4)|0, .5);
-    ctx.globalAlpha = .5*a; ctx.fillStyle = '#0C2810';                                      // under-belly seam
-    ctx.fillRect(cx-((r*.4)|0), cy2+r-1, (r*.85)|0, .5);
+    // v102: the v101 crown/belly accents doubled in size and contrast — at RS=2 the old
+    // half-pixel whispers were invisible on a phone
+    ctx.globalAlpha = .8*a; ctx.fillStyle = '#7EDB64';                                      // crown arc catches the sun
+    ctx.fillRect(cx-((r*.55)|0), cy2-r, (r*.75)|0, 1); ctx.fillRect(cx-((r*.85)|0), cy2-((r*.7)|0), (r*.45)|0, 1);
+    pixDisc(cx-((r*.35)|0), cy2-((r*.55)|0), Math.max(1, (r*.22)|0), '#5FBF52');            // bright leaf cluster at the crown
+    ctx.globalAlpha = .7*a; ctx.fillStyle = '#0C2810';                                      // under-belly seam
+    ctx.fillRect(cx-((r*.45)|0), cy2+r-1, (r*.95)|0, 1);
   }
   ctx.globalAlpha = 1;
 }
@@ -3059,27 +3062,36 @@ function makeRockTex(seedOff, pal) {
       g.fillRect(px - Math.max(1, rr - 1), py - rr, Math.max(2, rr*2 - 1), Math.max(1, Math.ceil(rr*.55)));
       g.fillRect(px - Math.max(1, rr - 1), py + Math.max(0, rr >> 1), Math.max(2, rr*2 - 1), Math.max(1, Math.ceil(rr*.45))); };
     g.fillStyle = pal.base; g.fillRect(0, 0, CAVETEX_W, CAVETEX_H);
+    // v102: every mark near the top/bottom edge is drawn AGAIN wrapped by ±CAVETEX_H, so the
+    // texture tiles vertically — the old hard-clipped edges put a fixed horizontal seam in the
+    // wall every 256 world px
+    const wrapY = py => py < 20 ? [py, py + CAVETEX_H] : py > CAVETEX_H - 20 ? [py, py - CAVETEX_H] : [py];
     const N = pal.count || (pal.sq ? 760 : 980);                                              // finer packed geology is cached once, never rebuilt per frame
     for (let k = 0; k < N; k++) {
-      const px = bhash(k*97 + 1 + seedOff) * CAVETEX_W, py = bhash(k*193 + 47 + seedOff) * CAVETEX_H;
+      const px = bhash(k*97 + 1 + seedOff) * CAVETEX_W, py0 = bhash(k*193 + 47 + seedOff) * CAVETEX_H;
       const rare = bhash(k*271 + seedOff) > 0.965 ? 1.8 : 0;
       const r = 1 + bhash(k*43 + 5 + seedOff) * (pal.sq ? 3.4 : 2.7) + rare;
       const t = bhash(k*11 + seedOff), base = t > 0.6 ? pal.tones[2] : t > 0.3 ? pal.tones[1] : pal.tones[0];
-      disc(px + 1, py + 1, r, pal.shadow);                                                     // tight drop shadow preserves separation without blocky gaps
-      disc(px, py, r, base);
-      if (r > 1.8) disc(px - r*.32, py - r*.38, Math.max(1, r*.32), t > .5 ? pal.hi[1] : pal.hi[0]);
-      if (bhash(k*17 + seedOff) > 0.91) { g.fillStyle = pal.crack; const ch = 1 + Math.round(r*.8); g.fillRect(Math.round(px), Math.round(py-r*.55), 1, ch); }
+      for (const py of wrapY(py0)) {
+        disc(px + 1, py + 1, r, pal.shadow);                                                   // tight drop shadow preserves separation without blocky gaps
+        disc(px, py, r, base);
+        if (r > 1.8) disc(px - r*.32, py - r*.38, Math.max(1, r*.32), t > .5 ? pal.hi[1] : pal.hi[0]);
+        if (bhash(k*17 + seedOff) > 0.91) { g.fillStyle = pal.crack; const ch = 1 + Math.round(r*.8); g.fillRect(Math.round(px), Math.round(py-r*.55), 1, ch); }
+      }
     }
     for (let k = 0; k < (pal.seams || 0); k++) {                                              // broken sediment seams: short, staggered, never a full repeated stripe
-      const sy = Math.round(bhash(k*149 + seedOff) * CAVETEX_H), sx = Math.round(bhash(k*223 + seedOff) * CAVETEX_W);
+      const sy0 = Math.round(bhash(k*149 + seedOff) * CAVETEX_H), sx = Math.round(bhash(k*223 + seedOff) * CAVETEX_W);
       const len = 4 + Math.round(bhash(k*281 + seedOff) * 13); g.fillStyle = k & 1 ? pal.crack : pal.hi[0];
-      g.globalAlpha = k & 1 ? .55 : .38; g.fillRect(sx, sy, len, 1); if (k % 3 === 0) g.fillRect(sx + len - 2, sy + 1, 3, 1);
+      g.globalAlpha = k & 1 ? .55 : .38;
+      for (const sy of wrapY(sy0)) { g.fillRect(sx, sy, len, 1); if (k % 3 === 0) g.fillRect(sx + len - 2, sy + 1, 3, 1); }
     }
     g.globalAlpha = 1;
     for (let k = 0; k < pal.moss * 3; k++) {                                                   // moss creeping over upper faces
-      const px = bhash(k*23 + 3 + seedOff) * CAVETEX_W, py = bhash(k*29 + 7 + seedOff) * CAVETEX_H;
-      g.fillStyle = k & 1 ? '#3C5424' : '#2C3C1A'; g.fillRect(Math.round(px), Math.round(py), 3 + (k % 3), 2);
-      g.fillStyle = '#4A6A2C'; g.fillRect(Math.round(px) + 1, Math.round(py) - 1, 2, 1);
+      const px = bhash(k*23 + 3 + seedOff) * CAVETEX_W, py0 = bhash(k*29 + 7 + seedOff) * CAVETEX_H;
+      for (const py of wrapY(py0)) {
+        g.fillStyle = k & 1 ? '#3C5424' : '#2C3C1A'; g.fillRect(Math.round(px), Math.round(py), 3 + (k % 3), 2);
+        g.fillStyle = '#4A6A2C'; g.fillRect(Math.round(px) + 1, Math.round(py) - 1, 2, 1);
+      }
     }
     for (let k = 0; k < 240; k++) { g.fillStyle = pal.grit;
       g.fillRect(Math.round(bhash(k*31 + seedOff) * CAVETEX_W), Math.round(bhash(k*37 + 9 + seedOff) * CAVETEX_H), 1, 1); }
@@ -3139,7 +3151,13 @@ function caveDetailKindForZone(row, side) {                                     
 }
 function caveTorchPresent(row, main) { return bhash(row*73 + 419) < 0.46 + main*0.42; }          // fixed slots; warmer Main Cave is deliberately better lit
 function caveStampSourceX(srcRow, worldX) {                                                     // one stable atlas column through depth: no 4/12px horizontal texture seams
-  return Math.floor(bhash(Math.floor(worldX / CAVE_STAMP_W)*53 + 907) * (CAVETEX_W - CAVE_STAMP_W));
+  // v102: the window also drifts with DEPTH, each column at its own staggered phase — the old
+  // worldX-only hash gave every column one window forever, leaving permanent straight vertical
+  // seams between neighbouring stamps. Staggering the change depth per column means no two
+  // columns re-window at the same row, so no global seam appears either.
+  const col = Math.floor(worldX / CAVE_STAMP_W);
+  const phase = Math.floor(bhash(col*29 + 431) * 96);
+  return Math.floor(bhash(col*53 + 907 + Math.floor((srcRow + phase) / 96)*17) * (CAVETEX_W - CAVE_STAMP_W));
 }
 const CAVE_GEO_W = 42;
 function caveWallMatAt(row, side, worldX) {                                                     // 2-D warped strata: pockets and lenses, never a full flat material stripe
@@ -3258,14 +3276,35 @@ function drawCaveWalls(top, cy, ph) {
       const w = caveWallW(row, side, baseW), x0 = side ? W - w : 0, inner = side ? x0 : x0 + w;
       const mat = caveWallMatAt(row, side, side ? inner - 1 : inner);
       ctx.globalAlpha = 1;
+      let prevMat = -1;
       for (let cx = 0; cx < w; cx += CAVE_GEO_W) {                                             // warped geology cells turn strata into natural pockets
         const pw = Math.min(CAVE_GEO_W, w - cx), px = x0 + cx, pmat = caveWallMatAt(row, side, px);
         blitCaveTex(px, by, pw, bh, row * 4 + side * 97 + (by - y), caveMatTex(pmat));
+        // v102: dithered material boundary — where two geologies meet, jittered patches of each
+        // bite into the other per band, so dirt and rock interlock instead of meeting in a
+        // straight vertical edge
+        if (prevMat >= 0 && prevMat !== pmat) {
+          const j1 = bhash(row*7 + cx*13 + side*61), j2 = bhash(row*11 + cx*29 + side*97);
+          const back = 2 + Math.round(j1*7), fwd = 2 + Math.round(j2*6);
+          const bx1 = Math.max(x0, px - back), bw1 = Math.min(back + Math.round(j2*4), x0 + w - bx1);
+          const fx1 = Math.min(px + Math.round(j1*3), x0 + w - 1), fw1 = Math.min(fwd, x0 + w - fx1);
+          if (bw1 > 0) blitCaveTex(bx1, by, bw1, bh, row*4 + side*97 + (by - y) + 31, caveMatTex(pmat));
+          if (fw1 > 0) blitCaveTex(fx1, by, fw1, bh, row*4 + side*97 + (by - y) + 67, caveMatTex(prevMat));
+        }
+        prevMat = pmat;
       }
+      // v102: the lane edge is no longer traced by continuous perfect lines — the outer AO's
+      // depth wobbles, and the lit rim is broken into irregular runs with per-band brightness
+      const rj = bhash(row*23 + side*41);
       ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(side ? inner : inner - 2, by, 2, bh);    // tighter AO: readable wall material reaches the lane edge
-      ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(side ? inner + 2 : inner - 4, by, 2, bh);
-      ctx.fillStyle = mat === 1 || mat === 3 ? 'rgba(184,180,163,0.62)' : mat === 2 ? 'rgba(190,120,78,0.62)' : 'rgba(166,126,82,0.64)';
-      ctx.fillRect(side ? inner - 1 : inner, by, 1, bh);                                        // lit rock rim on the edge
+      if (rj > .22) { const ex = rj > .78 ? 1 : 0;
+        ctx.fillStyle = 'rgba(0,0,0,0.16)'; ctx.fillRect(side ? inner + 2 : inner - 4 - ex, by, 2 + ex, bh); }
+      if (rj > .28) {
+        ctx.globalAlpha = .45 + rj*.55;
+        ctx.fillStyle = mat === 1 || mat === 3 ? 'rgba(184,180,163,0.62)' : mat === 2 ? 'rgba(190,120,78,0.62)' : 'rgba(166,126,82,0.64)';
+        ctx.fillRect(side ? inner - 1 : inner, by, 1, bh);                                      // lit rock rim on the edge (broken runs)
+        ctx.globalAlpha = 1;
+      }
       if (bhash(row*89 + side*151) > .80) {                                                    // hairline fissures add scale without oversized pixel clusters
         ctx.globalAlpha = .42; ctx.fillStyle = mat === 1 || mat === 3 ? '#B0AA9C' : '#9A7550';
         const fx = side ? Math.max(x0, inner - 4 - Math.round(bhash(row*37)*w*.35)) : Math.min(inner - 1, 3 + Math.round(bhash(row*37)*w*.35));
@@ -3561,9 +3600,14 @@ function drawSurfaceGround(ph, yCeil) {
     for (let dx = x0 + 5; dx < x1 - 2; dx += 13) { if (bhash(dx*37) < .55) continue; ctx.fillRect(dx, yCeil + 4.5, .5, 2); }
     ctx.fillStyle = '#3E8A32'; ctx.fillRect(x0, yCeil - 2, x1 - x0, 3);                        // grass base
     ctx.fillStyle = '#2E6E3A'; ctx.fillRect(x0, yCeil + .5, x1 - x0, .5);                      // grass roots shade into the dirt
-    for (let gx = x0; gx < x1; gx += 3) { const gh = 2 + Math.round(bhash(gx*7)*3), sw = reduceMotion ? 0 : Math.round(Math.sin(ph*0.05 + gx)*0.6);
-      ctx.fillStyle = '#4EA344'; ctx.fillRect(gx + sw, yCeil - 2 - gh, 1, gh);                 // blade body
-      ctx.fillStyle = '#7EDB64'; ctx.fillRect(gx + sw + (bhash(gx*11) > .5 ? .5 : 0), yCeil - 2 - gh, .5, 1.5); }   // sunlit tip leans off-axis
+    for (let gx = x0; gx < x1; gx += 3) { const gv = bhash(gx*7), gh = 2 + Math.round(gv*3), sw = reduceMotion ? 0 : Math.round(Math.sin(ph*0.05 + gx)*0.6);
+      // v102: bolder blades — mixed greens, full-pixel bright tips, and every fourth-ish blade
+      // grows a taller companion so the silhouette varies instead of reading as an even comb
+      ctx.fillStyle = gv > .55 ? '#4EA344' : '#3E8A32'; ctx.fillRect(gx + sw, yCeil - 2 - gh, 1, gh);   // blade body
+      ctx.fillStyle = '#8EE87A'; ctx.fillRect(gx + sw, yCeil - 2 - gh, 1, 1);                  // sunlit tip
+      if (bhash(gx*13) > .72) { const th2 = gh + 2;
+        ctx.fillStyle = '#4EA344'; ctx.fillRect(gx + sw + 1, yCeil - 2 - th2, 1, th2);
+        ctx.fillStyle = '#8EE87A'; ctx.fillRect(gx + sw + 1, yCeil - 2 - th2, 1, 1); } }       // taller companion blade
     for (let sx = x0 + 7; sx < x1 - 4; sx += 24) {                                             // small stones/moss stay outside the tower opening
       if (bhash(sx*19) < .42) continue;
       ctx.fillStyle = '#45433D'; ctx.fillRect(sx - 2, yCeil - 5, 7, 4); ctx.fillStyle = '#6E6B62'; ctx.fillRect(sx - 1, yCeil - 6, 4, 1);
@@ -3625,15 +3669,16 @@ function rootedTree(t, seed) {
   ctx.fillStyle = '#3A2616';            ctx.fillRect(x, trunkTop, w, y1 - trunkTop);           // solid trunk
   ctx.fillStyle = 'rgba(96,66,36,0.55)';ctx.fillRect(x + w - 2, trunkTop, 2, y1 - trunkTop);   // lit right edge
   ctx.fillStyle = 'rgba(0,0,0,0.32)';   ctx.fillRect(x, trunkTop, 2, y1 - trunkTop);           // shadow left edge
-  // v101: fine-grid bark — short nicks alternate sides down the trunk so the wood reads grained
-  ctx.fillStyle = 'rgba(20,10,4,0.55)';
-  for (let ny = trunkTop + 6; ny < y1 - 3; ny += 9) {
-    const nk = bhash(ny*13 + x); if (nk < .25) continue;
-    const nx = (ny/9 & 1) ? x + 2 + nk*(w-5) : x + 1.5 + nk*(w-5);
-    ctx.fillRect(nx, ny + nk*4, w > 7 ? 2.5 : 1.5, .5);
+  // v101/v102: fine-grid bark — short nicks alternate sides down the trunk so the wood reads
+  // grained (v102 doubled the density and contrast; each nick carries a lit ridge underneath)
+  for (let ny = trunkTop + 5; ny < y1 - 3; ny += 7) {
+    const nk = bhash(ny*13 + x); if (nk < .2) continue;
+    const nx = Math.round((ny/7 & 1) ? x + 2 + nk*(w-5) : x + 1 + nk*(w-5)), nw = w > 7 ? 3 : 2;
+    ctx.fillStyle = 'rgba(14,7,2,0.75)'; ctx.fillRect(nx, ny + Math.round(nk*4), nw, 1);
+    if (nk > .5) { ctx.fillStyle = 'rgba(140,100,60,0.5)'; ctx.fillRect(nx, ny + Math.round(nk*4) + 1, nw - 1, 1); }   // lit ridge under the nick
   }
-  ctx.fillStyle = 'rgba(140,100,60,0.35)';                                                     // lit grain flecks near the sun edge
-  for (let ny = trunkTop + 10; ny < y1 - 4; ny += 14) { if (bhash(ny*7 + x) < .45) continue; ctx.fillRect(x + w - 3, ny, 1, 1.5); }
+  ctx.fillStyle = 'rgba(150,108,64,0.55)';                                                     // lit grain flecks near the sun edge
+  for (let ny = trunkTop + 8; ny < y1 - 4; ny += 11) { if (bhash(ny*7 + x) < .4) continue; ctx.fillRect(x + w - 3, ny, 1, 2); }
   const P = Math.max(20, Math.round(34 * t.s));
   for (let by = topY + 10; by < y1; by += P) {                                                 // branch nodes + connected foliage
     if (by < -20 || by > H + 20) continue;
@@ -3717,7 +3762,7 @@ function drawTreeline(cy) {
   for (let x = 2; x < W; x += 7) {
     const hgt = 4 + Math.round(bhash(x*11)*6);
     ctx.fillRect(x, yCeil - 2 - hgt, 5, hgt);
-    if (bhash(x*17) > .55) { ctx.fillStyle = '#31582F'; ctx.fillRect(x + 1, yCeil - 2 - hgt, 2.5, .5); ctx.fillStyle = '#25482A'; }   // v101: sparse sunlit crown tips
+    if (bhash(x*17) > .55) { ctx.fillStyle = '#3E6E38'; ctx.fillRect(x + 1, yCeil - 2 - hgt, 3, 1); ctx.fillStyle = '#25482A'; }   // v101/v102: sparse sunlit crown tips (full-pixel)
   }
 }
 // slim background trunks between the main trees — silhouettes that thicken the forest.
@@ -4095,8 +4140,8 @@ function drawLandmarkPlatform(cx, topY, bw, region) {
     ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(x, y + 5.5, pw, .5);                      // slab strata seam
     ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(x, y + 9, pw, 2);
     if (region === 1) { for (let gx = x; gx < x + pw; gx += 3) { const gh = 2 + Math.round(bhash(gx) * 3);
-      ctx.fillStyle = '#4EA344'; ctx.fillRect(gx, y - 2 - gh + 2, 1, gh);                      // tuft body
-      ctx.fillStyle = '#7EDB64'; ctx.fillRect(gx + (bhash(gx*11) > .5 ? .5 : 0), y - 2 - gh + 2, .5, 1); } }   // sunlit tuft tip
+      ctx.fillStyle = bhash(gx*7) > .5 ? '#4EA344' : '#3E8A32'; ctx.fillRect(gx, y - 2 - gh + 2, 1, gh);   // tuft body (mixed greens)
+      ctx.fillStyle = '#8EE87A'; ctx.fillRect(gx, y - 2 - gh + 2, 1, 1); } }                   // v102: full-pixel sunlit tuft tip
   }
   ctx.globalAlpha = 1;
 }
