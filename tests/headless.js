@@ -1246,7 +1246,7 @@ check('v92 fine icons: every power-up, star, plate, and speaker renders without 
   return /v92: every power-up icon redrawn on the half-pixel fine grid/.test(src);
 });
 check('v92 symmetry: button labels center exactly and map captions clamp on-screen', () =>
-  /r\.y\+\(r\.h-7\*sc\)\/2/.test(src) && /clamp\(pt\.x, 3\+cpw\/2, W-3-cpw\/2\)/.test(src) &&
+  /r\.y\+\(r\.h-7\*sc\)\/2/.test(src) && /clamp\(pt\.x, 3\+l2w\/2, W-3-l2w\/2\)/.test(src) &&
   fresh.run('TUT_LESSONS.every(l => !l.compact || (l.compact.length < l.body.length && l.compact.length*6-1 <= 180-12))'));
 
 // ---------- v93 Climb Orders breathing room + coin baselines ----------
@@ -1363,6 +1363,38 @@ check('v98 stage emblems are redrawn on the fine grid and render at emblem and m
   return /v98: every stage emblem redrawn on the half-pixel fine grid/.test(src);
 });
 
+// ---------- v100 sky map overlap audit + celestial sprite detail ----------
+// The map body draws inside a canvas clip [viewTop, viewBot] and the opaque header band paints
+// over it afterwards, so world-space text only exists where the clip lets it through. The shim
+// mirrors that: world-phase calls (everything before the header's own 'SKY MAP' label) are
+// clamped to the clip band and dropped once fully hidden; header calls are unclipped.
+check('v100 sky map text never overlaps or leaves the screen (scrolled, selected, champion)', () => fresh.run(
+  '(() => { const overl=(a,b)=>a.y0<b.y1&&b.y0<a.y1&&a.x0<b.x1&&b.x0<a.x1;' +
+  'for (const [w,hh] of [[180,390],[180,427],[242,300],[320,480]]) { W=w;H=hh;relayout();' +
+  'for (const fx of [[5,5],[11,10],[11,11]]) { prog=fx[0]; selLevel=Math.min(fx[1],10); skyMap=true;' +
+  'for (let i2=0;i2<11;i2++) levelStars[i2]=3; bestHeight=200;' +
+  'const L2=skyMapNodes();' +
+  'for (const sc2 of [0, .5, 1]) { mapScroll = mapScrollMax*sc2;' +
+  'const calls=[]; const orig=txt; let hdr=false;' +
+  'txt=(t,x,y,scl,col,al)=>{t=String(t);if(t==="SKY MAP")hdr=true;scl=scl||1;const tw2=t.length*6*scl-scl;' +
+  'const x0=al==="center"?Math.round(x-tw2/2):al==="right"?Math.round(x-tw2):x;' +
+  'let y0=y,y1=y+7*scl;if(!hdr){y0=Math.max(y0,L2.viewTop);y1=Math.min(y1,L2.viewBot);}' +
+  'if(y0<y1&&String(col).indexOf("0,0,0")<0)calls.push({t,x0,x1:x0+tw2,y0,y1});};' +
+  'try { renderSkyMap(); } finally { txt=orig; }' +
+  'for (const c of calls) if (c.x0 < 0 || c.x1 > W) return false;' +
+  'for (let i2=0;i2<calls.length;i2++) for (let j2=i2+1;j2<calls.length;j2++) if (overl(calls[i2],calls[j2])) return false;' +
+  '} } } skyMap=false; prog=0; for (let i2=0;i2<11;i2++) levelStars[i2]=0; bestHeight=0; return true; })()'));
+
+check('v100 selected stage caption replaces its altitude line instead of colliding below', () =>
+  /its second line becomes the start-condition caption/.test(src) && !/txt\(cpText,cpx,pt\.y\+33/.test(src));
+
+check('v100 map header hint yields to the stars label instead of colliding', () =>
+  /the hint yields to the stars label/.test(src));
+
+check('v100 celestial drift sprites are redrawn on the fine grid and render for every tier', () =>
+  /v100: every drifting mid-ground sprite redrawn on the half-pixel fine grid/.test(src) &&
+  fresh.run('(() => { for (let t2=0;t2<9;t2++) for (const s2 of [0,3,4]) biomeSprite(t2, 60, 60, s2, 10); return true; })()'));
+
 // ---------- v97 shop page audit ----------
 check('v97 boost chips sit inside the Run Boosts card with breathing gaps', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
@@ -1451,7 +1483,7 @@ check('v94 Me Progress tab distributes its card across available room instead of
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v99', () => /const CACHE = 'skystack-v99'/.test(sw));
+check('sw.js cache bumped to v100', () => /const CACHE = 'skystack-v100'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

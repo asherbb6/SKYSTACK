@@ -2631,31 +2631,59 @@ function drawSun(h) {
 
 // small drifting mid-ground sprite (kept subtle — the backdrops carry each biome now)
 function biomeSprite(tier, x, y, s, ph) {
+  // v100: every drifting mid-ground sprite redrawn on the half-pixel fine grid — same silhouettes
+  // and alphas, with one lit edge and one shaded edge each so they read as objects, not marks
   x = Math.round(x + (reduceMotion ? 0 : Math.sin(ph*.02 + s)*3));
   if (tier <= 1) {                     // TREETOPS / LOWER SKY (legacy indices, unused in-game) — a floating leaf clump
     if (s & 1) return;
     ctx.globalAlpha = .5; pixDisc(x, y-5, 6, '#20522A'); pixDisc(x-5, y-1, 5, '#20522A'); pixDisc(x+5, y-1, 5, '#20522A');
-    pixDisc(x, y-6, 4, '#2E6E3A'); ctx.globalAlpha = 1;
-  } else if (tier === 2 || tier === 3) {   // CLOUD NINE / JET STREAM — a small puff
+    pixDisc(x, y-6, 4, '#2E6E3A'); ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.fillRect(x-2, y-9, 4, .5); ctx.globalAlpha = 1;
+  } else if (tier === 2 || tier === 3) {   // CLOUD NINE / JET STREAM — a small puff, lit crown, soft belly
     ctx.globalAlpha = tier === 3 ? .3 : .45;
     pixDisc(x, y, 7, '#FFFFFF'); pixDisc(x-6, y+2, 5, '#FFFFFF'); pixDisc(x+6, y+2, 5, '#FFFFFF');
+    ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.fillRect(x-3, y-6.5, 6, .5);
+    ctx.fillStyle='rgba(126,160,200,0.5)'; ctx.fillRect(x-8, y+6.5, 16, .5);
     ctx.globalAlpha = 1;
-  } else if (tier === 4) {             // STRATOSPHERE — a far balloon
+  } else if (tier === 4) {             // STRATOSPHERE — a far balloon: sheen, twin ropes, woven basket
     if (s % 3) return;
-    ctx.globalAlpha = .7; pixDisc(x, y, 4, '#FF9E3D'); ctx.fillStyle = 'rgba(255,215,94,0.9)'; ctx.fillRect(x-4, y-1, 8, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x-1, y+5, 2, 2); ctx.globalAlpha = 1;
-  } else if (tier === 5) {             // AURORA — a drifting ice crystal
+    ctx.globalAlpha = .7; pixDisc(x, y, 4, '#FF9E3D');
+    ctx.fillStyle = 'rgba(255,215,94,0.9)'; ctx.fillRect(x-4, y-1, 8, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(x-1.5, y-2.5, 1.5, 1);            // sheen
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x-1.5, y+3.5, .5, 1.5); ctx.fillRect(x+1, y+3.5, .5, 1.5);   // ropes
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x-1, y+5, 2, 2);
+    ctx.fillStyle = 'rgba(255,246,232,0.3)'; ctx.fillRect(x-1, y+5, 2, .5);                  // basket rim
+    ctx.globalAlpha = 1;
+  } else if (tier === 5) {             // AURORA — a drifting ice crystal: faceted core + a bright tip
     if (s & 1) return;
-    ctx.globalAlpha = .7; ctx.fillStyle = '#BFF0FA'; ctx.fillRect(x, y-3, 1, 6); ctx.fillRect(x-1, y-1, 3, 1); ctx.fillRect(x-2, y+2, 5, 1); ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, y-3, 1, 2); ctx.globalAlpha = 1;
-  } else if (tier === 6) {             // SPACE — a little star cluster
+    ctx.globalAlpha = .7; ctx.fillStyle = '#BFF0FA';
+    ctx.fillRect(x, y-3, 1, 6); ctx.fillRect(x-1, y-1, 3, 1); ctx.fillRect(x-2, y+2, 5, 1);
+    ctx.fillRect(x-.5, y-3.5, 2, .5); ctx.fillRect(x-2.5, y+2.5, 6, .5);                     // chamfered tips
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, y-3, 1, 2); ctx.fillRect(x-1.5, y+1.5, .5, .5);
+    ctx.fillStyle = 'rgba(127,212,236,0.7)'; ctx.fillRect(x+.5, y, .5, 2);                   // shaded facet
+    ctx.globalAlpha = 1;
+  } else if (tier === 6) {             // SPACE — a little star cluster with mixed magnitudes
     if (s % 3) return;
-    ctx.globalAlpha = .7; ctx.fillStyle = '#A8C8FF'; ctx.fillRect(x, y, 1, 1); ctx.fillRect(x+3, y-2, 1, 1); ctx.fillRect(x-2, y+2, 1, 1); ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+1, y+1, 1, 1); ctx.globalAlpha = 1;
-  } else if (tier === 7) {             // ORBIT — a far satellite
+    ctx.globalAlpha = .7; ctx.fillStyle = '#A8C8FF';
+    ctx.fillRect(x, y, 1, 1); ctx.fillRect(x+3, y-2, 1, 1); ctx.fillRect(x-2, y+2, 1, 1);
+    ctx.fillRect(x+1.5, y-3.5, .5, .5); ctx.fillRect(x-3.5, y-.5, .5, .5);                   // faint minors
+    ctx.fillStyle = '#FFF6E8'; ctx.fillRect(x+1, y+1, 1, 1); ctx.fillRect(x+1.25, y+.5, .5, 2);   // bright core + cross glint
+    ctx.globalAlpha = 1;
+  } else if (tier === 7) {             // ORBIT — a far satellite: gridded panels + a running light
     if (s % 3) return;
-    ctx.globalAlpha = .6; pixDisc(x, y, 3, 'rgba(220,216,238,0.9)'); ctx.fillStyle = '#8FB8FF'; ctx.fillRect(x-6, y, 3, 2); ctx.fillRect(x+4, y, 3, 2); ctx.globalAlpha = 1;
-  } else {                             // THE STARS — a small ringed planet
+    ctx.globalAlpha = .6; pixDisc(x, y, 3, 'rgba(220,216,238,0.9)');
+    ctx.fillStyle = '#8FB8FF'; ctx.fillRect(x-6, y, 3, 2); ctx.fillRect(x+4, y, 3, 2);
+    ctx.fillStyle = 'rgba(46,78,116,0.8)'; ctx.fillRect(x-5, y, .5, 2); ctx.fillRect(x+5, y, .5, 2);   // panel seams
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(x-1, y-2, 1, .5);                  // body glint
+    if (!reduceMotion && Math.floor(ph/12)%2===0) { ctx.fillStyle='#62E8B5'; ctx.fillRect(x+1.5, y+2, .5, .5); }   // running light
+    ctx.globalAlpha = 1;
+  } else {                             // THE STARS — a small ringed planet: terminator + ring tips
     if (s % 3) return;
-    ctx.globalAlpha = .6; pixDisc(x, y, 4, '#B98CE6'); ctx.fillStyle = 'rgba(255,246,232,0.7)'; ctx.fillRect(x-7, y, 4, 1); ctx.fillRect(x+4, y, 4, 1); ctx.globalAlpha = 1;
+    ctx.globalAlpha = .6; pixDisc(x, y, 4, '#B98CE6');
+    ctx.fillStyle = 'rgba(74,58,110,0.75)'; ctx.fillRect(x+.5, y-2, 2, 4.5);                 // night side
+    ctx.fillStyle = 'rgba(255,246,232,0.7)'; ctx.fillRect(x-7, y, 4, 1); ctx.fillRect(x+4, y, 4, 1);
+    ctx.fillRect(x-7.5, y+.5, 1, .5); ctx.fillRect(x+7, y+.5, 1, .5);                        // drooping ring tips
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x-2.5, y-2.5, 1.5, .5);            // day-side glint
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -4789,23 +4817,25 @@ function renderSkyMap() {
     // floating themed island (bobs gently underneath the pinned badge) + its weather
     drawIsland(k, pt.x, pt.y + 5 + bob);
     drawStageWeather(k, pt.x, pt.y + bob, ph);
-    // stage label stacked above the badge (clear of the badge top)
+    // stage label stacked above the badge (clear of the badge top). v100: while a stage is
+    // SELECTED its second line becomes the start-condition caption — the old pt.y+33 caption
+    // row collided with the next-lower stage's title (MAP_ROW leaves no free band there)
     txt((k+1) + '. ' + t.name, pt.x, pt.y - 30, 1, unlocked ? t.c : 'rgba(255,246,232,0.45)', 'center');
-    txt(t.n*METERS_PER + 'M' + (cleared ? '' : isNext ? ' - NEXT' : ' - LOCKED'), pt.x, pt.y - 21, 1, 'rgba(255,246,232,0.55)', 'center');
+    const cp = checkpointForLevel(k);
+    const line2 = sel
+      ? (cp.startAltitude ? cp.name.split(' ')[0]+' CP - '+(cp.scoreMultiplier+'X').replace('0.','.') : 'GROUND START - FULL SCORE')
+      : t.n*METERS_PER + 'M' + (cleared ? '' : isNext ? ' - NEXT' : ' - LOCKED');
+    const l2w = line2.length*6-1, l2x = clamp(pt.x, 3+l2w/2, W-3-l2w/2);   // winding trail: clamp on-screen
+    txt(line2, l2x, pt.y - 21, 1, sel ? 'rgba(255,246,232,0.75)' : 'rgba(255,246,232,0.55)', 'center');
     // numbered badge on the trail
     mapBadge(k+1, pt.x, pt.y, cleared, isNext, unlocked, sel);
     // stars under the badge
     if (unlocked) for (let s2 = 0; s2 < 3; s2++) drawStarPix(pt.x - 8 + s2*8, pt.y + 15, 1, s2 < (levelStars[k] || 0));
     // selected stage: a PLAY pill (a second tap on the badge launches it)
     if (sel) {
-      const cp=checkpointForLevel(k), cpText=cp.startAltitude?cp.name+' CP - '+cp.scoreMultiplier+'X SCORE':'GROUND START - FULL SCORE';
       const pw2 = 34, px2 = Math.round(pt.x - pw2/2);
       plate3D(px2, pt.y + 20, pw2, 9, playA(.8 + .12*Math.sin(tick*.1)));
       txt('PLAY', pt.x, pt.y + 22, 1, '#08301F', 'center');
-      // v92: keep the caption near the badge but clamped fully on-screen (badges ride the
-      // winding trail, so centering on pt.x could push long captions past the canvas edge)
-      const cpw=cpText.length*6-1, cpx=clamp(pt.x, 3+cpw/2, W-3-cpw/2);
-      txt(cpText,cpx,pt.y+33,1,'rgba(255,246,232,0.7)','center');
     }
   }
   // mascot marks your best height on the winding trail
@@ -4818,9 +4848,12 @@ function renderSkyMap() {
   txt('SKY MAP', W/2, 5, 2, '#FFF6E8', 'center');
   // campaign mastery at a glance: total stars earned across the climb
   const starTot = levelStars.reduce((a,b)=>a+(b||0),0);
+  const starLbl = 'STARS ' + starTot + '/' + TIERS.length*3;
   drawStarPix(9, 25, 1, true);
-  txt('STARS ' + starTot + '/' + TIERS.length*3, 16, 22, 1, '#FFD75E', 'left');
-  txt(W<220?'DRAG TO CLIMB':'CHOOSE YOUR PATH',W-22,22,1,'rgba(255,246,232,0.56)','right');
+  txt(starLbl, 16, 22, 1, '#FFD75E', 'left');
+  const hint = W<220?'DRAG TO CLIMB':'CHOOSE YOUR PATH';
+  if (16 + starLbl.length*6-1 + 8 <= W-22 - (hint.length*6-1))   // v100: the hint yields to the stars label instead of colliding
+    txt(hint,W-22,22,1,'rgba(255,246,232,0.56)','right');
   ctx.fillStyle = 'rgba(255,246,232,0.14)'; ctx.fillRect(W-18, 6, 13, 13);   // close box
   txt('X', W-12, 8, 1, 'rgba(255,246,232,0.85)', 'center');
   // slim scrollbar on the right edge
