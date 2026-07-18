@@ -1853,6 +1853,9 @@ check('v110 map cards stay inside the column and never overlap', () => fresh.run
 check('v110 sky map renders card grammar; trail and full-size islands gone from the world layer', () =>
   /Extra Modes-style level cards/.test(src) && !/winding dotted trail/.test(src) &&
   !/const wv = i => midX \+ Math\.round\(amp/.test(src));
+check('v110 shop INFO label yields to a long passive name on both detail rows', () =>
+  (src.match(/the INFO label yields|same INFO yield rule/g) || []).length === 2 &&
+  !/txt\('INFO >',SHOP_DETAIL_BTN/.test(src));
 check('v110 finish section runs under one shared clip', () =>
   /per-skin surface finish \(v110: ONE shared clip/.test(src));
 check('v110 old escapes are gone (ember above-block spark, glow outer halo)', () =>
@@ -1864,7 +1867,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v109', () => /const CACHE = 'skystack-v109'/.test(sw));
+check('sw.js cache bumped to v110', () => /const CACHE = 'skystack-v110'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

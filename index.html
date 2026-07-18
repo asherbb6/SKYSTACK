@@ -5248,7 +5248,9 @@ function renderShop() {
 
   pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.22)',false);
   txt(passive.name,SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+5,1,isEquipped?'#62E8B5':'#FFF6E8','left');
-  txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
+  // v110: the INFO label yields to a long passive name (collapses to the bare chevron)
+  txt(SHOP_DETAIL_BTN.w >= (passive.name.length*6-1)+22+35 ? 'INFO >' : '>',
+      SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
 
   // boosts section
   txt('RUN BOOSTS', W/2, BOOST_TOP+4, 1, '#FFD75E', 'center');
@@ -5339,7 +5341,9 @@ function renderBaseShop(){
   else {const afford=coins>=b.cost;pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);const c=afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.6)';txt('UNLOCK',W/2-14,EQUIP_BTN.y+5,1,c,'center');drawCoin(W/2+8,EQUIP_BTN.y+5.5);txt(b.cost,W/2+17,EQUIP_BTN.y+5,1,c,'left');}
   pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?b.accent:'rgba(255,246,232,0.22)',false);
   txt('BASE DETAILS',SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+5,1,isEquipped?b.accent:'#FFF6E8','left');
-  txt('INFO >',SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
+  // v110: same INFO yield rule as the character detail row
+  txt(SHOP_DETAIL_BTN.w >= (12*6-1)+22+35 ? 'INFO >' : '>',
+      SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
   txt('BASE RULES',W/2,BOOST_TOP+4,1,'#62E8B5','center');
   txt('COSMETIC ONLY',W/2,BOOST_TOP+24,1,'#62E8B5','center');
   txt('NO GAMEPLAY EFFECT',W/2,BOOST_TOP+38,1,'rgba(255,246,232,0.65)','center');
