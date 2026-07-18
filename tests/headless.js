@@ -1876,6 +1876,15 @@ check('v113 perfect coins scale by the streak multiplier', () =>
   /const perfCoins = \(combo >= 7 \? 2 : 1\) \* streakMult/.test(src) && /addCoins\(perfCoins,/.test(src));
 check('v113 supernova banner credits coins as well as score', () =>
   /SUPERNOVA! SCORE & COINS X3/.test(src));
+// ---------- v114: progression made visible (live top-bar XP bar + level-up moment) ----------
+check('v114 top bar draws a live XP progress bar from lvl.xp / xpNeed()', () =>
+  /const lw = 34, lx = W - PAD - lw, frac = clamp\(lvl\.xp \/ xpNeed\(\)/.test(src) &&
+  /ctx\.fillRect\(lx, 11, fw, 3\)/.test(src));
+check('v114 level-up gets an emphasized plated moment, not a dim line', () =>
+  /LEVEL UP!  LV '\+lvl\.level\+'  \+'\+ECONOMY_RULES\.levelUpReward/.test(src) &&
+  !/'LEVEL UP! NOW LV '\+lvl\.level\+' \+25'/.test(src));
+check('v114 top bar renders across levels/xp without throwing and tracks xpNeed', () => fresh.run(
+  '(() => { const l0=lvl; let ok=true; for(const st of [{level:1,xp:0},{level:5,xp:499},{level:12,xp:250}]){ lvl=st; try{ topBar(""); }catch(e){ ok=false; } if(xpNeed()!==st.level*100) ok=false; } lvl=l0; return ok; })()') === true);
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -1901,7 +1910,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v113', () => /const CACHE = 'skystack-v113'/.test(sw));
+check('sw.js cache bumped to v114', () => /const CACHE = 'skystack-v114'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

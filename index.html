@@ -2713,7 +2713,14 @@ function drawNav() {
 function topBar(title) {
   drawCoin(PAD, 5.5); txt(coins, PAD + 9, 5, 1, '#FFD75E', 'left');
   if (title) txt(title, W/2, 5, 1, 'rgba(255,246,232,0.9)', 'center');
-  txt('LV ' + lvl.level, W - PAD, 5, 1, 'rgba(255,246,232,0.85)', 'right');
+  // v114: the level is a LIVE XP bar, not an inert number — always visible on every menu screen,
+  // and it pulses gold as the next level nears, so progression finally reads as a felt loop.
+  const lw = 34, lx = W - PAD - lw, frac = clamp(lvl.xp / xpNeed(), 0, 1), near = frac >= 0.82;
+  txt('LV ' + lvl.level, W - PAD, 3, 1, near ? '#FFD75E' : 'rgba(255,246,232,0.9)', 'right');
+  ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.fillRect(lx, 11, lw, 3);
+  const fw = Math.max(1, Math.round(lw * frac));
+  ctx.fillStyle = near && Math.floor(tick/16)%2 ? '#FFF6E8' : '#FFD75E'; ctx.fillRect(lx, 11, fw, 3);
+  ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(lx, 11, fw, 1);
 }
 
 // ---------- biome backdrop ----------
@@ -5890,7 +5897,14 @@ function renderGameOver() {
     txt('1 REVIVE PER RUN', W/2, REVIVE_BTN.y + 27, 1, 'rgba(255,246,232,0.45)', 'center');
   } else if (runSettled) {
     let y = modifierResults.length ? (challengeReward?178:167) : (challengeReward?167:156);
-    if (levelUpsThisRun > 0) { txt('LEVEL UP! NOW LV '+lvl.level+' +25', W/2, y, 1, '#FFD75E', 'center'); y += 11; }
+    if (levelUpsThisRun > 0) {   // v114: the biggest reward gets the biggest treatment, not a dim line
+      const label = 'LEVEL UP!  LV '+lvl.level+'  +'+ECONOMY_RULES.levelUpReward;
+      const tw = label.length*6-1, pulse = Math.floor(tick/14)%2;
+      ctx.fillStyle = pulse ? 'rgba(255,215,94,0.24)' : 'rgba(255,215,94,0.15)';
+      ctx.fillRect(W/2 - tw/2 - 8, y-2, tw+16, 11);
+      ctx.fillStyle = '#FFD75E'; ctx.fillRect(W/2 - tw/2 - 8, y-2, tw+16, 1); ctx.fillRect(W/2 - tw/2 - 8, y+8, tw+16, 1);
+      txt(label, W/2, y, 1, '#FFF6E8', 'center'); y += 14;
+    }
     for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i].name+' +'+achThisRun[i].reward, W/2, y, 1, '#C77EFF', 'center'); y += 11; }
     for (let i = 0; i < collectionThisRun.length && i < 1; i++) { txt('COLLECTION: '+collectionThisRun[i].name+' +'+collectionThisRun[i].reward, W/2, y, 1, '#FFD75E', 'center'); y += 11; }
     for (let i = 0; i < completedThisRun.length && i < 2; i++) { txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y, 1, '#62E8B5', 'center'); y += 11; }
