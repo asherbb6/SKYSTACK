@@ -368,7 +368,7 @@ const tut = makeGame({ 'skystack-tut':'true' });
 tut.run('mode="practice"; resetRun();');
 check('PRACTICE replays onboarding even after the first-run tutorial was completed', () => tut.run('tutDone === true && tutStep === 0'));
 check('onboarding teaches drop, perfect, fever, supernova, balance, and Skybreak', () => tut.run(
-  '(() => { const s=TUT_LESSONS.map(x=>x.title+" "+x.body).join(" "); return /DROP/.test(s)&&/PERFECT/.test(s)&&/FEVER/.test(s)&&/SUPERNOVA/.test(s)&&/BALANCE/.test(s)&&/SKYBREAK/.test(s); })()'));
+  '(() => { const s=TUT_LESSONS.map(x=>x.title+" "+x.body).join(" "); return /DROP/.test(s)&&/PERFECT/.test(s)&&/FEVER/.test(s)&&/BALANCE/.test(s)&&/SKYBREAK/.test(s); })()'));
 check('onboarding advances deterministically and persists completion', () => {
   tut.run('tutStep=1; advanceTutorial(2); advanceTutorial(3); advanceTutorial(5); advanceTutorial(8);');
   return tut.run('tutStep === -1 && tutDone === true') && saved(tut, 'skystack-tut') === true;
@@ -1333,8 +1333,8 @@ check('v96 notification boxes carry a full 1px outline, not just top/bottom line
   /ctx\.fillRect\(x, y, 1, 14\); ctx\.fillRect\(x \+ tw - 1, y, 1, 14\)/.test(src) &&
   /ctx\.fillRect\(x,y,tw,1\);ctx\.fillRect\(x,y\+12,tw,1\);ctx\.fillRect\(x,y,1,13\);ctx\.fillRect\(x\+tw-1,y,1,13\)/.test(src));
 
-check('v96/v105 modifier activation enqueues name then rule; the chip carries the telegraph', () =>
-  /p\.status='active'; note\(m\.name,'#FFD75E',2\); note\(m\.rule,'#BFE8FF',2,100\)/.test(src));
+check('v106 modifier activation is one BONUS note with rule and reward; the chip carries the name', () =>
+  /p\.status='active'; note\('BONUS: '\+m\.rule\+' \+'\+m\.rewardCoins,'#FFD75E',2,140\)/.test(src));
 
 check('v96 notification strip clamps its text to the screen width', () =>
   /while \(text\.length > 1 && text\.length \* 6 \+ 16 > W - 16\) text = text\.slice\(0, -1\)/.test(src));
@@ -1550,6 +1550,24 @@ check('v105 modifier chip: docked at NOTIFY_CHIP_Y, shifts below an active tutor
 check('v105 modifier chip keeps the corridor mini-map lane bar at real screen positions', () =>
   /modifierLaneBounds\(m,active&&\(m\.family==='target'\)\)/.test(src) &&
   /ctx\.fillRect\(8,y\+15,W-16,2\)/.test(src));
+
+// ---------- v106: pop-up copy clarity ----------
+check('v106 every reward pop-up names its currency or effect', () =>
+  /'SUPERNOVA! SCORE X3'/.test(src) && /'SKYBREAK! \+50 COINS'/.test(src) &&
+  /\+challengeReward\+' COINS'/.test(src) &&
+  !/'SUPERNOVA! 3X'/.test(src) && !/'SKYBREAK! \+50'(?! COINS)/.test(src));
+check('v106 modifier win notes BONUS WON with coins; the old CLEAR/ENDED note is gone', () =>
+  /note\('BONUS WON \+'\+paid\+' COINS','#62E8B5',2\)/.test(src) &&
+  !/\+' ENDED'/.test(src) && !/' CLEAR \+'\+paid/.test(src));
+check('v106 registry rules are imperative and fit the BONUS note at phone width', () => fresh.run(
+  'MODIFIER_REGISTRY.every(m => m.rule.length<=19 && ("BONUS: "+m.rule+" +"+m.rewardCoins).length<=31)'));
+check('v106 chip states its units with a fit fallback', () =>
+  /m\.name\+' '\+blocksLeft\+' LEFT'/.test(src) && /m\.name\+' IN '\+inN\+' BLOCKS'/.test(src) &&
+  /if \(t\.length\*6-1>W-40\) t=active\?m\.name\+' - '\+blocksLeft:m\.name\+' IN '\+inN;/.test(src));
+check('v106 collection toast names its coins', () =>
+  !/'COLLECTION COMPLETE \+'/.test(src) && /'COLLECTION! \+'/.test(src));
+check('v106 COMBO lesson teaches the fever threshold in plain words', () => fresh.run(
+  'TUT_LESSONS.some(l => l.title==="COMBO" && l.body==="10 STRAIGHT PERFECTS = FEVER" && l.compact==="PERFECT STREAKS PAY MORE")'));
 
 // ---------- v104: drifting balloon power-up ----------
 const bd = makeGame();

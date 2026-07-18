@@ -961,18 +961,18 @@ const levelStartN = i => LEVEL_REGISTRY[clamp(i | 0, 0, LEVEL_REGISTRY.length - 
 // S4 biome modifiers are short, optional reward windows layered over the existing stacking rules.
 // They never add collision or modifier-caused failure: missing a rule only forfeits its stated coins.
 const MODIFIER_REGISTRY = deepFreeze([
-  { id:'deep-rhythm', biome:'DEEP CAVE', family:'precision', name:'STONE RHYTHM', start:7, duration:7, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.42,label:'OPEN CENTER'}, rule:'CHAIN 3 PERFECTS' },
-  { id:'main-recovery', biome:'MAIN CAVE', family:'recovery', name:'ROOT RECOVERY', start:21, duration:8, lead:4, target:1, rewardCoins:6, safeLane:{center:.5,width:.46,label:'SHELTERED CENTER'}, rule:'CUT, THEN RECOVER PERFECT' },
-  { id:'surface-gold', biome:'SURFACE / FOREST', family:'goldRush', name:'GOLDEN GROVE', start:36, duration:6, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.5,label:'OPEN GROVE'}, rule:'PERFECTS DROP BONUS COINS' },
-  { id:'canopy-rhythm', biome:'TREETOPS / LOWER SKY', family:'precision', name:'CANOPY RHYTHM', start:49, duration:8, lead:4, target:3, rewardCoins:6, safeLane:{center:.5,width:.4,label:'CENTER BOUGH'}, rule:'CHAIN 3 PERFECTS' },
-  { id:'lower-gust', biome:'TREETOPS / LOWER SKY', family:'gust', name:'OPEN-AIR GUST', start:66, duration:9, lead:5, target:7, rewardCoins:7, safeLane:{center:.5,width:.38,label:'CENTER LANE'}, rule:'RIDE THE WARNED CROSSWIND' },
-  { id:'cloud-window', biome:'CLOUDS', family:'visibility', name:'CLEAR WINDOW', start:90, duration:10, lead:4, target:5, rewardCoins:7, safeLane:{center:.5,width:.36,label:'CLEAR CENTER'}, rule:'LAND 5 IN THE CLEAR LANE' },
-  { id:'jet-gust', biome:'UPPER SKY', family:'gust', name:'JET CROSSWIND', start:115, duration:10, lead:5, target:8, rewardCoins:8, safeLane:{center:.5,width:.34,label:'CENTER LANE'}, rule:'RIDE THE WARNED CROSSWIND' },
-  { id:'thin-air', biome:'UPPER SKY', family:'limitedMiss', name:'THIN-AIR CONTROL', start:146, duration:10, lead:4, target:8, maxMisses:1, rewardCoins:8, safeLane:{center:.5,width:.36,label:'CENTER LANE'}, rule:'AT MOST 1 NON-PERFECT' },
-  { id:'aurora-recovery', biome:'UPPER SKY', family:'recovery', name:'AURORA RECOVERY', start:180, duration:10, lead:4, target:1, rewardCoins:8, safeLane:{center:.5,width:.4,label:'CALM CENTER'}, rule:'CUT, THEN RECOVER PERFECT' },
-  { id:'space-target', biome:'ORBIT', family:'target', name:'ORBITAL TARGET', start:220, duration:12, lead:5, target:2, rewardCoins:9, safeLane:{center:.5,width:.46,label:'OPEN ORBIT'}, rule:'OPTIONAL: HIT 2 GOLD TARGETS' },
-  { id:'orbit-control', biome:'ORBIT', family:'limitedMiss', name:'DEBRIS TIMING', start:286, duration:12, lead:5, target:10, maxMisses:1, rewardCoins:10, safeLane:{center:.5,width:.4,label:'CLEAR FLIGHT LANE'}, rule:'AT MOST 1 NON-PERFECT' },
-  { id:'summit-precision', biome:'THE STARS', family:'precision', name:'SUMMIT PRECISION', start:400, duration:12, lead:5, target:4, rewardCoins:12, safeLane:{center:.5,width:.32,label:'GOLDEN CENTER'}, rule:'CHAIN 4 PERFECTS' }
+  { id:'deep-rhythm', biome:'DEEP CAVE', family:'precision', name:'STONE RHYTHM', start:7, duration:7, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.42,label:'OPEN CENTER'}, rule:'3 PERFECTS IN A ROW' },
+  { id:'main-recovery', biome:'MAIN CAVE', family:'recovery', name:'ROOT RECOVERY', start:21, duration:8, lead:4, target:1, rewardCoins:6, safeLane:{center:.5,width:.46,label:'SHELTERED CENTER'}, rule:'FIX A CUT PERFECTLY' },
+  { id:'surface-gold', biome:'SURFACE / FOREST', family:'goldRush', name:'GOLDEN GROVE', start:36, duration:6, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.5,label:'OPEN GROVE'}, rule:'PERFECTS PAY EXTRA' },
+  { id:'canopy-rhythm', biome:'TREETOPS / LOWER SKY', family:'precision', name:'CANOPY RHYTHM', start:49, duration:8, lead:4, target:3, rewardCoins:6, safeLane:{center:.5,width:.4,label:'CENTER BOUGH'}, rule:'3 PERFECTS IN A ROW' },
+  { id:'lower-gust', biome:'TREETOPS / LOWER SKY', family:'gust', name:'OPEN-AIR GUST', start:66, duration:9, lead:5, target:7, rewardCoins:7, safeLane:{center:.5,width:.38,label:'CENTER LANE'}, rule:'PLACE 7 IN THE WIND' },
+  { id:'cloud-window', biome:'CLOUDS', family:'visibility', name:'CLEAR WINDOW', start:90, duration:10, lead:4, target:5, rewardCoins:7, safeLane:{center:.5,width:.36,label:'CLEAR CENTER'}, rule:'5 IN THE CLEAR LANE' },
+  { id:'jet-gust', biome:'UPPER SKY', family:'gust', name:'JET CROSSWIND', start:115, duration:10, lead:5, target:8, rewardCoins:8, safeLane:{center:.5,width:.34,label:'CENTER LANE'}, rule:'PLACE 8 IN THE WIND' },
+  { id:'thin-air', biome:'UPPER SKY', family:'limitedMiss', name:'THIN-AIR CONTROL', start:146, duration:10, lead:4, target:8, maxMisses:1, rewardCoins:8, safeLane:{center:.5,width:.36,label:'CENTER LANE'}, rule:'MAX 1 MISS' },
+  { id:'aurora-recovery', biome:'UPPER SKY', family:'recovery', name:'AURORA RECOVERY', start:180, duration:10, lead:4, target:1, rewardCoins:8, safeLane:{center:.5,width:.4,label:'CALM CENTER'}, rule:'FIX A CUT PERFECTLY' },
+  { id:'space-target', biome:'ORBIT', family:'target', name:'ORBITAL TARGET', start:220, duration:12, lead:5, target:2, rewardCoins:9, safeLane:{center:.5,width:.46,label:'OPEN ORBIT'}, rule:'HIT 2 GOLD TARGETS' },
+  { id:'orbit-control', biome:'ORBIT', family:'limitedMiss', name:'DEBRIS TIMING', start:286, duration:12, lead:5, target:10, maxMisses:1, rewardCoins:10, safeLane:{center:.5,width:.4,label:'CLEAR FLIGHT LANE'}, rule:'MAX 1 MISS' },
+  { id:'summit-precision', biome:'THE STARS', family:'precision', name:'SUMMIT PRECISION', start:400, duration:12, lead:5, target:4, rewardCoins:12, safeLane:{center:.5,width:.32,label:'GOLDEN CENTER'}, rule:'4 PERFECTS IN A ROW' }
 ]);
 function modifierHash(seed, text) {
   let h=(seed>>>0)^0x85EBCA6B;
@@ -1107,7 +1107,7 @@ function finishModifier(m,p) {
   let paid=0;
   if (won) { const before=runCoins; addCoins(m.rewardCoins,W/2,towerTopY()-BH-20); paid=runCoins-before; modifierWins++; modifierBonusCoins+=paid; }
   modifierResults.push({id:m.id,name:m.name,success:won,rewardCoins:paid});
-  if (wasActive) note(won?m.name+' CLEAR +'+paid:m.name+' ENDED', won?'#62E8B5':'rgba(255,246,232,0.4)', 2);
+  if (wasActive&&won) note('BONUS WON +'+paid+' COINS','#62E8B5',2);   // losses/expiries are silent — the chip vanishing is the signal
   if (wind&&wind.modifierId===m.id) { wind=null; windTimer=BALANCE_REGISTRY.wind.minCooldownFrames; }
 }
 function updateModifiersForPlacement(h,outcome) {
@@ -1116,7 +1116,7 @@ function updateModifiersForPlacement(h,outcome) {
     const p=modifierRuntime(m); if (!p||p.status==='complete'||p.status==='failed') continue;
     if (h>=m.announceAltitude&&p.status==='pending') { p.status='announced'; }   // the bottom strip carries the telegraph — no duplicate banner
     if (h>=m.startAltitude&&h<=m.endAltitude) {
-      if (p.status!=='active') { p.status='active'; note(m.name,'#FFD75E',2); note(m.rule,'#BFE8FF',2,100); }   // name then rule, shown one after another — each always fits
+      if (p.status!=='active') { p.status='active'; note('BONUS: '+m.rule+' +'+m.rewardCoins,'#FFD75E',2,140); }   // one self-contained pop-up: optional challenge, rule, stake
       p.placements++;
       if (outcome&&outcome.perfect) { p.perfects++; p.streak++; p.bestStreak=Math.max(p.bestStreak,p.streak); }
       else { p.streak=0; p.misses++; }
@@ -1323,7 +1323,7 @@ function completeChallenge() {
   const c=activeChallenge(); if (!c||challengeCleared) return;
   challengeCleared=true; challengeRuntime.status='complete'; challengeReward=challengeRecord(c.id).clears===0?coinAmount(c.reward):0;
   if (challengeReward) transactCoins(challengeReward,true);
-  note('CHALLENGE CLEAR!'+(challengeReward?' +'+challengeReward:''), '#62E8B5', 2, 140);
+  note('CHALLENGE CLEAR!'+(challengeReward?' +'+challengeReward+' COINS':''), '#62E8B5', 2, 140);
   gameOver('challenge');
 }
 function recordChallengeOutcome() {
@@ -1343,7 +1343,7 @@ const TUT_LESSONS = [
   // compact: phone-width copy used when the full body cannot keep side margins (v92)
   { title:'DROP',     body:'TAP WHEN THE BLOCK IS CENTERED', compact:'TAP WHEN CENTERED' },
   { title:'PERFECT',  body:'MATCH EDGES TO RESTORE WIDTH',   compact:'MATCH EDGES FOR WIDTH' },
-  { title:'COMBO',    body:'X10 FEVER - X15 SUPERNOVA' },
+  { title:'COMBO',    body:'10 STRAIGHT PERFECTS = FEVER', compact:'PERFECT STREAKS PAY MORE' },
   { title:'BALANCE',  body:'OFFSET DROPS LEAN THE TOWER',    compact:'OFFSETS LEAN THE TOWER' },
   { title:'SKYBREAK', body:'GROW TO FULL WIDTH FOR +50',     compact:'FULL WIDTH PAYS +50' }
 ];
@@ -1587,7 +1587,7 @@ function land() {
     if (combo >= 15) {
       if (!nova) {
         nova = true; novaFlash = 1;
-        note('SUPERNOVA! 3X', '#FFD75E', 1);
+        note('SUPERNOVA! SCORE X3', '#FFD75E', 1);
         floaters.push({ text:'SUPERNOVA!', x:W/2, y:towerTopY()-BH-34, vy:-.5, life:1.8, color:'#FFFFFF' });
         burst(nx+nw/2, towerTopY()-BH, 40, {h:50}, true);
         shake = Math.max(shake, reduceMotion?3:7);
@@ -1615,7 +1615,7 @@ function land() {
   // SKYBREAK — block spans the whole sky
   if (nw >= W - 6) {
     blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col:f.col });
-    note('SKYBREAK! +50', '#FFD75E', 1);
+    note('SKYBREAK! +50 COINS', '#FFD75E', 1);
     addCoins(50, W/2, towerTopY());
     balance = 0; if (canEarnRewards(runContext)) { stats.skybreaks++; runSkybreaks++; } skybreakT = 1;
     burst(W/2, towerTopY(), 36, f.col, true);
@@ -2075,7 +2075,7 @@ function pressDown(e) {
         const b=BASE_REGISTRY[basePreviewIdx];
         if (ownedBases.indexOf(b.id)===-1) {
           const buy=purchaseUnlock(b,ownedBases);
-          if (buy.status==='purchased') { baseId=b.id; persistBases(); const done=reconcileCollections(true); sfx.unlock(); toast(done.length?'COLLECTION COMPLETE +'+done[0].reward:'BASE UNLOCKED!'); }
+          if (buy.status==='purchased') { baseId=b.id; persistBases(); const done=reconcileCollections(true); sfx.unlock(); toast(done.length?'COLLECTION! +'+done[0].reward+' COINS':'BASE UNLOCKED!'); }
           else { sfx.deny(); toast(buy.status==='locked'?'NOT AVAILABLE':'NEED MORE COINS'); }
         } else if (b.id!==baseId) { baseId=b.id; persistBases(); sfx.tap(); toast('BASE EQUIPPED'); }
         return;
@@ -2083,7 +2083,7 @@ function pressDown(e) {
       const sk = CHARACTER_REGISTRY[previewIdx];
       if (owned.indexOf(sk.id) === -1) {
         const buy=purchaseUnlock(sk,owned);
-        if (buy.status==='purchased') { skinId=sk.id; persistCharacters(); const done=reconcileCollections(true); sfx.unlock(); toast(done.length?'COLLECTION COMPLETE +'+done[0].reward:'UNLOCKED!'); }
+        if (buy.status==='purchased') { skinId=sk.id; persistCharacters(); const done=reconcileCollections(true); sfx.unlock(); toast(done.length?'COLLECTION! +'+done[0].reward+' COINS':'UNLOCKED!'); }
         else { sfx.deny(); toast(buy.status==='locked'?'NOT AVAILABLE':'NEED MORE COINS'); }
       } else if (sk.id !== skinId) { skinId = sk.id; persistCharacters(); sfx.tap(); toast('EQUIPPED'); }
       return;
@@ -5496,7 +5496,8 @@ function renderModifierHUD(h) {
   const p=modifierRuntime(m), active=p.status==='active';
   const y=NOTIFY_CHIP_Y+(tutStep>=0?16:0);   // drop below the two-line tutorial hint when onboarding is up
   const blocksLeft=Math.max(0,m.endAltitude-h+1), inN=Math.max(0,m.startAltitude-h);
-  let t=active?m.name+' - '+blocksLeft:m.name+' IN '+inN;
+  let t=active?m.name+' '+blocksLeft+' LEFT':m.name+' IN '+inN+' BLOCKS';
+  if (t.length*6-1>W-40) t=active?m.name+' - '+blocksLeft:m.name+' IN '+inN;
   if (t.length*6-1>W-40) t=m.name;
   const tw=Math.min(W-16,t.length*6-1+14), x=Math.round(W/2-tw/2);
   ctx.fillStyle='rgba(11,14,26,0.82)';ctx.fillRect(x,y,tw,13);
