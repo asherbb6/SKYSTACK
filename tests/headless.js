@@ -1856,6 +1856,26 @@ check('v110 sky map renders card grammar; trail and full-size islands gone from 
 check('v110 shop INFO label yields to a long passive name on both detail rows', () =>
   (src.match(/the INFO label yields|same INFO yield rule/g) || []).length === 2 &&
   !/txt\('INFO >',SHOP_DETAIL_BTN/.test(src));
+
+// ---------- v111: sky map postcards + polish ----------
+check('v111 map rhythm: MAP_ROW 64 / MAP_CARD_H 54', () => fresh.run('MAP_ROW === 64 && MAP_CARD_H === 54'));
+check('v111 postcard/panel/rail markers present; flat thumb fill gone', () =>
+  /environment postcard/.test(src) && /column panel/.test(src) && /progress rail/.test(src) &&
+  !/ctx\.fillStyle = 'rgba\(0,0,0,0\.22\)'; ctx\.fillRect\(thX, thY, thS, thS\)/.test(src));
+check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
+  '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
+  'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
+  'const L=skyMapNodes(); mapScroll=clamp(mapScroll + ((L.viewTop+L.viewBot)/2 - L.pts[5].y), 0, mapScrollMax);' +
+  'const L2=skyMapNodes(); const card={x0:L2.colX,y0:L2.pts[5].y-MAP_CARD_H/2,x1:L2.colX+L2.colW,y1:L2.pts[5].y+MAP_CARD_H/2};' +
+  'const texts=[]; let plate=null; const oT=txt, oP=plate3D;' +
+  'txt=(t,x,y,sc,col,al)=>{sc=sc||1;t=String(t);const tw=t.length*6*sc-sc;const x0=al==="center"?x-tw/2:al==="right"?x-tw:x;if(String(col).indexOf("0,0,0")<0&&t!=="PLAY")texts.push({x0,x1:x0+tw,y0:y,y1:y+7*sc});};' +
+  'plate3D=(x,y,w2,h2)=>{plate={x0:x,y0:y,x1:x+w2,y1:y+h2};};' +
+  'try { renderSkyMap(); } finally { txt=oT; plate3D=oP; }' +
+  'if (!plate) { bad="no plate at "+w; break; }' +
+  'if (plate.x0<card.x0||plate.x1>card.x1||plate.y0<card.y0||plate.y1>card.y1) { bad="plate outside card at "+w; break; }' +
+  'for (const tb of texts) if (tb.x0<plate.x1&&plate.x0<tb.x1&&tb.y0<plate.y1&&plate.y0<tb.y1) { bad="plate overlaps text at "+w; break; }' +
+  'if (bad) break; } } finally { skyMap=false; prog=0; selLevel=0; for(let i=0;i<11;i++)levelStars[i]=0; bestHeight=0; W=W0;H=H0;relayout(); }' +
+  'return bad||true; })()') === true);
 check('v110 finish section runs under one shared clip', () =>
   /per-skin surface finish \(v110: ONE shared clip/.test(src));
 check('v110 old escapes are gone (ember above-block spark, glow outer halo)', () =>

@@ -4646,7 +4646,7 @@ function renderPause() {
 // ---------- sky map (level select: one row per level, drag-scrolls, footer launches) ----------
 // list layout: one generous row per level on a straight climbing trail down a
 // centered column; the list drag-scrolls whenever it is taller than the screen
-const MAP_ROW = 60, MAP_CARD_H = 48, MAP_HEAD = 38, MAP_FOOT = 10;
+const MAP_ROW = 64, MAP_CARD_H = 54, MAP_HEAD = 38, MAP_FOOT = 10;
 // per-stage floating-island palette, index-aligned to the 11 TIERS
 // (cave rock, grass, grass, cloud, cloud, cloud, rock, ice, space-rock, metal, gold)
 const ISLES = [
@@ -5082,6 +5082,20 @@ function renderSkyMap() {
   // offscreen stage copy ghost through it on narrow phones.
   ctx.save();ctx.beginPath();ctx.rect(0,L.viewTop,W,L.viewBot-L.viewTop);ctx.clip();
   drawMapDecor(L, ph);   // birds, balloons, plane, aurora, galaxy, moon, planet — behind the cards
+  // v111 column panel: the card stack sits on a consistent surface, not raw sky
+  ctx.fillStyle = 'rgba(7,8,15,0.30)';
+  ctx.fillRect(L.colX - 6, L.viewTop, L.colW + 12, L.viewBot - L.viewTop);
+  ctx.fillStyle = 'rgba(255,246,232,0.07)';
+  ctx.fillRect(L.colX - 6, L.viewTop, 1, L.viewBot - L.viewTop);
+  ctx.fillRect(L.colX + L.colW + 5, L.viewTop, 1, L.viewBot - L.viewTop);
+  // v111 progress rail: gold up to the NEXT card, dim above (shows in the card gaps)
+  const railX = L.colX + 4, nextY = L.pts[Math.min(prog, TIERS.length - 1)].y;
+  const railTop = Math.max(L.viewTop, L.gate.y), railBot = Math.min(L.viewBot, L.start.y);
+  if (railBot > railTop) {
+    ctx.fillStyle = 'rgba(255,246,232,0.14)'; ctx.fillRect(railX, railTop, 2, railBot - railTop);
+    const goldTop = Math.max(railTop, nextY);
+    if (railBot > goldTop) { ctx.fillStyle = 'rgba(255,215,94,0.55)'; ctx.fillRect(railX, goldTop, 2, railBot - goldTop); }
+  }
   // v110: Extra Modes-style level cards over the themed sky. v100 rule kept: while a stage
   // is SELECTED its second line becomes the start-condition caption.
   const champ = prog >= TIERS.length;
@@ -5101,25 +5115,38 @@ function renderSkyMap() {
     pixelFrame(cx2, cy2, cw2, MAP_CARD_H, sel ? uiA(.16) : 'rgba(17,17,25,0.88)', accent, sel || (isGate && champ));
     ctx.fillStyle = accent; ctx.globalAlpha = sel || isNext || isGate ? 1 : .36;
     ctx.fillRect(cx2+4, cy2+5, 2, MAP_CARD_H-10); ctx.globalAlpha = 1;
-    // island + weather miniature through a clipped thumbnail window
-    const thX = cx2+10, thY = cy2+8, thS = 32;
-    ctx.save(); ctx.beginPath(); ctx.rect(thX, thY, thS, thS); ctx.clip();
-    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(thX, thY, thS, thS);
-    if (isGate && !champ) {                                   // the sealed golden door, native scale
-      const gx2 = thX + thS/2, gy2 = thY + thS/2 - 2;
+    // island + weather framed as an environment postcard — the stage's real sky + terrain
+    const thW = 32, thH = 38, thX = cx2+10, thY = cy2+8;
+    ctx.save(); ctx.beginPath(); ctx.rect(thX, thY, thW, thH); ctx.clip();
+    const altN = isGate ? TIERS[TIERS.length-1].n : t.n;
+    const prevN = isGate ? TIERS[TIERS.length-1].n - 40 : k > 0 ? TIERS[k-1].n : 0;
+    for (let b2 = 0; b2 < thH; b2 += 2) {                     // top of the window = tier altitude
+      const sc2 = skyColor(prevN + (1 - b2/thH) * (altN - prevN));
+      ctx.fillStyle = 'rgb('+sc2[0]+','+sc2[1]+','+sc2[2]+')';
+      ctx.fillRect(thX, thY + b2, thW, 2);
+    }
+    if (altN > 90) { ctx.fillStyle = 'rgba(255,246,232,0.9)';  // stars once the sky darkens
+      for (let s3 = 0; s3 < 3; s3++) ctx.fillRect(thX + 4 + ((k*37 + s3*11) % (thW-8)), thY + 3 + ((k*13 + s3*7) % 14), 1, 1); }
+    if (isGate && !champ) {                                    // sealed door on the night sky
+      const gx2 = thX + thW/2, gy2 = thY + thH/2;
       ctx.fillStyle = '#9A7420'; ctx.fillRect(gx2-10, gy2-9, 20, 19);
       ctx.fillStyle = '#FFD75E'; ctx.fillRect(gx2-8, gy2-7, 16, 17);
       ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(gx2-8, gy2-7, 16, 1);
       ctx.fillStyle = '#5E4610'; ctx.fillRect(gx2-4, gy2-1, 8, 11);
       txt('?', gx2, gy2+1, 1, '#FFD75E', 'center');
-    } else {                                                  // the stage island, scaled to fit (gate-champ = golden dais)
-      const bob = reduceMotion ? 0 : Math.round(Math.sin(tick*.045 + k*1.3)*2);
-      ctx.translate(thX + thS/2, thY + thS*0.55 + bob*0.3); ctx.scale(0.32, 0.32);
-      drawIsland(isGate ? 10 : k, 0, 0);
+    } else {                                                   // terrain: the island fills the frame, surface at 72%
+      ctx.translate(thX + thW/2, thY + Math.round(thH*0.72)); ctx.scale(0.55, 0.55);
+      drawIsland(isGate ? 10 : k, 0, 1);
       drawStageWeather(isGate ? 10 : k, 0, -6, ph);
     }
     ctx.restore();
-    const tx0 = thX + thS + 6, txR = cx2 + cw2 - 7, dimTxt = 'rgba(255,246,232,0.45)';
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';                        // picture-frame: dark inset...
+    ctx.fillRect(thX-1, thY-1, thW+2, 1); ctx.fillRect(thX-1, thY+thH, thW+2, 1);
+    ctx.fillRect(thX-1, thY, 1, thH); ctx.fillRect(thX+thW, thY, 1, thH);
+    ctx.fillStyle = 'rgba(255,246,232,0.18)';                  // ...and light inner border
+    ctx.fillRect(thX, thY, thW, 1); ctx.fillRect(thX, thY+thH-1, thW, 1);
+    ctx.fillRect(thX, thY, 1, thH); ctx.fillRect(thX+thW-1, thY, 1, thH);
+    const tx0 = thX + thW + 6, txR = cx2 + cw2 - 7, dimTxt = 'rgba(255,246,232,0.45)';
     if (isGate) {
       txt(champ ? 'SKY CHAMPION' : '? ? ?', tx0, cy2+11, 1, '#FFD75E', 'left');
       txt(champ ? 'THE GATE IS OPEN' : 'SEALED - ' + TIERS[TIERS.length-1].n*METERS_PER + 'M', tx0, cy2+27, 1, 'rgba(255,246,232,0.55)', 'left');
@@ -5130,19 +5157,18 @@ function renderSkyMap() {
         const cp = checkpointForLevel(k);
         txt(cp.startAltitude ? cp.name.split(' ')[0]+' CP - '+(cp.scoreMultiplier+'X').replace('0.','.') : 'GROUND - FULL SCORE',
             tx0, cy2+27, 1, 'rgba(255,246,232,0.75)', 'left');
-        const pw2 = 34, px2 = cx2 + cw2 - pw2 - 6;
-        plate3D(px2, cy2 + MAP_CARD_H - 14, pw2, 9, playA(.8 + .12*Math.sin(tick*.1)));
-        txt('PLAY', px2 + pw2/2, cy2 + MAP_CARD_H - 12, 1, '#08301F', 'center');
+        const pw2 = 44, px2 = cx2 + cw2 - pw2 - 6, py2 = cy2 + MAP_CARD_H - 17;   // dedicated PLAY band
+        plate3D(px2, py2, pw2, 12, playA(.8 + .12*Math.sin(tick*.1)), t.c);
+        txt('PLAY', px2 + pw2/2, py2 + 3, 1, '#08301F', 'center');
       } else {
-        for (let s2 = 0; s2 < 3; s2++) drawStarPix(tx0 + s2*8, cy2 + 26, 1, unlocked && s2 < (levelStars[k] || 0));
+        for (let s2 = 0; s2 < 3; s2++) drawStarPix(tx0 + s2*8, cy2 + 27, 1, unlocked && s2 < (levelStars[k] || 0));
         txt(cleared ? 'CLEARED' : isNext ? 'NEXT' : 'LOCKED', txR, cy2+27, 1,
             cleared ? '#62E8B5' : isNext ? t.c : dimTxt, 'right');
       }
     }
-    // mascot perches on the card holding your best height (skipped while selected — the
-    // PLAY pill owns that corner)
-    if (bestCard === k && !sel) { ctx.save(); ctx.beginPath(); ctx.rect(cx2, cy2, cw2, MAP_CARD_H); ctx.clip();
-      drawMascot(cx2 + cw2 - 16, cy2 + MAP_CARD_H - 4); ctx.restore(); }
+    // mascot perches ON TOP of the card holding your best height, in the gap above it
+    // (skipped while selected — the PLAY band owns that card)
+    if (bestCard === k && !sel) drawMascot(cx2 + cw2 - 16, cy2);
   }
   ctx.restore();
   // header
@@ -5158,7 +5184,7 @@ function renderSkyMap() {
   const hint = W<220?'DRAG TO CLIMB':'CHOOSE YOUR PATH';
   if (16 + starLbl.length*6-1 + 8 <= W-22 - (hint.length*6-1))   // v100: the hint yields to the stars label instead of colliding
     txt(hint,W-22,22,1,'rgba(255,246,232,0.56)','right');
-  ctx.fillStyle = 'rgba(255,246,232,0.14)'; ctx.fillRect(W-18, 6, 13, 13);   // close box
+  pixelFrame(W-18, 6, 13, 13, 'rgba(11,14,26,0.74)', 'rgba(255,246,232,0.26)', false);   // close box
   txt('X', W-12, 8, 1, 'rgba(255,246,232,0.85)', 'center');
   // slim scrollbar on the right edge
   if (mapScrollMax > 0) {
