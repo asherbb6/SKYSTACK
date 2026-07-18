@@ -739,7 +739,7 @@ const curMode = () => MODES.find(m => m.id === mode) || MODES[0];
 let modePicker = false;
 let challengePicker = false;
 let skyMap = false;
-let mapScroll = 0, mapScrollMax = 0, mapDrag = null;   // sky map list scroll state
+let mapScroll = 0, mapScrollMax = 0, mapDrag = null, mapScrollV = 0;   // sky map list scroll state (+glide velocity)
 let modeBests = store.get('skystack-modebests', {});
 function bestBlocksFor(m) { return (modeBests[m] && modeBests[m].blocks) || 0; }
 function bestScoreFor(m) { return (modeBests[m] && modeBests[m].score) || 0; }
@@ -2072,7 +2072,7 @@ function pressDown(e) {
     if (missionsOpen) { missionsOpen=false; sfx.tap(); return; }
     if (skyMap) {
       // the map scrolls: a press starts a drag, selection happens on release (pressUp)
-      mapDrag = { y: p.y, scroll: mapScroll, moved: false };
+      mapDrag = { y: p.y, scroll: mapScroll, moved: false }; mapScrollV = 0;   // grabbing halts any glide
       return;
     }
     if (challengePicker) {
@@ -2184,7 +2184,7 @@ function pressMove(e) {
   const p = pos(e);
   const dy = p.y - mapDrag.y;
   if (Math.abs(dy) > 5) mapDrag.moved = true;
-  if (mapDrag.moved) mapScroll = clamp(mapDrag.scroll + dy, 0, mapScrollMax);
+  if (mapDrag.moved) { const ns = clamp(mapDrag.scroll + dy, 0, mapScrollMax); mapScrollV = ns - mapScroll; mapScroll = ns; }   // last delta = flick velocity on release
 }
 function pressUp(e) {
   if (!skyMap || !mapDrag) return;
@@ -2197,7 +2197,9 @@ canvas.addEventListener('pointermove', e => pressMove(e));
 canvas.addEventListener('pointerup', e => pressUp(e));
 canvas.addEventListener('pointercancel', () => { mapDrag = null; });
 canvas.addEventListener('wheel', e => {
-  if (skyMap) { mapScroll = clamp(mapScroll + e.deltaY * 0.4, 0, mapScrollMax); e.preventDefault(); }
+  // reversed vs v111: wheel/trackpad DOWN glides toward the ground (down the list), like every
+  // native list; the impulse feeds the momentum velocity so it glides instead of snapping.
+  if (skyMap) { mapScrollV = clamp(mapScrollV - e.deltaY * 0.06, -34, 34); e.preventDefault(); }
 }, { passive: false });
 addEventListener('keydown', e => {
   if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; if (paused) sfx.pause(); else sfx.resume(); e.preventDefault(); return; }
@@ -2214,6 +2216,12 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && (st
 // ---------- update ----------
 function update(dt) {
   if (paused) return;                 // full freeze — world, music scheduling, timers
+  // sky map momentum glide: coast the scroll after a wheel impulse or a drag-flick, easing to rest
+  if (skyMap && !mapDrag && mapScrollV) {
+    mapScroll = clamp(mapScroll + mapScrollV * dt, 0, mapScrollMax);
+    if (mapScroll <= 0 || mapScroll >= mapScrollMax) mapScrollV = 0;
+    else { mapScrollV *= Math.pow(0.86, dt); if (Math.abs(mapScrollV) < 0.08) mapScrollV = 0; }
+  }
   tick += dt;
   musicStep();
   updateEventFx(dt);
@@ -5021,6 +5029,121 @@ function drawMapDecor(L, ph) {
     ctx.fillStyle = 'rgba(255,246,232,0.6)'; ctx.fillRect(px2-8, py2+1, 6, 1); ctx.fillRect(px2+3, py2+1, 6, 1);
   }
 }
+// v112 environment postcard: a purpose-drawn mini-scene per biome for the sky-map cards.
+// k is the tier index 0..10, or -1 for the summit gate. Draws INSIDE an already-clipped
+// (x,y,w,h) window: a per-altitude sky, then a designed horizon/landform for that biome.
+function mapScene(k, isGate, champ, x, y, w, h, ph) {
+  const R = (cx, cy, cw, ch, c) => { ctx.fillStyle = c; ctx.fillRect(x+cx, y+cy, cw, ch); };
+  const disc = (cx, cy, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x+cx, y+cy, r, 0, 7); ctx.fill(); };
+  const drift = reduceMotion ? 0 : Math.sin(ph*0.6)*1.5;
+  // ---- CAVES: underground, no sky ----
+  if (k === 0) {
+    R(0, 0, w, h, '#171320');
+    ctx.fillStyle = '#241d2e'; ctx.beginPath(); ctx.moveTo(x+5, y+h); ctx.lineTo(x+5, y+15);
+    ctx.quadraticCurveTo(x+w/2, y+3, x+w-5, y+15); ctx.lineTo(x+w-5, y+h); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#0e0a15'; ctx.beginPath(); ctx.moveTo(x+11, y+h); ctx.lineTo(x+11, y+20);
+    ctx.quadraticCurveTo(x+w/2, y+11, x+w-11, y+20); ctx.lineTo(x+w-11, y+h); ctx.closePath(); ctx.fill();
+    R(9, 0, 2, 8, '#241d2e'); R(w-12, 0, 2, 10, '#241d2e'); R((w>>1)-1, 0, 2, 5, '#241d2e');   // stalactites
+    disc(8, 21, 3, 'rgba(255,150,40,0.18)'); disc(w-8, 21, 3, 'rgba(255,150,40,0.18)');
+    disc(8, 21, 1.4, '#FFB24A'); disc(w-8, 21, 1.4, '#FFB24A');                                 // torches
+    return;
+  }
+  // ---- sky gradient (all tiers above ground + the gate) ----
+  const altN = isGate ? TIERS[TIERS.length-1].n + 40 : TIERS[k].n;
+  const prevN = isGate ? TIERS[TIERS.length-1].n : (k > 0 ? TIERS[k-1].n : 0);
+  for (let b = 0; b < h; b += 2) {
+    const s = skyColor(prevN + (1 - b/h) * (altN - prevN));
+    R(0, b, w, 2, 'rgb('+s[0]+','+s[1]+','+s[2]+')');
+  }
+  if (k === 1) {                                             // SURFACE: sun + rolling meadow hills
+    disc(w-8, 9, 6, 'rgba(255,226,122,0.25)'); disc(w-8, 9, 3.5, '#FFE27A');
+    ctx.fillStyle = '#57a038'; ctx.beginPath(); ctx.arc(x+w-6, y+h-4, 14, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#6fbf46'; ctx.beginPath(); ctx.arc(x+8, y+h-3, 13, Math.PI, 0); ctx.fill();
+    R(6, h-9, 1, 2, '#FFF0A6'); R(15, h-11, 1, 2, '#FF7AC8'); R(23, h-8, 1, 2, '#FFF0A6');       // flowers
+    return;
+  }
+  if (k === 2) {                                            // TREETOPS: forest tree line on a hill
+    disc(7, 8, 3, '#FFE27A');
+    ctx.fillStyle = '#356e3b'; ctx.beginPath(); ctx.arc(x+w/2, y+h+2, 20, Math.PI, 0); ctx.fill();
+    [5, 12, 19, 26].forEach((tx, i) => { R(tx, h-13+(i%2), 2, 8, '#3a2a1c'); });                 // trunks
+    ctx.fillStyle = '#2f6b39'; [5, 12, 19, 26].forEach((tx, i) => { ctx.beginPath(); ctx.arc(x+tx+1, y+h-13+(i%2)*2, 5, 0, 7); ctx.fill(); });
+    ctx.fillStyle = '#489751'; [5, 12, 19, 26].forEach((tx, i) => { ctx.beginPath(); ctx.arc(x+tx, y+h-14+(i%2)*2, 3, 0, 7); ctx.fill(); });   // lit crowns
+    return;
+  }
+  if (k === 3) {                                            // LOWER SKY: open warm air, wisps, a bird
+    R(0, h-5, w, 5, 'rgba(70,45,70,0.35)');                                                      // distant haze land
+    R(4+drift, 13, 11, 2, 'rgba(255,255,255,0.8)'); R(17-drift, 21, 9, 2, 'rgba(255,255,255,0.7)');
+    ctx.strokeStyle = 'rgba(50,35,45,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x+19, y+9); ctx.lineTo(x+21, y+7.5); ctx.lineTo(x+23, y+9); ctx.stroke();   // bird
+    return;
+  }
+  if (k === 4) {                                            // CLOUD NINE: a soft cloud sea
+    ctx.fillStyle = '#eaf4ff'; for (let cx = -2; cx < w+8; cx += 7) { ctx.beginPath(); ctx.arc(x+cx+drift, y+h-5, 6, 0, 7); ctx.fill(); }
+    R(0, h-4, w, 4, '#dcecff');
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x+12, y+h-13, 5, 0, 7); ctx.arc(x+18, y+h-13, 6, 0, 7); ctx.fill();
+    return;
+  }
+  if (k === 5) {                                            // JET STREAM: streaked high-speed clouds
+    R(2+drift*2, 10, 18, 2, 'rgba(255,255,255,0.85)'); R(9-drift*2, 16, 16, 1, 'rgba(255,255,255,0.65)');
+    R(5+drift*2, 22, 21, 2, 'rgba(255,255,255,0.8)'); R(13, 28, 12, 1, 'rgba(255,255,255,0.55)');
+    return;
+  }
+  if (k === 6) {                                            // STRATOSPHERE: the curve of the earth
+    ctx.fillStyle = 'rgba(140,190,255,0.45)'; ctx.beginPath(); ctx.arc(x+w/2, y+h+22, 30, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#2f5f96'; ctx.beginPath(); ctx.arc(x+w/2, y+h+22, 27, Math.PI, 0); ctx.fill();
+    R(6, 9, 7, 1, 'rgba(255,255,255,0.6)'); R(20, 14, 6, 1, 'rgba(255,255,255,0.45)'); R(25, 6, 1, 1, '#fff');   // cirrus + star
+    return;
+  }
+  if (k === 7) {                                            // AURORA: waving curtains over a dark rim
+    [[5,6],[12,4],[20,8],[26,5],[16,11]].forEach(s => R(s[0], s[1], 1, 1, 'rgba(255,255,255,0.85)'));
+    for (let i = 0; i < 3; i++) {
+      const ax = 6 + i*9 + drift;
+      const g = ctx.createLinearGradient(0, y+5, 0, y+27);
+      g.addColorStop(0, 'rgba(126,242,197,0)'); g.addColorStop(0.5, 'rgba(126,242,197,0.5)'); g.addColorStop(1, 'rgba(94,200,242,0)');
+      ctx.fillStyle = g; ctx.fillRect(x+ax, y+5, 3, 22);
+    }
+    R(0, h-5, w, 5, '#0c1420');
+    return;
+  }
+  if (k === 8) {                                            // SPACE: the blue planet fills the base
+    [[4,5],[10,10],[22,4],[28,9],[16,3]].forEach(s => R(s[0], s[1], 1, 1, 'rgba(255,255,255,0.9)'));
+    disc(w/2, h+3, 20, '#2a6cc4');
+    ctx.fillStyle = '#3f9a52'; ctx.beginPath(); ctx.arc(x+11, y+h-4, 4, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(x+22, y+h-1, 5, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(150,200,255,0.6)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x+w/2, y+h+3, 20, Math.PI, 0); ctx.stroke();
+    return;
+  }
+  if (k === 9) {                                            // ORBIT: a ringed planet
+    [[4,6],[12,3],[26,7],[20,12]].forEach(s => R(s[0], s[1], 1, 1, 'rgba(255,255,255,0.9)'));
+    disc(w/2, 17, 7, '#d9a441'); disc(w/2-2, 15, 3, '#f0c35e');
+    ctx.strokeStyle = 'rgba(255,231,150,0.9)'; ctx.lineWidth = 1.4;
+    ctx.save(); ctx.translate(x+w/2, y+17); ctx.rotate(-0.35); ctx.scale(1, 0.34); ctx.beginPath(); ctx.arc(0, 0, 11, 0, 7); ctx.stroke(); ctx.restore();
+    return;
+  }
+  if (k === 10) {                                          // THE STARS: dense field + a bright planet
+    for (let i = 0; i < 14; i++) R((i*11+5)%w, (i*7+3)%h, 1, 1, i%3 ? 'rgba(255,255,255,0.65)' : '#fff');
+    disc(w/2, 15, 6, 'rgba(255,246,232,0.22)'); disc(w/2, 15, 4, '#FFF6E8');
+    ctx.strokeStyle = 'rgba(255,215,94,0.9)'; ctx.lineWidth = 1.2;
+    ctx.save(); ctx.translate(x+w/2, y+15); ctx.rotate(-0.3); ctx.scale(1, 0.32); ctx.beginPath(); ctx.arc(0, 0, 9, 0, 7); ctx.stroke(); ctx.restore();
+    return;
+  }
+  if (isGate) {                                            // the summit gate on a starfield
+    [[5,7],[13,4],[24,6],[19,12],[9,15]].forEach(s => R(s[0], s[1], 1, 1, 'rgba(255,255,255,0.8)'));
+    const gx = w/2, gy = h/2 + 2;
+    if (champ) {                                            // opened: a beam of light
+      R(gx-9, gy-11, 18, 22, '#6E5410');
+      const g = ctx.createLinearGradient(0, y+gy-11, 0, y+gy+11);
+      g.addColorStop(0, 'rgba(255,231,150,0.95)'); g.addColorStop(1, 'rgba(255,231,150,0.15)');
+      ctx.fillStyle = g; ctx.fillRect(x+gx-6, y+gy-9, 12, 20);
+    } else {                                                // sealed golden door
+      R(gx-9, gy-11, 18, 22, '#9A7420');
+      R(gx-7, gy-9, 14, 20, '#FFD75E');
+      R(gx-7, gy-9, 14, 1, 'rgba(255,255,255,0.4)');
+      R(gx-3, gy-1, 6, 12, '#5E4610');
+      txt('?', x+gx, y+gy-2, 1, '#5E4610', 'center');
+    }
+    return;
+  }
+}
 function renderSkyMap() {
   const L = skyMapNodes();
   const ph = reduceMotion ? 0 : tick;
@@ -5082,20 +5205,11 @@ function renderSkyMap() {
   // offscreen stage copy ghost through it on narrow phones.
   ctx.save();ctx.beginPath();ctx.rect(0,L.viewTop,W,L.viewBot-L.viewTop);ctx.clip();
   drawMapDecor(L, ph);   // birds, balloons, plane, aurora, galaxy, moon, planet — behind the cards
-  // v111 column panel: the card stack sits on a consistent surface, not raw sky
-  ctx.fillStyle = 'rgba(7,8,15,0.30)';
+  // column panel (kept): a soft dark surface behind the whole stack so the cards don't float
+  // over raw sky. v112: the edge highlight lines + the gold left-edge track are GONE — Asher:
+  // "remove the weird long vertical line on the left".
+  ctx.fillStyle = 'rgba(7,8,15,0.28)';
   ctx.fillRect(L.colX - 6, L.viewTop, L.colW + 12, L.viewBot - L.viewTop);
-  ctx.fillStyle = 'rgba(255,246,232,0.07)';
-  ctx.fillRect(L.colX - 6, L.viewTop, 1, L.viewBot - L.viewTop);
-  ctx.fillRect(L.colX + L.colW + 5, L.viewTop, 1, L.viewBot - L.viewTop);
-  // v111 progress rail: gold up to the NEXT card, dim above (shows in the card gaps)
-  const railX = L.colX + 4, nextY = L.pts[Math.min(prog, TIERS.length - 1)].y;
-  const railTop = Math.max(L.viewTop, L.gate.y), railBot = Math.min(L.viewBot, L.start.y);
-  if (railBot > railTop) {
-    ctx.fillStyle = 'rgba(255,246,232,0.14)'; ctx.fillRect(railX, railTop, 2, railBot - railTop);
-    const goldTop = Math.max(railTop, nextY);
-    if (railBot > goldTop) { ctx.fillStyle = 'rgba(255,215,94,0.55)'; ctx.fillRect(railX, goldTop, 2, railBot - goldTop); }
-  }
   // v110: Extra Modes-style level cards over the themed sky. v100 rule kept: while a stage
   // is SELECTED its second line becomes the start-condition caption.
   const champ = prog >= TIERS.length;
@@ -5115,30 +5229,11 @@ function renderSkyMap() {
     pixelFrame(cx2, cy2, cw2, MAP_CARD_H, sel ? uiA(.16) : 'rgba(17,17,25,0.88)', accent, sel || (isGate && champ));
     ctx.fillStyle = accent; ctx.globalAlpha = sel || isNext || isGate ? 1 : .36;
     ctx.fillRect(cx2+4, cy2+5, 2, MAP_CARD_H-10); ctx.globalAlpha = 1;
-    // island + weather framed as an environment postcard — the stage's real sky + terrain
+    // a bespoke environment postcard per biome — a purpose-drawn scene, NOT the game island
+    // shrunk into a box (Asher's v111 note). mapScene paints sky + a designed horizon per tier.
     const thW = 32, thH = 38, thX = cx2+10, thY = cy2+8;
     ctx.save(); ctx.beginPath(); ctx.rect(thX, thY, thW, thH); ctx.clip();
-    const altN = isGate ? TIERS[TIERS.length-1].n : t.n;
-    const prevN = isGate ? TIERS[TIERS.length-1].n - 40 : k > 0 ? TIERS[k-1].n : 0;
-    for (let b2 = 0; b2 < thH; b2 += 2) {                     // top of the window = tier altitude
-      const sc2 = skyColor(prevN + (1 - b2/thH) * (altN - prevN));
-      ctx.fillStyle = 'rgb('+sc2[0]+','+sc2[1]+','+sc2[2]+')';
-      ctx.fillRect(thX, thY + b2, thW, 2);
-    }
-    if (altN > 90) { ctx.fillStyle = 'rgba(255,246,232,0.9)';  // stars once the sky darkens
-      for (let s3 = 0; s3 < 3; s3++) ctx.fillRect(thX + 4 + ((k*37 + s3*11) % (thW-8)), thY + 3 + ((k*13 + s3*7) % 14), 1, 1); }
-    if (isGate && !champ) {                                    // sealed door on the night sky
-      const gx2 = thX + thW/2, gy2 = thY + thH/2;
-      ctx.fillStyle = '#9A7420'; ctx.fillRect(gx2-10, gy2-9, 20, 19);
-      ctx.fillStyle = '#FFD75E'; ctx.fillRect(gx2-8, gy2-7, 16, 17);
-      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(gx2-8, gy2-7, 16, 1);
-      ctx.fillStyle = '#5E4610'; ctx.fillRect(gx2-4, gy2-1, 8, 11);
-      txt('?', gx2, gy2+1, 1, '#FFD75E', 'center');
-    } else {                                                   // terrain: the island fills the frame, surface at 72%
-      ctx.translate(thX + thW/2, thY + Math.round(thH*0.72)); ctx.scale(0.55, 0.55);
-      drawIsland(isGate ? 10 : k, 0, 1);
-      drawStageWeather(isGate ? 10 : k, 0, -6, ph);
-    }
+    mapScene(isGate ? -1 : k, isGate, champ, thX, thY, thW, thH, ph);
     ctx.restore();
     ctx.fillStyle = 'rgba(0,0,0,0.35)';                        // picture-frame: dark inset...
     ctx.fillRect(thX-1, thY-1, thW+2, 1); ctx.fillRect(thX-1, thY+thH, thW+2, 1);
@@ -5186,14 +5281,8 @@ function renderSkyMap() {
     txt(hint,W-22,22,1,'rgba(255,246,232,0.56)','right');
   pixelFrame(W-18, 6, 13, 13, 'rgba(11,14,26,0.74)', 'rgba(255,246,232,0.26)', false);   // close box
   txt('X', W-12, 8, 1, 'rgba(255,246,232,0.85)', 'center');
-  // slim scrollbar on the right edge
-  if (mapScrollMax > 0) {
-    const trackH = L.viewBot - L.viewTop;
-    const thumbH = Math.max(14, Math.round(trackH * trackH / (trackH + mapScrollMax)));
-    const thumbY = Math.round(L.viewTop + (1 - mapScroll / mapScrollMax) * (trackH - thumbH));
-    ctx.fillStyle = 'rgba(255,246,232,0.1)'; ctx.fillRect(W - 3, L.viewTop, 2, trackH);
-    ctx.fillStyle = 'rgba(255,246,232,0.4)'; ctx.fillRect(W - 3, thumbY, 2, thumbH);
-  }
+  // v112: the slim scrollbar is hidden (Asher) — momentum glide + the card rhythm carry the
+  // sense of position; no rail on the right edge either.
 }
 
 // ---------- mode picker overlay ----------

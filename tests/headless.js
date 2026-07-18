@@ -1859,9 +1859,18 @@ check('v110 shop INFO label yields to a long passive name on both detail rows', 
 
 // ---------- v111: sky map postcards + polish ----------
 check('v111 map rhythm: MAP_ROW 64 / MAP_CARD_H 54', () => fresh.run('MAP_ROW === 64 && MAP_CARD_H === 54'));
-check('v111 postcard/panel/rail markers present; flat thumb fill gone', () =>
-  /environment postcard/.test(src) && /column panel/.test(src) && /progress rail/.test(src) &&
-  !/ctx\.fillStyle = 'rgba\(0,0,0,0\.22\)'; ctx\.fillRect\(thX, thY, thS, thS\)/.test(src));
+check('v112 postcard SCENE painter replaces island-in-box; rail + scrollbar removed', () =>
+  /environment postcard/.test(src) && /function mapScene/.test(src) && /column panel/.test(src) &&
+  !/progress rail/.test(src) && !/fillRect\(W - 3/.test(src) && !/drawIsland\(isGate/.test(src));
+check('v112 sky map scroll reversed to wheel-down = down the list, fed into momentum velocity', () =>
+  /mapScrollV/.test(src) && /mapScrollV = clamp\(mapScrollV - e\.deltaY/.test(src));
+check('v112 map momentum glides then eases to rest', () => fresh.run(
+  '(() => { const s0=skyMap,ms0=mapScroll,mv0=mapScrollV,md0=mapDrag,st0=state,mm0=mapScrollMax;' +
+  'state="home"; skyMap=true; mapDrag=null; mapScrollMax=500; mapScroll=100; mapScrollV=20;' +
+  'update(1); const moved=mapScroll>100 && mapScroll<600; const eased=Math.abs(mapScrollV)<20;' +
+  'for(let i=0;i<400;i++) update(1); const stops=(mapScrollV===0);' +
+  'skyMap=s0; mapScroll=ms0; mapScrollV=mv0; mapDrag=md0; state=st0; mapScrollMax=mm0;' +
+  'return moved && eased && stops; })()') === true);
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
