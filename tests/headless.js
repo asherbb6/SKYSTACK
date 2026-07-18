@@ -1268,7 +1268,7 @@ check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 ever
   /drawCoin\(PAD, 5\.5\)/.test(src) && /drawCoin\(22, 7\.5\)/.test(src) &&
   /drawCoin\(x\+w-27,rowY\+\.5\)/.test(src) && /drawCoin\(W\/2 \+ 8, EQUIP_BTN\.y\+5\.5\)/.test(src) &&
   /drawCoin\(W\/2\+8,EQUIP_BTN\.y\+5\.5\)/.test(src) && /drawCoin\(c\.x\+14, c\.y\+13\.5\)/.test(src) &&
-  /drawCoin\(W\/2 - 20, starY \+ 31\.5\)/.test(src) && /drawCoin\(W\/2 - 16, by \+ 27\.5\)/.test(src) &&
+  /drawCoin\(W\/2 - 20, sy \+ 1\.5\)/.test(src) && /drawCoin\(W\/2 - 16, by \+ 27\.5\)/.test(src) &&
   /drawCoin\(W\/2 - 30, FAIL_REV\.y \+ 7\.5\)/.test(src) && /drawCoin\(W\/2-24, 127\.5\)/.test(src) &&
   /drawCoin\(W\/2 - 32, REVIVE_BTN\.y \+ 8\.5\)/.test(src));
 
@@ -1572,6 +1572,70 @@ check('v106 no modifier BONUS note loses its reward at 180px phone width', () =>
   '(() => { const w=180, chop=t=>{t=String(t);while(t.length>1&&t.length*6+16>w-16)t=t.slice(0,-1);return t;};' +
   ' return MODIFIER_REGISTRY.every(m => { const bn="BONUS: "+m.rule+" +"+m.rewardCoins, bp=m.rule+" +"+m.rewardCoins;' +
   ' return /\\+[0-9]+$/.test(chop(bn.length*6+16<=w-16?bn:bp)); }); })()'));
+
+// ---------- v107: result screen cleanup ----------
+// txt() instrumented: every non-shadow glyph box must stay on-screen and not overlap another;
+// every WIN_ROWS/FAIL_ROWS button must stay on-screen and not overlap another row.
+function resultSweep(renderName, setup) {
+  for (const [w,hh] of [[180,390],[180,520],[242,300],[320,480],[480,270]]) {
+    for (const fx of setup) {
+      const r = makeGame();
+      r.run('W='+w+';H='+hh+';');
+      r.run(fx);
+      const bad = r.run(
+        '(() => { relayout();' +
+        ' const overl=(a,b)=>a.y<b.y+7*b.sc&&b.y<a.y+7*a.sc&&a.x0<b.x1&&b.x0<a.x1;' +
+        ' const calls=[]; const orig=txt;' +
+        ' txt=(t,x,y,sc,col,al)=>{sc=sc||1;t=String(t);const tw=t.length*6*sc-sc;' +
+        '  const x0=al==="center"?Math.round(x-tw/2):al==="right"?Math.round(x-tw):x;' +
+        '  if(String(col).indexOf("0,0,0")<0)calls.push({x0,x1:x0+tw,y,sc});};' +
+        ' try { '+renderName+'(); } finally { txt=orig; }' +
+        ' for (const c of calls) if (c.x0 < 0 || c.x1 > W) return "text off screen at "+W+"x"+H;' +
+        ' for (let i=0;i<calls.length;i++) for (let j=i+1;j<calls.length;j++)' +
+        '   if (overl(calls[i],calls[j])) return "text overlap at "+W+"x"+H;' +
+        ' const rows='+(renderName==='renderLevelWin'?'WIN_ROWS':'FAIL_ROWS')+';' +
+        ' for (const rw of rows) if (rw.x<0||rw.x+rw.w>W||rw.y<0||rw.y+rw.h>H) return "button off screen at "+W+"x"+H;' +
+        ' for (let i=0;i<rows.length;i++) for (let j=i+1;j<rows.length;j++)' +
+        '   { const a=rows[i],b=rows[j]; if (a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h) return "button overlap at "+W+"x"+H; }' +
+        ' return true; })()');
+      if (bad !== true) return renderName+' '+bad;
+    }
+  }
+  return true;
+}
+const winFixtures = [
+  'prog=10; startLevel(0); score=500; runPerfects=TIERS[0].n; while(blocks.length<TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80;',
+  'prog=10; startLevel(7); score=800; runPerfects=5; while(blocks.length<TIERS[7].n) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); modifierResults=[{name:"X",success:true,rewardCoins:8}]; modifierWins=1; modifierBonusCoins=8; winT=80;',
+  'prog=10; startLevel(TIERS.length-1); score=900; runPerfects=2; while(blocks.length<TIERS[TIERS.length-1].n) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80;',
+];
+check('v107 level-win: no text/button overlaps or leaves the screen at any aspect ratio', () =>
+  resultSweep('renderLevelWin', winFixtures));
+check('v107 level-win: the cut-off checkpoint caption is gone', () =>
+  !/cp\.name\+' CHECKPOINT - '\+cp\.scoreMultiplier/.test(src));   // the Sky Map keeps its own 'CP -' caption
+check('v107 level-win: bonus line uses plain BONUS wording, not MODS', () =>
+  /BONUS DONE/.test(src) && / OF '\+modifierResults\.length\+' BONUS/.test(src) && !/- MODS /.test(src));
+const failFixtures = [
+  'prog=10; startLevel(0); score=300; while(blocks.length<20) blocks.push({x:0,w:96,col:"#fff"}); gameOver("topple"); failT=80;',
+  'prog=10; startLevel(7); score=300; while(blocks.length<TIERS[6].n+10) blocks.push({x:0,w:96,col:"#fff"}); gameOver("fall"); failT=80;',
+];
+check('v107 level-fail: no text/button overlaps or leaves the screen at any aspect ratio', () =>
+  resultSweep('renderLevelFail', failFixtures));
+check('v107 both result screens carry a nav split row (HOME | SKY MAP)', () => fresh.run(
+  '(() => { W=320;H=480;relayout(); return WIN_ROWS.some(r=>r.id==="nav") && FAIL_ROWS.some(r=>r.id==="nav") && !WIN_ROWS.some(r=>r.id==="map") && !FAIL_ROWS.some(r=>r.id==="home"); })()'));
+check('v107 nav split routes left half HOME, right half SKY MAP', () =>
+  /drawNavSplit/.test(src) &&
+  /state = 'home'; fadeT = 1; if \(p\.x >= rw\.x \+ rw\.w\/2\) openSkyMap\(\);/.test(src));
+// pos(e) maps clientX/clientY through the fixed 320x480 canvas rect into [0,W]x[0,H];
+// build events that land in the nav row's left / right half.
+const navTap = 'const rw=WIN_ROWS.find(r=>r.id==="nav"); const cx=x=>({clientX:x/W*320, clientY:(rw.y+4)/H*480});';
+check('v107 win: tapping the nav row left half goes home without opening the map', () => { const g=makeGame();
+  g.run('prog=10; startLevel(0); while(blocks.length<TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80; skyMap=false;');
+  g.run(navTap+' pressDown(cx(rw.x+4));');
+  return g.run('state==="home" && skyMap===false'); });
+check('v107 win: tapping the nav row right half opens the sky map', () => { const g=makeGame();
+  g.run('prog=10; startLevel(0); while(blocks.length<TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80; skyMap=false;');
+  g.run(navTap+' pressDown(cx(rw.x+rw.w-4));');
+  return g.run('state==="home" && skyMap===true'); });
 
 // ---------- v104: drifting balloon power-up ----------
 const bd = makeGame();

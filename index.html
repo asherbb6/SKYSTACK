@@ -1872,9 +1872,9 @@ function relayout() {
   CHALLENGE_ROWS=CHALLENGE_REGISTRY.map((c,i)=>({x:Math.round((W-pickW)/2),y:challengeTop+i*(challengeH+challengeGap),w:pickW,h:challengeH,id:c.id}));
   // level win / fail screens: fat centered button rows
   const rowW = Math.min(W - 40, 180);
-  WIN_ROWS = ['next','retry','map'].map((id, i) =>
+  WIN_ROWS = ['next','retry','nav'].map((id, i) =>
     ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.58) + i*26, w: rowW, h: 20 }));
-  FAIL_ROWS = ['retry','map','home'].map((id, i) =>
+  FAIL_ROWS = ['retry','nav'].map((id, i) =>
     ({ id, x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) + i*26, w: rowW, h: 20 }));
   FAIL_REV = { x: Math.round(W/2 - rowW/2), y: Math.round(H*.56) - 26, w: rowW, h: 20 };
   const missW = Math.min(W - PAD*2, 200);
@@ -2045,7 +2045,7 @@ function pressDown(e) {
     for (const rw of WIN_ROWS) if (inR(p, rw, 3)) {
       if (rw.id === 'next') { if (runLevel + 1 < TIERS.length) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; openSkyMap(); } }
       else if (rw.id === 'retry') startLevel(runLevel,runContext.checkpointSnapshot.id,runContext.seed);
-      else { state = 'home'; fadeT = 1; openSkyMap(); }
+      else { state = 'home'; fadeT = 1; if (p.x >= rw.x + rw.w/2) openSkyMap(); }   // nav split: left HOME, right SKY MAP
       sfx.tap(); return;
     }
     return;
@@ -2056,8 +2056,7 @@ function pressDown(e) {
     for (const rw of FAIL_ROWS) if (inR(p, rw, 3)) {
       finalizeRun();                          // walking away from the offer settles the run
       if (rw.id === 'retry') startLevel(runLevel,runContext.checkpointSnapshot.id,runContext.seed);
-      else if (rw.id === 'map') { state = 'home'; fadeT = 1; openSkyMap(); }
-      else { state = 'home'; fadeT = 1; }
+      else { state = 'home'; fadeT = 1; if (p.x >= rw.x + rw.w/2) openSkyMap(); }   // nav split: left HOME, right SKY MAP
       sfx.tap(); return;
     }
     return;
@@ -5348,6 +5347,13 @@ function drawStarPix(x, y, s, filled) {
 function drawStageDecoScaled(i, x, y, s) {
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s); drawStageDeco(i, 0, 0); ctx.restore();
 }
+function drawNavSplit(rw, accent) {   // one plate, two tap targets: left HOME, right SKY MAP
+  plate3D(rw.x, rw.y, rw.w, rw.h, 'rgba(255,246,232,0.12)', accent);
+  ctx.fillStyle = accent; ctx.fillRect(Math.round(rw.x + rw.w/2), rw.y + 3, 1, rw.h - 6);   // center divider
+  const half = rw.w/2;
+  txt('HOME', Math.round(rw.x + rw.w/4), rw.y + 7, 1, '#FFF6E8', 'center');
+  txt(('SKY MAP'.length*6-1 > half-8) ? 'MAP' : 'SKY MAP', Math.round(rw.x + rw.w*3/4), rw.y + 7, 1, '#FFF6E8', 'center');
+}
 function renderLevelWin() {
   const t = TIERS[runLevel], num = runLevel + 1;
   // full themed backdrop: the exact slice of sky you just climbed — launch pad at the
@@ -5392,8 +5398,6 @@ function renderLevelWin() {
   }
   ctx.globalAlpha = 1;
   const topY = Math.round(H*.13);
-  const cp=runContext&&runContext.checkpointSnapshot?runContext.checkpointSnapshot:checkpointForLevel(runLevel);
-  txt(cp.startAltitude?cp.name+' CHECKPOINT - '+cp.scoreMultiplier+'X SCORE':'GROUND START - FULL SCORE',W/2,topY-10,1,'rgba(255,246,232,0.58)','center');
   txt('LEVEL ' + num, W/2, topY, 1, 'rgba(255,246,232,0.7)', 'center');
   txt(t.name, W/2+1, topY + 12, 2, 'rgba(0,0,0,0.5)', 'center');
   txt(t.name, W/2, topY + 11, 2, t.c, 'center');
@@ -5426,17 +5430,24 @@ function renderLevelWin() {
     ctx.fillRect(W/2 - 40, starY + 8, 1, 1); ctx.fillRect(W/2 + 40, starY - 8, 1, 1);
   }
   const placed = Math.max(1, blocks.length - runLaunch);
-  txt('PERFECTS '+runPerfects+'/'+placed+(modifierResults.length?' - MODS '+modifierWins+'/'+modifierResults.length+' +'+modifierBonusCoins:''), W/2, starY + 18, 1, 'rgba(255,246,232,0.55)', 'center');
+  let sy = starY + 18;
+  txt('PERFECTS '+runPerfects+'/'+placed, W/2, sy, 1, 'rgba(255,246,232,0.55)', 'center'); sy += 11;
+  if (modifierResults.length) {   // optional bonus challenge result — plain wording, own row
+    const allWon = modifierWins === modifierResults.length;
+    const bt = (allWon ? 'BONUS DONE' : modifierWins+' OF '+modifierResults.length+' BONUS') + (modifierBonusCoins > 0 ? ' +'+modifierBonusCoins : '');
+    txt(bt, W/2, sy, 1, allWon ? '#62E8B5' : 'rgba(255,246,232,0.55)', 'center'); sy += 11;
+  }
   if (winT > 48) {   // reward counts up
     const shown = Math.min(winReward, Math.floor((winT - 48) * 1.5));
-    drawCoin(W/2 - 20, starY + 31.5);
-    txt('+' + shown, W/2 - 9, starY + 31, 1, '#FFD75E', 'left');
-    if (winFirst) txt(prog === TIERS.length ? 'SKY CONQUERED!' : 'NEW STAGE UNLOCKED!', W/2, starY + 44, 1, '#62E8B5', 'center');
+    drawCoin(W/2 - 20, sy + 1.5);
+    txt('+' + shown, W/2 - 9, sy + 1, 1, '#FFD75E', 'left'); sy += 13;
+    if (winFirst) txt(prog === TIERS.length ? 'SKY CONQUERED!' : 'NEW STAGE UNLOCKED!', W/2, sy, 1, '#62E8B5', 'center');
   }
   if (winT > 24) {
     const last = runLevel + 1 >= TIERS.length;
-    const labels = { next: last ? 'BACK TO MAP' : 'NEXT LEVEL', retry: 'RETRY', map: 'SKY MAP' };
+    const labels = { next: last ? 'BACK TO MAP' : 'NEXT LEVEL', retry: 'RETRY' };
     for (const rw of WIN_ROWS) {
+      if (rw.id === 'nav') { drawNavSplit(rw, t.c); continue; }
       const main = rw.id === 'next';
       plate3D(rw.x, rw.y, rw.w, rw.h, main ? playA(.85) : 'rgba(255,246,232,0.12)', main ? null : t.c);
       txt(labels[rw.id], W/2, rw.y + 7, 1, main ? '#08301F' : '#FFF6E8', 'center');
@@ -5479,11 +5490,11 @@ function renderLevelFail() {
       txt(ok ? 'REVIVE ' + cost : 'NEED ' + cost, W/2 - 20, FAIL_REV.y + 7, 1, ok ? '#08301F' : 'rgba(255,246,232,0.5)', 'left');
       txt('1 REVIVE PER RUN', W/2, FAIL_REV.y - 10, 1, 'rgba(255,246,232,0.45)', 'center');
     }
-    const labels = { retry: 'RETRY', map: 'SKY MAP', home: 'HOME' };
     for (const rw of FAIL_ROWS) {
+      if (rw.id === 'nav') { drawNavSplit(rw, 'rgba(255,246,232,0.3)'); continue; }
       const main = rw.id === 'retry';
       plate3D(rw.x, rw.y, rw.w, rw.h, main ? playA(.85) : 'rgba(255,246,232,0.12)', main ? null : 'rgba(255,246,232,0.3)');
-      txt(labels[rw.id], W/2, rw.y + 7, 1, main ? '#08301F' : '#FFF6E8', 'center');
+      txt('RETRY', W/2, rw.y + 7, 1, main ? '#08301F' : '#FFF6E8', 'center');
     }
   }
 }
