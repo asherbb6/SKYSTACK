@@ -922,7 +922,10 @@ const BALANCE_REGISTRY = deepFreeze({
   harness:{ fps:60, corridorWidth:220, ordinaryTimingFactor:1.18, perfectEvery:3 },
   balloon:{ driftSpeed:0.35, minRowGap:8, spawnChance:0.5, margin:14, hitR:10,
     goodAltRows:3, badAltRows:6, badSpeedMul:1.6, goldenCoins:25, rushMul:1.8, rushFrames:120, scaleAlt:120,
-    wLow:{ gift:70, golden:6, dud:16, trap:8 }, wHigh:{ gift:42, golden:6, dud:28, trap:24 } },
+    wLow:{ gift:70, golden:6, dud:16, trap:8, gas:0 }, wHigh:{ gift:42, golden:6, dud:24, trap:18, gas:10 },
+    unlock:{ dud:2, trap:4, gas:6 }, gasAltBlocks:120,
+    diffScale:{ minRating:3, maxRating:11, minShare:0.5 },
+    gas:{ cloudFrames:360, shrinkPerFrame:0.18, minW:12, cloudRows:2.5 } },
   seed:{ dailyXor:0x9E3779B9 }, materials:MATERIALS
 });
 const DIFFICULTY_LANES = deepFreeze({
@@ -1054,7 +1057,7 @@ let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, run
 let score = 0;
 let notes = [], curNote = null;   // one-at-a-time top-middle notification queue (v105)
 let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
-let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false, rushT = 0;
+let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false, rushT = 0, gasCloud = null;
 let wind = null, windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
 let nextPickupRow = 8;
 let previewIdx = 0, basePreviewIdx = Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)), shopView = 'character';
@@ -1342,20 +1345,23 @@ function recordChallengeOutcome() {
 let tutDone = store.get('skystack-tut', false);
 let tutStep = 0;
 const TUT_LESSONS = [
-  // compact: phone-width copy used when the full body cannot keep side margins (v92)
+  // compact: sized so 'TITLE: COMPACT' fits a 180px phone inside drawNotifyStrip's limit (v109)
   { title:'DROP',     body:'TAP WHEN THE BLOCK IS CENTERED', compact:'TAP WHEN CENTERED' },
-  { title:'PERFECT',  body:'MATCH EDGES TO RESTORE WIDTH',   compact:'MATCH EDGES FOR WIDTH' },
-  { title:'COMBO',    body:'10 STRAIGHT PERFECTS = FEVER', compact:'PERFECT STREAKS PAY MORE' },
-  { title:'BALANCE',  body:'OFFSET DROPS LEAN THE TOWER',    compact:'OFFSETS LEAN THE TOWER' },
-  { title:'SKYBREAK', body:'GROW TO FULL WIDTH FOR +50',     compact:'FULL WIDTH PAYS +50' }
+  { title:'PERFECT',  body:'MATCH EDGES TO RESTORE WIDTH',   compact:'MATCH THE EDGES' },
+  { title:'COMBO',    body:'10 STRAIGHT PERFECTS = FEVER',   compact:'STREAKS PAY MORE' },
+  { title:'BALANCE',  body:'OFFSET DROPS LEAN THE TOWER',    compact:'OFFSETS TIP IT' },
+  { title:'SKYBREAK', body:'GROW TO FULL WIDTH FOR +50',     compact:'FULL WIDTH +50' }
 ];
 function advanceTutorial(h) {
   if (tutStep < 0) return;
+  const was = tutStep;
   if (tutStep === 1) tutStep = 2;
   else if (tutStep === 2 && h >= 3) tutStep = 3;
   else if (tutStep === 3 && h >= 5) tutStep = 4;
-  else if (tutStep === 4 && h >= 8) {
-    tutStep = -1; tutDone = true; store.set('skystack-tut', true);
+  else if (tutStep === 4 && h >= 8) { tutStep = -1; tutDone = true; }
+  if (tutStep !== was && !activeMode().practice) {        // lessons persist across runs; practice is a sandbox
+    if (tutDone) store.set('skystack-tut', true);
+    else store.set('skystack-tutstep', tutStep);
   }
 }
 
@@ -1396,7 +1402,7 @@ function resetRun() {
   score = 0; combo = 0; maxCombo = 0; newBest = false; newHeight = false;
   tier = TIERS.findIndex(t => t.n > blocks.length); if (tier < 0) tier = TIERS.length;   // skip pre-stacked tiers
   runCoins = 0; runPerfects = 0; runPowerups = 0; runFevers = 0; runBalloons = 0; runSkybreaks = 0; notes = []; curNote = null;
-  shield = 0; widenNext = false; slowBlocks = 0; auraBlocks = 0; goldenNext = false; rushT = 0;
+  shield = 0; widenNext = false; slowBlocks = 0; auraBlocks = 0; goldenNext = false; rushT = 0; gasCloud = null;
   wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
   nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; collectionThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
@@ -1409,7 +1415,7 @@ function resetRun() {
   PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
   assist = runContext.difficultyProfile.startingAssist;
   mascot.hop = 0; mascot.expr = 'normal'; mascot.exprT = 0;
-  tutStep = m.practice ? 0 : (tutDone ? -1 : 0);
+  tutStep = m.practice ? 0 : (tutDone ? -1 : clamp(store.get('skystack-tutstep', 0) | 0, 0, TUT_LESSONS.length - 1));
   if (canUseLoadout(runContext)) {
     if (runContext.boostSnapshot.shield) shield = 1;
     if (runContext.boostSnapshot.aura) auraBlocks = 5;
@@ -1506,6 +1512,12 @@ function enterFever() {
 function balloonKindWeights() {
   const B = BALANCE_REGISTRY.balloon, f = clamp(blocks.length / B.scaleAlt, 0, 1), w = {};
   for (const k in B.wLow) w[k] = B.wLow[k] + (B.wHigh[k] - B.wLow[k]) * f;
+  const bad = ['dud', 'trap', 'gas'];
+  if (runLevel >= 0) {                                   // campaign: unlock gates + rating share
+    const D = B.diffScale, rt = LEVEL_REGISTRY[runLevel].difficultyRating;
+    const s = D.minShare + (1 - D.minShare) * clamp((rt - D.minRating) / (D.maxRating - D.minRating), 0, 1);
+    for (const k of bad) w[k] = runLevel < B.unlock[k] ? 0 : w[k] * s;
+  } else if (blocks.length < B.gasAltBlocks) w.gas = 0;  // endless: gas only high up
   return w;
 }
 function pickBalloonKind() {
@@ -1551,6 +1563,12 @@ function popBalloon() {
     rushT = BALANCE_REGISTRY.balloon.rushFrames;
     floaters.push({ text:'RUSH!', x:bx, y:by, vy:-.4, life:1.3, color:'#FF7E6B' });
     for (let i = 0; i < 10; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life: 1, color:'#FF6B5A' });
+    shake = Math.max(shake, reduceMotion?2:4); sfx.pop(); balloon = null; return;
+  }
+  if (kind === 'gas') {                                   // hazard: lingering cloud shrinks the top block
+    gasCloud = { wy: by, t: BALANCE_REGISTRY.balloon.gas.cloudFrames };
+    note('GAS! CLIMB OUT', '#FF5E7E', 3, 150);
+    for (let i = 0; i < 14; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life: 1.2, color:'#9BD44A' });
     shake = Math.max(shake, reduceMotion?2:4); sfx.pop(); balloon = null; return;
   }
   runBalloons++; runPowerups++; stats.balloons++;         // gift + golden are the "good pops"
@@ -2256,6 +2274,18 @@ function update(dt) {
   } else wind = null;
 
   if (rushT > 0) rushT = Math.max(0, rushT - dt);
+  if (gasCloud) {
+    gasCloud.t = Math.max(0, gasCloud.t - dt);
+    if (gasCloud.t <= 0) gasCloud = null;
+    else if ((state === 'playing' || state === 'dropping') && blocks.length) {
+      const G = BALANCE_REGISTRY.balloon.gas, top = blocks[blocks.length - 1];
+      const topCy = GROUND_Y - (blocks.length - 0.5) * BH;
+      if (Math.abs(topCy - gasCloud.wy) <= G.cloudRows * BH) {
+        const d = Math.min(G.shrinkPerFrame * dt, Math.max(0, top.w - G.minW));
+        if (d > 0) { top.w -= d; top.x += d / 2; }
+      }
+    }
+  }
   if (balloon && (state === 'playing' || state === 'dropping')) {
     const B = BALANCE_REGISTRY.balloon;
     balloon.x += balloon.vx * dt;
@@ -2445,6 +2475,23 @@ function drawPow(p, cy) {
     ctx.fillRect(Math.round(cx2 + Math.cos(oa)*7) - 1, Math.round(cy3 + Math.sin(oa)*7) - 1, 2, 2);
   }
 }
+function drawGasCloud(cy) {
+  if (!gasCloud) return;
+  const G = BALANCE_REGISTRY.balloon.gas, h2 = G.cloudRows * BH;
+  const y = Math.round(gasCloud.wy - cy - h2), bh = Math.round(h2 * 2), fade = Math.min(1, gasCloud.t / 60);
+  if (y > H || y + bh < 0) return;
+  ctx.globalAlpha = (0.14 + 0.04 * Math.sin(tick * 0.12)) * fade;
+  ctx.fillStyle = '#9BD44A'; ctx.fillRect(0, y, W, bh);
+  if (!reduceMotion) {                                    // drifting toxic motes
+    ctx.globalAlpha = 0.3 * fade; ctx.fillStyle = '#C4E87A';
+    for (let i = 0; i < 8; i++) {
+      const mx = (i * 47 + tick * (0.2 + (i % 3) * 0.1)) % (W + 20) - 10;
+      const my = y + 3 + ((i * 29) % Math.max(1, bh - 6));
+      ctx.fillRect(Math.round(mx), Math.round(my), 2, 2);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
 function drawBalloon(cy) {
   if (!balloon) return;
   const y = balloonWorldY() - cy;
@@ -2455,7 +2502,8 @@ function drawBalloon(cy) {
   const PAL = { gift: POW[balloon.type] || POW.coin,
                 golden: { c1:'#FFE28A', c2:'#B8860B' },
                 dud: { c1:'#8A8F9C', c2:'#4A4F5C' },
-                trap: { c1:'#FF6B5A', c2:'#7A241C' } };
+                trap: { c1:'#FF6B5A', c2:'#7A241C' },
+                gas: { c1:'#9BD44A', c2:'#3E5A1E' } };
   const P = PAL[kind];
   // envelope: dark silhouette rim, bright body, sheen, taper + knot
   ctx.fillStyle = P.c2;
@@ -2468,12 +2516,19 @@ function drawBalloon(cy) {
   ctx.fillStyle = P.c2; ctx.fillRect(bx-2, by+3, 4, 1); ctx.fillRect(bx-1, by+4, 2, 1);
   if (kind === 'golden' && !reduceMotion && Math.floor(tick/6)%2===0)   // sparkle
     { ctx.fillStyle='#FFF6E8'; ctx.fillRect(bx+4, by-6, 1, 1); ctx.fillRect(bx-6, by-2, 1, 1); }
+  if (kind === 'gas' && !reduceMotion && Math.floor(tick/8)%2===0)      // toxic seep
+    { ctx.fillStyle='#C4E87A'; ctx.fillRect(bx-6, by-1, 1, 1); ctx.fillRect(bx+5, by-4, 1, 1); }
   // string sways as it bobs, badge hangs at the end
   ctx.fillStyle = 'rgba(255,246,232,0.6)';
   for (let s2 = 0; s2 < 6; s2++) ctx.fillRect(bx + Math.round(sway * s2/5 * 2), by + 5 + s2, 1, 1);
   const gx = bx + Math.round(sway * 2), gy = by + 16;
   pixDisc(gx, gy, 6, P.c2); pixDisc(gx, gy, 5, '#141022');
   if (kind === 'gift') drawIcon(balloon.type, gx-4, gy-4, true);
+  else if (kind === 'gas') {                              // pixel skull badge
+    ctx.fillStyle='#E8F2D8';
+    ctx.fillRect(gx-2,gy-3,4,3); ctx.fillRect(gx-3,gy-2,6,2); ctx.fillRect(gx-2,gy,1,2); ctx.fillRect(gx+1,gy,1,2);
+    ctx.fillStyle='#141022'; ctx.fillRect(gx-2,gy-2,1,1); ctx.fillRect(gx+1,gy-2,1,1);
+  }
   else txt(kind === 'golden' ? '$' : kind === 'trap' ? '!' : '?', gx, gy-3, 1, P.c1, 'center');
 }
 const MASCOT_BODY = '#FFE7A8', MASCOT_SHADE = '#E8B860';
@@ -4291,7 +4346,7 @@ function renderWorld(cy, shX) {
     const by = Math.round(GROUND_Y - ghost*BH - cy);
     if (by > -4 && by < H) { ctx.globalAlpha=.5; ctx.fillStyle='#62E8B5'; for (let x=0;x<W;x+=8) ctx.fillRect(x,by,4,1); txt('BEST '+ghost, W-4, by+3, 1, '#62E8B5', 'right'); ctx.globalAlpha=1; }
   }
-  if (state==='playing'||state==='dropping') { for (const p of pickups) drawPow(p, cy); drawBalloon(cy); }
+  if (state==='playing'||state==='dropping') { for (const p of pickups) drawPow(p, cy); drawGasCloud(cy); drawBalloon(cy); }
   for (const tr of trails) { ctx.globalAlpha=tr.life*.4; ctx.fillStyle='hsl('+tr.h+',80%,65%)'; ctx.fillRect(Math.round(tr.x),Math.round(tr.y-cy),Math.round(tr.w),BH); }
   ctx.globalAlpha = 1;
 
@@ -5551,7 +5606,7 @@ function renderModifierHUD(h) {
   const m=runContext.modifiers.find(x=>{const p=modifierRuntime(x);return p&&(p.status==='active'||p.status==='announced');});
   if (!m) return;
   const p=modifierRuntime(m), active=p.status==='active';
-  const y=NOTIFY_CHIP_Y+(tutStep>=0?16:0);   // drop below the two-line tutorial hint when onboarding is up
+  const y=NOTIFY_CHIP_Y;   // the tutorial is one line now — the chip never drops (v109)
   const blocksLeft=Math.max(0,m.endAltitude-h+1), inN=Math.max(0,m.startAltitude-h);
   let t=active?m.name+' '+blocksLeft+' LEFT':m.name+' IN '+inN+' BLOCKS';
   if (t.length*6-1>W-40) t=active?m.name+' - '+blocksLeft:m.name+' IN '+inN;
@@ -5563,9 +5618,11 @@ function renderModifierHUD(h) {
   txt(t,W/2,y+3,1,active?'#FFD75E':'#BFE8FF','center');
   if (m.family==='gust' && (m.direction>0 ? x+tw+9<=W : x-9>=0))   // arrow only when it fits on screen
     txt(m.direction>0?'>':'<',m.direction>0?x+tw+4:x-4,y+3,1,'#BFE8FF',m.direction>0?'left':'right');
-  const lane=modifierLaneBounds(m,active&&(m.family==='target'));   // corridor mini-map: real screen x positions
-  ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(8,y+15,W-16,2);
-  ctx.fillStyle=active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(lane.left),y+15,Math.max(2,Math.round(lane.right-lane.left)),2);
+  if (m.family==='gust'||m.family==='target'||m.family==='visibility') {   // corridor bar only where a lane means something (v109)
+    const lane=modifierLaneBounds(m,active&&(m.family==='target'));
+    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(8,y+15,W-16,2);
+    ctx.fillStyle=active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(lane.left),y+15,Math.max(2,Math.round(lane.right-lane.left)),2);
+  }
 }
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
@@ -5639,12 +5696,15 @@ function renderHUD(h) {
     ctx.globalAlpha = 1;
   }
   renderModifierHUD(h);
-  // first-run / PRACTICE onboarding: compact, world-readable, and replayable
+  // first-run / PRACTICE onboarding: one compact line in the shared notification lane (v109)
   if (tutStep >= 0 && !curNote) {
     const lesson = TUT_LESSONS[Math.min(tutStep, TUT_LESSONS.length-1)];
-    const lbody = (lesson.compact && lesson.body.length*6-1 > W-12) ? lesson.compact : lesson.body;
-    drawNotifyStrip((m.practice ? 'PRACTICE ' : '') + lesson.title, .92, 'rgba(255,215,94,0.55)');
-    drawNotifyStrip(lbody, .92, 'rgba(255,246,232,0.3)', 14);
+    const pre = m.practice ? 'PRACTICE ' : '';
+    const fits = s => s.length * 6 + 16 <= W - 16;        // drawNotifyStrip's real limit
+    let line = pre + lesson.title + ': ' + lesson.body;
+    if (!fits(line)) line = pre + lesson.title + ': ' + lesson.compact;
+    if (!fits(line)) line = lesson.compact;
+    drawNotifyStrip(line, .92, 'rgba(255,215,94,0.55)');
   }
   // sound toggle
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(SND_BTN.x-1,SND_BTN.y-1,SND_BTN.w+2,SND_BTN.h+2);

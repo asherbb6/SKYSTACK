@@ -370,7 +370,8 @@ check('PRACTICE replays onboarding even after the first-run tutorial was complet
 check('onboarding teaches drop, perfect, fever, supernova, balance, and Skybreak', () => tut.run(
   '(() => { const s=TUT_LESSONS.map(x=>x.title+" "+x.body).join(" "); return /DROP/.test(s)&&/PERFECT/.test(s)&&/FEVER/.test(s)&&/BALANCE/.test(s)&&/SKYBREAK/.test(s); })()'));
 check('onboarding advances deterministically and persists completion', () => {
-  tut.run('tutStep=1; advanceTutorial(2); advanceTutorial(3); advanceTutorial(5); advanceTutorial(8);');
+  // v109: completion persists from REAL runs (practice is a sandbox and never writes)
+  tut.run('mode="endless"; resetRun(); tutStep=1; advanceTutorial(2); advanceTutorial(3); advanceTutorial(5); advanceTutorial(8);');
   return tut.run('tutStep === -1 && tutDone === true') && saved(tut, 'skystack-tut') === true;
 });
 check('PRACTICE lesson HUD renders without throwing', () => { tut.run('mode="practice"; resetRun(); state="playing"; renderHUD(blocks.length)'); return true; });
@@ -1544,9 +1545,9 @@ check('v105 queue: resetRun clears queue and current note', () => nq.run(
   '(() => { note("X",null,1); update(1); resetRun(); return notes.length===0 && curNote===null; })()'));
 check('v105: legacy banner/toast state is gone from the source', () =>
   !/bannerT/.test(src) && !/toastT/.test(src) && !/bannerText/.test(src) && !/toastMsg/.test(src));
-check('v105 modifier chip: docked at NOTIFY_CHIP_Y, shifts below an active tutorial hint', () =>
+check('v105/v109 modifier chip: docked at a fixed NOTIFY_CHIP_Y', () =>
   /NOTIFY_CHIP_Y = NOTIFY_Y \+ 16/.test(src) &&
-  /NOTIFY_CHIP_Y\+\(tutStep>=0\?16:0\)/.test(src));
+  /const y=NOTIFY_CHIP_Y;/.test(src));
 check('v105 modifier chip keeps the corridor mini-map lane bar at real screen positions', () =>
   /modifierLaneBounds\(m,active&&\(m\.family==='target'\)\)/.test(src) &&
   /ctx\.fillRect\(8,y\+15,W-16,2\)/.test(src));
@@ -1566,8 +1567,8 @@ check('v106 chip states its units with a fit fallback', () =>
   /if \(t\.length\*6-1>W-40\) t=active\?m\.name\+' - '\+blocksLeft:m\.name\+' IN '\+inN;/.test(src));
 check('v106 collection toast names its coins', () =>
   !/'COLLECTION COMPLETE \+'/.test(src) && /'COLLECTION! \+'/.test(src));
-check('v106 COMBO lesson teaches the fever threshold in plain words', () => fresh.run(
-  'TUT_LESSONS.some(l => l.title==="COMBO" && l.body==="10 STRAIGHT PERFECTS = FEVER" && l.compact==="PERFECT STREAKS PAY MORE")'));
+check('v106/v109 COMBO lesson teaches the fever threshold in plain words', () => fresh.run(
+  'TUT_LESSONS.some(l => l.title==="COMBO" && l.body==="10 STRAIGHT PERFECTS = FEVER" && l.compact==="STREAKS PAY MORE")'));
 check('v106 no modifier BONUS note loses its reward at 180px phone width', () => fresh.run(
   '(() => { const w=180, chop=t=>{t=String(t);while(t.length>1&&t.length*6+16>w-16)t=t.slice(0,-1);return t;};' +
   ' return MODIFIER_REGISTRY.every(m => { const bn="BONUS: "+m.rule+" +"+m.rewardCoins, bp=m.rule+" +"+m.rewardCoins;' +
@@ -1650,7 +1651,7 @@ check('v108 kind weights interpolate toward more bad balloons as you climb', () 
   ' blocks.length=1; const lo=balloonKindWeights(); blocks.length=999; const hi=balloonKindWeights();' +
   ' return share(hi) > share(lo) + 0.1; })()'));
 check('v108 pickBalloonKind returns only valid kinds and shifts distribution with altitude', () => bl.run(
-  '(() => { const roll=(n)=>{ const c={gift:0,golden:0,dud:0,trap:0}; for(let i=0;i<n;i++){const k=pickBalloonKind(); if(!(k in c))return null; c[k]++;} return c; };' +
+  '(() => { const roll=(n)=>{ const c={gift:0,golden:0,dud:0,trap:0,gas:0}; for(let i=0;i<n;i++){const k=pickBalloonKind(); if(!(k in c))return null; c[k]++;} return c; };' +
   ' blocks.length=1; const lo=roll(600); blocks.length=999; const hi=roll(600);' +
   ' if(!lo||!hi) return "invalid kind"; return (hi.dud+hi.trap) > (lo.dud+lo.trap); })()'));
 check('v108 spawn tags the balloon with a kind and matching flight', () => bl.run(
@@ -1659,7 +1660,7 @@ check('v108 spawn tags the balloon with a kind and matching flight', () => bl.ru
   ' if(!balloon) return "never spawned"; const B=BALANCE_REGISTRY.balloon;' +
   ' const f=balloonFlight(balloon.kind);' +
   ' const expWy=GROUND_Y-(blocks.length+f.altRows)*BH-BH/2;' +
-  ' return ["gift","golden","dud","trap"].includes(balloon.kind) && balloon.wy===expWy && Math.abs(balloon.vx)===f.speed; })()'));
+  ' return ["gift","golden","dud","trap","gas"].includes(balloon.kind) && balloon.wy===expWy && Math.abs(balloon.vx)===f.speed; })()'));
 check('v108 pop: golden gives the coin jackpot AND a top power-up', () => { const g=makeGame();
   g.run('mode="endless"; resetRun(); state="playing"; while(blocks.length<12) blocks.push({x:60,w:96,col:"#fff"});');
   return g.run('(() => { const B=BALANCE_REGISTRY.balloon; coins=0; goldenNext=false; combo=0;' +
@@ -1695,8 +1696,78 @@ check('v108 source: rushT declared, reset, and applied to the slider step', () =
   /let .*rushT = 0/.test(src) && /rushT = 0;/.test(src) && /rushT > 0 \? BALANCE_REGISTRY\.balloon\.rushMul : 1/.test(src));
 check('v108 drawBalloon renders every kind without throwing', () => { const g=makeGame();
   g.run('mode="endless"; resetRun(); state="playing";');
-  g.run('for (const k of ["gift","golden","dud","trap"]) { balloon={x:W/2,wy:GROUND_Y-20*BH,ph:0,type:k==="gift"?"shield":"coin",kind:k}; drawBalloon(0); }');
+  g.run('for (const k of ["gift","golden","dud","trap","gas"]) { balloon={x:W/2,wy:GROUND_Y-20*BH,ph:0,type:k==="gift"?"shield":"coin",kind:k}; drawBalloon(0); }');
   return true; });
+
+// ---------- v109: gas hazard balloon + level progression + one-lane cleanup ----------
+check('v109 registry: gas kind, unlock gates, difficulty scale, gas tunables', () => bl.run(
+  '(() => { const B=BALANCE_REGISTRY.balloon; return B.wLow.gas===0 && B.wHigh.gas>0 && ' +
+  'B.unlock.dud===2 && B.unlock.trap===4 && B.unlock.gas===6 && B.gasAltBlocks>0 && ' +
+  'B.diffScale.minShare>0 && B.diffScale.minShare<1 && B.gas.cloudFrames>0 && B.gas.shrinkPerFrame>0 && B.gas.minW>0 && B.gas.cloudRows>0; })()'));
+check('v109 gas flies the GOOD profile (disguised low-flyer)', () => bl.run(
+  '(() => { const f=balloonFlight("gas"), B=BALANCE_REGISTRY.balloon; return f.altRows===B.goodAltRows && f.speed===B.driftSpeed; })()'));
+check('v109 campaign unlock gates: L1 good-only, L3 duds, L7 gas', () => { const g=makeGame();
+  g.run('prog=10; startLevel(0); state="playing";');
+  return g.run('(() => { blocks.length=0; for(let i=0;i<30;i++) blocks.push({x:0,w:50,col:blockCol(i)});' +
+    ' let w=balloonKindWeights(); const l1 = w.dud===0 && w.trap===0 && w.gas===0 && w.gift>0;' +
+    ' runLevel=2; w=balloonKindWeights(); const l3 = w.dud>0 && w.trap===0 && w.gas===0;' +
+    ' runLevel=6; w=balloonKindWeights(); const l7 = w.dud>0 && w.trap>0 && w.gas>0;' +
+    ' return l1 && l3 && l7; })()'); });
+check('v109 bad share scales with the level difficulty rating', () => { const g=makeGame();
+  g.run('prog=10; startLevel(0); state="playing";');
+  return g.run('(() => { blocks.length=0; for(let i=0;i<30;i++) blocks.push({x:0,w:50,col:blockCol(i)});' +
+    ' runLevel=6; const a=balloonKindWeights(); runLevel=10; const b=balloonKindWeights();' +
+    ' return b.dud>a.dud && b.trap>a.trap && b.gas>a.gas && Math.abs(b.gift-a.gift)<1e-9; })()'); });
+check('v109 endless: gas locked below gasAltBlocks, live above', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing";');
+  return g.run('(() => { const B=BALANCE_REGISTRY.balloon; blocks.length=0;' +
+    ' for(let i=0;i<B.gasAltBlocks-1;i++) blocks.push({x:0,w:50,col:blockCol(i)});' +
+    ' const lo=balloonKindWeights().gas; blocks.push({x:0,w:50,col:blockCol(0)});' +
+    ' const hi=balloonKindWeights().gas; return lo===0 && hi>0; })()'); });
+check('v109 gas pop: cloud spawned, pri-3 GAS danger note, no good-pop counters', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing"; while(blocks.length<12) blocks.push({x:(W-BASE_W)/2,w:BASE_W,col:blockCol(blocks.length)});');
+  return g.run('(() => { balloon={x:W/2,wy:GROUND_Y-8*BH,ph:0,type:"coin",kind:"gas"}; const rb=runBalloons, sb=stats.balloons;' +
+    ' curNote={text:"OLD",accent:"#fff",pri:1,dur:120,t:0}; popBalloon();' +
+    ' return gasCloud && gasCloud.t===BALANCE_REGISTRY.balloon.gas.cloudFrames && balloon===null &&' +
+    ' curNote.text.indexOf("GAS")>=0 && curNote.pri===3 && runBalloons===rb && stats.balloons===sb; })()'); });
+check('v109 gas cloud shrinks the in-band top block center-preserving to minW, then stops', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing"; while(blocks.length<12) blocks.push({x:(W-BASE_W)/2,w:BASE_W,col:blockCol(blocks.length)});');
+  return g.run('(() => { const G=BALANCE_REGISTRY.balloon.gas;' +
+    ' const top=blocks[11], w0=top.w, c0=top.x+top.w/2;' +
+    ' gasCloud={wy:GROUND_Y-11.5*BH, t:G.cloudFrames}; update(1);' +
+    ' const shrunk=top.w<w0 && Math.abs((top.x+top.w/2)-c0)<1e-6;' +
+    ' for(let i=0;i<20000 && gasCloud;i++){ gasCloud.t=Math.max(gasCloud.t,2); if(top.w<=G.minW) break; update(1); }' +
+    ' return shrunk && Math.abs(top.w-G.minW)<1e-6; })()'); });
+check('v109 gas cloud ignores an out-of-band top block and expires; resetRun clears it', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing"; while(blocks.length<12) blocks.push({x:(W-BASE_W)/2,w:BASE_W,col:blockCol(blocks.length)});');
+  return g.run('(() => { const G=BALANCE_REGISTRY.balloon.gas;' +
+    ' const top=blocks[11], w0=top.w;' +
+    ' gasCloud={wy:GROUND_Y-(11.5+G.cloudRows+2)*BH, t:3}; update(1); const untouched=top.w===w0;' +
+    ' update(1); update(1); const expired=gasCloud===null;' +
+    ' gasCloud={wy:0,t:100}; resetRun(); return untouched && expired && gasCloud===null; })()'); });
+check('v109 drawGasCloud renders without throwing (active, fading, off-screen)', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing";');
+  return g.run('(() => { try { gasCloud={wy:GROUND_Y-9*BH,t:300}; render(); gasCloud.t=30; render();' +
+    ' gasCloud={wy:-99999,t:300}; render(); gasCloud=null; return true; } catch(e) { return false; } })()'); });
+check('v109 tutorial is ONE strip: no second yOff-14 lesson call; merged TITLE: BODY form', () =>
+  !/drawNotifyStrip\(lbody/.test(src) && /lesson\.title \+ ': ' \+ lesson\.body/.test(src));
+check('v109 every lesson fits un-truncated at 180px (fit gate matches drawNotifyStrip)', () => bl.run(
+  '(() => { const fits = s => s.length*6+16 <= 180-16;' +
+  ' return TUT_LESSONS.every(l => fits(l.title+": "+l.compact) || fits(l.compact)); })()'));
+check('v109 real-run tutorial progress persists; practice never writes it', () => {
+  const tp = makeGame();
+  tp.run('mode="endless"; startRun(); tutStep=1; advanceTutorial(2);');
+  const savedStep = saved(tp, 'skystack-tutstep') === 2;
+  tp.run('startRun();');
+  const resumed = tp.run('tutStep === 2');
+  tp.run('mode="practice"; startRun(); tutStep=1; advanceTutorial(2); advanceTutorial(3);');
+  const practiceSilent = saved(tp, 'skystack-tutstep') === 2;
+  return savedStep && resumed && practiceSilent;
+});
+check('v109 chip fixed at NOTIFY_CHIP_Y (no tutorial drop)', () =>
+  /const y=NOTIFY_CHIP_Y;/.test(src) && !/NOTIFY_CHIP_Y\+\(tutStep>=0\?16:0\)/.test(src));
+check('v109 corridor bar only for lane-meaningful families', () =>
+  /family==='gust'\|\|m\.family==='target'\|\|m\.family==='visibility'/.test(src));
 
 // ---------- v104: drifting balloon power-up ----------
 const bd = makeGame();
