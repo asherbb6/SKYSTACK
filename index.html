@@ -1116,7 +1116,7 @@ function updateModifiersForPlacement(h,outcome) {
     const p=modifierRuntime(m); if (!p||p.status==='complete'||p.status==='failed') continue;
     if (h>=m.announceAltitude&&p.status==='pending') { p.status='announced'; }   // the bottom strip carries the telegraph — no duplicate banner
     if (h>=m.startAltitude&&h<=m.endAltitude) {
-      if (p.status!=='active') { p.status='active'; note('BONUS: '+m.rule+' +'+m.rewardCoins,'#FFD75E',2,140); }   // one self-contained pop-up: optional challenge, rule, stake
+      if (p.status!=='active') { p.status='active'; const bn='BONUS: '+m.rule+' +'+m.rewardCoins, bp=m.rule+' +'+m.rewardCoins; note(bn.length*6+16<=W-16?bn:bp,'#FFD75E',2,140); }   // one self-contained pop-up; drop the BONUS: prefix at phone width so the reward never truncates
       p.placements++;
       if (outcome&&outcome.perfect) { p.perfects++; p.streak++; p.bestStreak=Math.max(p.bestStreak,p.streak); }
       else { p.streak=0; p.misses++; }

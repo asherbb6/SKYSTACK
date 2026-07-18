@@ -1333,8 +1333,8 @@ check('v96 notification boxes carry a full 1px outline, not just top/bottom line
   /ctx\.fillRect\(x, y, 1, 14\); ctx\.fillRect\(x \+ tw - 1, y, 1, 14\)/.test(src) &&
   /ctx\.fillRect\(x,y,tw,1\);ctx\.fillRect\(x,y\+12,tw,1\);ctx\.fillRect\(x,y,1,13\);ctx\.fillRect\(x\+tw-1,y,1,13\)/.test(src));
 
-check('v106 modifier activation is one BONUS note with rule and reward; the chip carries the name', () =>
-  /p\.status='active'; note\('BONUS: '\+m\.rule\+' \+'\+m\.rewardCoins,'#FFD75E',2,140\)/.test(src));
+check('v106 modifier activation is one BONUS note with rule and reward; prefix drops at narrow width', () =>
+  /const bn='BONUS: '\+m\.rule\+' \+'\+m\.rewardCoins, bp=m\.rule\+' \+'\+m\.rewardCoins; note\(bn\.length\*6\+16<=W-16\?bn:bp,'#FFD75E',2,140\)/.test(src));
 
 check('v96 notification strip clamps its text to the screen width', () =>
   /while \(text\.length > 1 && text\.length \* 6 \+ 16 > W - 16\) text = text\.slice\(0, -1\)/.test(src));
@@ -1568,6 +1568,10 @@ check('v106 collection toast names its coins', () =>
   !/'COLLECTION COMPLETE \+'/.test(src) && /'COLLECTION! \+'/.test(src));
 check('v106 COMBO lesson teaches the fever threshold in plain words', () => fresh.run(
   'TUT_LESSONS.some(l => l.title==="COMBO" && l.body==="10 STRAIGHT PERFECTS = FEVER" && l.compact==="PERFECT STREAKS PAY MORE")'));
+check('v106 no modifier BONUS note loses its reward at 180px phone width', () => fresh.run(
+  '(() => { const w=180, chop=t=>{t=String(t);while(t.length>1&&t.length*6+16>w-16)t=t.slice(0,-1);return t;};' +
+  ' return MODIFIER_REGISTRY.every(m => { const bn="BONUS: "+m.rule+" +"+m.rewardCoins, bp=m.rule+" +"+m.rewardCoins;' +
+  ' return /\\+[0-9]+$/.test(chop(bn.length*6+16<=w-16?bn:bp)); }); })()'));
 
 // ---------- v104: drifting balloon power-up ----------
 const bd = makeGame();
@@ -1601,7 +1605,7 @@ check('v104 balloon: legacy escape/intro states are gone from the source', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v105', () => /const CACHE = 'skystack-v105'/.test(sw));
+check('sw.js cache bumped to v106', () => /const CACHE = 'skystack-v106'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
