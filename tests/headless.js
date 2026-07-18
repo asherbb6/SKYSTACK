@@ -1637,15 +1637,76 @@ check('v107 win: tapping the nav row right half opens the sky map', () => { cons
   g.run(navTap+' pressDown(cx(rw.x+rw.w-4));');
   return g.run('state==="home" && skyMap===true'); });
 
+// ---------- v108: balloon difficulty phase 1 ----------
+const bl = makeGame();
+bl.run('mode="endless"; resetRun(); state="playing";');
+check('v108 balloon flight: good kinds low+slow, bad kinds high+fast', () => bl.run(
+  '(() => { const B=BALANCE_REGISTRY.balloon;' +
+  ' const g=balloonFlight("gift"), gl=balloonFlight("golden"), d=balloonFlight("dud"), t=balloonFlight("trap");' +
+  ' return g.altRows===B.goodAltRows && gl.altRows===B.goodAltRows && d.altRows===B.badAltRows && t.altRows===B.badAltRows' +
+  ' && g.speed===B.driftSpeed && t.speed===B.driftSpeed*B.badSpeedMul && d.speed===B.driftSpeed*B.badSpeedMul; })()'));
+check('v108 kind weights interpolate toward more bad balloons as you climb', () => bl.run(
+  '(() => { const share=w=>(w.dud+w.trap)/(w.gift+w.golden+w.dud+w.trap);' +
+  ' blocks.length=1; const lo=balloonKindWeights(); blocks.length=999; const hi=balloonKindWeights();' +
+  ' return share(hi) > share(lo) + 0.1; })()'));
+check('v108 pickBalloonKind returns only valid kinds and shifts distribution with altitude', () => bl.run(
+  '(() => { const roll=(n)=>{ const c={gift:0,golden:0,dud:0,trap:0}; for(let i=0;i<n;i++){const k=pickBalloonKind(); if(!(k in c))return null; c[k]++;} return c; };' +
+  ' blocks.length=1; const lo=roll(600); blocks.length=999; const hi=roll(600);' +
+  ' if(!lo||!hi) return "invalid kind"; return (hi.dud+hi.trap) > (lo.dud+lo.trap); })()'));
+check('v108 spawn tags the balloon with a kind and matching flight', () => bl.run(
+  '(() => { balloon=null; lastBalloonRow=0; blocks.length=40; let g=0;' +
+  ' while(!balloon && g++<500){ lastBalloonRow=0; maybeSpawnBalloon(); }' +
+  ' if(!balloon) return "never spawned"; const B=BALANCE_REGISTRY.balloon;' +
+  ' const f=balloonFlight(balloon.kind);' +
+  ' const expWy=GROUND_Y-(blocks.length+f.altRows)*BH-BH/2;' +
+  ' return ["gift","golden","dud","trap"].includes(balloon.kind) && balloon.wy===expWy && Math.abs(balloon.vx)===f.speed; })()'));
+check('v108 pop: golden gives the coin jackpot AND a top power-up', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing"; while(blocks.length<12) blocks.push({x:60,w:96,col:"#fff"});');
+  return g.run('(() => { const B=BALANCE_REGISTRY.balloon; coins=0; goldenNext=false; combo=0;' +
+    ' balloon={x:W/2,wy:GROUND_Y-20*BH,ph:0,type:"gold",kind:"golden"};' +
+    ' const c0=coins, rb0=runBalloons; popBalloon();' +
+    ' return coins-c0===B.goldenCoins && (goldenNext===true||combo>0) && runBalloons===rb0+1 && balloon===null; })()'); });
+check('v108 pop: dud gives nothing and does not count as a balloon', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing";');
+  return g.run('(() => { coins=50; balloon={x:W/2,wy:GROUND_Y-20*BH,ph:0,type:"coin",kind:"dud"};' +
+    ' const rb0=runBalloons, c0=coins; popBalloon();' +
+    ' return coins===c0 && runBalloons===rb0 && balloon===null; })()'); });
+check('v108 pop: trap triggers the ~2s slider rush and does not count as a balloon', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing";');
+  return g.run('(() => { const B=BALANCE_REGISTRY.balloon; rushT=0; balloon={x:W/2,wy:GROUND_Y-20*BH,ph:0,type:"coin",kind:"trap"};' +
+    ' const rb0=runBalloons; popBalloon();' +
+    ' return rushT===B.rushFrames && runBalloons===rb0 && balloon===null; })()'); });
+check('v108 pop: gift applies a power and counts as a balloon', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing";');
+  return g.run('(() => { balloon={x:W/2,wy:GROUND_Y-20*BH,ph:0,type:"shield",kind:"gift"};' +
+    ' const rb0=runBalloons; shield=0; popBalloon();' +
+    ' return shield===1 && runBalloons===rb0+1 && balloon===null; })()'); });
+check('v108 rush timer decays in update and clears on resetRun', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing";');
+  return g.run('(() => { const B=BALANCE_REGISTRY.balloon; rushT=B.rushFrames; update(1); const dropped=rushT<B.rushFrames;' +
+    ' update(9999); const zeroed=rushT===0; rushT=B.rushFrames; resetRun(); return dropped && zeroed && rushT===0; })()'); });
+check('v108 rush speeds the live slider while active', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing"; spawnSlider();');
+  return g.run('(() => { if(!slider) return "no slider"; slider.dir=1; slider.x=W/2; wind=null; fever=false;' +
+    ' const x0=slider.x; rushT=0; update(1); const base=slider.x-x0;' +
+    ' slider.x=x0; rushT=BALANCE_REGISTRY.balloon.rushFrames; update(1); const rushed=slider.x-x0;' +
+    ' return base > 0 && rushed > base*1.3; })()'); });
+check('v108 source: rushT declared, reset, and applied to the slider step', () =>
+  /let .*rushT = 0/.test(src) && /rushT = 0;/.test(src) && /rushT > 0 \? BALANCE_REGISTRY\.balloon\.rushMul : 1/.test(src));
+check('v108 drawBalloon renders every kind without throwing', () => { const g=makeGame();
+  g.run('mode="endless"; resetRun(); state="playing";');
+  g.run('for (const k of ["gift","golden","dud","trap"]) { balloon={x:W/2,wy:GROUND_Y-20*BH,ph:0,type:k==="gift"?"shield":"coin",kind:k}; drawBalloon(0); }');
+  return true; });
+
 // ---------- v104: drifting balloon power-up ----------
 const bd = makeGame();
 bd.run('mode="endless"; resetRun(); state="playing"; while (blocks.length < 12) blocks.push({x:60,w:96,col:blockCol(blocks.length)});');
-check('v104 balloon: spawns off-screen at a side edge, drifting inward, at the registry altitude', () => bd.run(
+check('v104/v108 balloon: spawns off-screen at a side edge, drifting inward, at its kind altitude', () => bd.run(
   '(() => { let g=0; while (!balloon && g++ < 400) { lastBalloonRow = 0; maybeSpawnBalloon(); }' +
   ' if (!balloon) return "never spawned";' +
-  ' const B = BALANCE_REGISTRY.balloon;' +
-  ' const edgeOK = (balloon.x === -B.margin && balloon.vx === B.driftSpeed) || (balloon.x === W + B.margin && balloon.vx === -B.driftSpeed);' +
-  ' const altOK = balloon.wy === GROUND_Y - (12 + B.altitudeRows) * BH - BH/2;' +
+  ' const B = BALANCE_REGISTRY.balloon, f = balloonFlight(balloon.kind);' +
+  ' const edgeOK = (balloon.x === -B.margin && balloon.vx === f.speed) || (balloon.x === W + B.margin && balloon.vx === -f.speed);' +
+  ' const altOK = balloon.wy === GROUND_Y - (12 + f.altRows) * BH - BH/2;' +
   ' return edgeOK && altOK && balloon.row === undefined && balloon.inT === undefined && balloon.away === undefined; })()'));
 check('v104 balloon: drifts horizontally with dt around a fixed altitude', () => bd.run(
   '(() => { const x0 = balloon.x, wy0 = balloon.wy; update(1); update(1);' +
