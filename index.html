@@ -1620,12 +1620,14 @@ function land() {
     nw = Math.min(nw + grow, cap);
     nx = top.x + (top.w - nw) / 2;
     flashT = 1; sfx.perfect(combo);
-    // streak ladder: x7 BLAZING (2 coins) -> x10 FEVER (2x) -> x15 SUPERNOVA (3x)
+    // streak ladder now pays SCORE *and* COINS: x7 BLAZING (2 coins) -> x10 FEVER (x2) -> x15 SUPERNOVA (x3)
     const streakMult = nova ? 3 : fever ? 2 : 1;
     score += adjustedRunScore(runContext,(10 + 5 * combo) * streakMult * goldMult * (m.mult || 1));
-    addCoins(combo >= 7 ? 2 : 1, W/2, towerTopY()-BH);
+    const perfCoins = (combo >= 7 ? 2 : 1) * streakMult;   // v113: the streak multiplier lifts coins too, not just score
+    addCoins(perfCoins, W/2, towerTopY()-BH);
     floaters.push({ text:'PERFECT', x:W/2, y:towerTopY()-BH-6, vy:-.4, life:1, color:'#FFD75E' });
     if (combo > 1) floaters.push({ text:'X'+combo, x:W/2, y:towerTopY()-BH+6, vy:-.4, life:1.1, color:'#FFF6E8' });
+    if (streakMult > 1) floaters.push({ text:'COINS X'+streakMult, x:W/2, y:towerTopY()-BH+16, vy:-.42, life:1.2, color:'#FFE28A' });
     burst(nx+nw/2, towerTopY()-BH, 14+Math.min(combo,10), f.col, true);
     shake = Math.max(shake, 2);
     mascot.hop = 1; setExpr(fever || combo >= 5 ? 'wow' : 'happy', 24);
@@ -1640,7 +1642,7 @@ function land() {
     if (combo >= 15) {
       if (!nova) {
         nova = true; novaFlash = 1;
-        note('SUPERNOVA! SCORE X3', '#FFD75E', 1);
+        note('SUPERNOVA! SCORE & COINS X3', '#FFD75E', 1);
         floaters.push({ text:'SUPERNOVA!', x:W/2, y:towerTopY()-BH-34, vy:-.5, life:1.8, color:'#FFFFFF' });
         burst(nx+nw/2, towerTopY()-BH, 40, {h:50}, true);
         shake = Math.max(shake, reduceMotion?3:7);

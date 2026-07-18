@@ -1554,7 +1554,7 @@ check('v105 modifier chip keeps the corridor mini-map lane bar at real screen po
 
 // ---------- v106: pop-up copy clarity ----------
 check('v106 every reward pop-up names its currency or effect', () =>
-  /'SUPERNOVA! SCORE X3'/.test(src) && /'SKYBREAK! \+50 COINS'/.test(src) &&
+  /'SUPERNOVA! SCORE & COINS X3'/.test(src) && /'SKYBREAK! \+50 COINS'/.test(src) &&
   /\+challengeReward\+' COINS'/.test(src) &&
   !/'SUPERNOVA! 3X'/.test(src) && !/'SKYBREAK! \+50'(?! COINS)/.test(src));
 check('v106 modifier win notes BONUS WON with coins; the old CLEAR/ENDED note is gone', () =>
@@ -1871,6 +1871,11 @@ check('v112 map momentum glides then eases to rest', () => fresh.run(
   'for(let i=0;i<400;i++) update(1); const stops=(mapScrollV===0);' +
   'skyMap=s0; mapScroll=ms0; mapScrollV=mv0; mapDrag=md0; state=st0; mapScrollMax=mm0;' +
   'return moved && eased && stops; })()') === true);
+// ---------- v113: streak coin payoff (fever/nova multiply coins, not just score) ----------
+check('v113 perfect coins scale by the streak multiplier', () =>
+  /const perfCoins = \(combo >= 7 \? 2 : 1\) \* streakMult/.test(src) && /addCoins\(perfCoins,/.test(src));
+check('v113 supernova banner credits coins as well as score', () =>
+  /SUPERNOVA! SCORE & COINS X3/.test(src));
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -1896,7 +1901,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v112', () => /const CACHE = 'skystack-v112'/.test(sw));
+check('sw.js cache bumped to v113', () => /const CACHE = 'skystack-v113'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
