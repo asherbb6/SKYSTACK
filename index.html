@@ -1050,7 +1050,7 @@ let combo = 0, maxCombo = 0, hueBase = Math.random() * 360;
 let squash = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
 let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, runSkybreaks = 0, coinPop = 0, tick = 0;
 let score = 0;
-let bannerText = '', bannerT = 0;
+let notes = [], curNote = null;   // one-at-a-time top-middle notification queue (v105)
 let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
 let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false;
 let wind = null, windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
@@ -1065,8 +1065,17 @@ let skybreakT = 0;                             // golden sky flash after SKYBREA
 let balance = 0, swayX = 0;
 const mascot = { hop: 0, expr: 'normal', exprT: 0 };
 let timeLeft = 0;
-let toastMsg = '', toastT = 0;
-function toast(m) { toastMsg = m; toastT = 1.6; }
+function note(text, accent, pri, dur) {
+  const n = { text: String(text), accent: accent || '#FFD75E', pri: pri || 0, dur: dur || 120, t: 0 };
+  if (n.pri >= 3 && curNote) { curNote = n; return; }          // danger interrupts the showing note
+  notes.push(n);
+  if (notes.length > 6) {                                       // drop the oldest lowest-priority queued note
+    let di = 0;
+    for (let i = 1; i < notes.length; i++) if (notes[i].pri < notes[di].pri) di = i;
+    notes.splice(di, 1);
+  }
+}
+function toast(m) { if (m) note(m, 'rgba(255,246,232,0.4)', 0, 96); }
 let modifierProgress = {}, modifierResults = [], modifierWins = 0, modifierBonusCoins = 0;
 let challengeRuntime = null, challengeCleared = false, challengeReward = 0, challengeRecorded = false;
 function initModifierRuntime() {
@@ -1093,11 +1102,12 @@ function modifierSucceeded(m,p) {
 }
 function finishModifier(m,p) {
   if (!p||p.status==='complete'||p.status==='failed') return;
+  const wasActive=p.status==='active';   // a skipped modifier ends silently — its ENDED note informs no decision
   const won=modifierSucceeded(m,p); p.status=won?'complete':'failed'; p.success=won;
   let paid=0;
   if (won) { const before=runCoins; addCoins(m.rewardCoins,W/2,towerTopY()-BH-20); paid=runCoins-before; modifierWins++; modifierBonusCoins+=paid; }
   modifierResults.push({id:m.id,name:m.name,success:won,rewardCoins:paid});
-  bannerText=won?m.name+' CLEAR +'+paid:m.name+' ENDED'; bannerT=1;
+  if (wasActive) note(won?m.name+' CLEAR +'+paid:m.name+' ENDED', won?'#62E8B5':'rgba(255,246,232,0.4)', 2);
   if (wind&&wind.modifierId===m.id) { wind=null; windTimer=BALANCE_REGISTRY.wind.minCooldownFrames; }
 }
 function updateModifiersForPlacement(h,outcome) {
@@ -1106,7 +1116,7 @@ function updateModifiersForPlacement(h,outcome) {
     const p=modifierRuntime(m); if (!p||p.status==='complete'||p.status==='failed') continue;
     if (h>=m.announceAltitude&&p.status==='pending') { p.status='announced'; }   // the bottom strip carries the telegraph — no duplicate banner
     if (h>=m.startAltitude&&h<=m.endAltitude) {
-      if (p.status!=='active') { p.status='active'; bannerText=m.name; bannerT=1; }   // rule lives in the bottom strip; name-only always fits on screen
+      if (p.status!=='active') { p.status='active'; note(m.name,'#FFD75E',2); note(m.rule,'#BFE8FF',2,100); }   // name then rule, shown one after another — each always fits
       p.placements++;
       if (outcome&&outcome.perfect) { p.perfects++; p.streak++; p.bestStreak=Math.max(p.bestStreak,p.streak); }
       else { p.streak=0; p.misses++; }
@@ -1313,7 +1323,7 @@ function completeChallenge() {
   const c=activeChallenge(); if (!c||challengeCleared) return;
   challengeCleared=true; challengeRuntime.status='complete'; challengeReward=challengeRecord(c.id).clears===0?coinAmount(c.reward):0;
   if (challengeReward) transactCoins(challengeReward,true);
-  bannerText='CHALLENGE CLEAR!'+(challengeReward?' +'+challengeReward:''); bannerT=1;
+  note('CHALLENGE CLEAR!'+(challengeReward?' +'+challengeReward:''), '#62E8B5', 2, 140);
   gameOver('challenge');
 }
 function recordChallengeOutcome() {
@@ -1383,7 +1393,7 @@ function resetRun() {
   balloon = null; lastBalloonRow = 0;
   score = 0; combo = 0; maxCombo = 0; newBest = false; newHeight = false;
   tier = TIERS.findIndex(t => t.n > blocks.length); if (tier < 0) tier = TIERS.length;   // skip pre-stacked tiers
-  runCoins = 0; runPerfects = 0; runPowerups = 0; runFevers = 0; runBalloons = 0; runSkybreaks = 0; bannerT = 0;
+  runCoins = 0; runPerfects = 0; runPowerups = 0; runFevers = 0; runBalloons = 0; runSkybreaks = 0; notes = []; curNote = null;
   shield = 0; widenNext = false; slowBlocks = 0; auraBlocks = 0; goldenNext = false;
   wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
   nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; collectionThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
@@ -1577,7 +1587,7 @@ function land() {
     if (combo >= 15) {
       if (!nova) {
         nova = true; novaFlash = 1;
-        bannerText = 'SUPERNOVA! 3X'; bannerT = 1;
+        note('SUPERNOVA! 3X', '#FFD75E', 1);
         floaters.push({ text:'SUPERNOVA!', x:W/2, y:towerTopY()-BH-34, vy:-.5, life:1.8, color:'#FFFFFF' });
         burst(nx+nw/2, towerTopY()-BH, 40, {h:50}, true);
         shake = Math.max(shake, reduceMotion?3:7);
@@ -1605,7 +1615,7 @@ function land() {
   // SKYBREAK — block spans the whole sky
   if (nw >= W - 6) {
     blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col:f.col });
-    bannerText = 'SKYBREAK! +50'; bannerT = 1;
+    note('SKYBREAK! +50', '#FFD75E', 1);
     addCoins(50, W/2, towerTopY());
     balance = 0; if (canEarnRewards(runContext)) { stats.skybreaks++; runSkybreaks++; } skybreakT = 1;
     burst(W/2, towerTopY(), 36, f.col, true);
@@ -1646,13 +1656,14 @@ function afterPlace(f, updateBalance, placedCenter, outcome) {
   if (updateChallengeForPlacement(placedOutcome)) return;
   if (runLevel >= 0 && h >= TIERS[runLevel].n) { levelComplete(); return; }   // campaign goal reached
   if (tier < TIERS.length && h >= TIERS[tier].n) {
-    const t = TIERS[tier]; bannerText = t.n*METERS_PER + 'M - ' + t.name; bannerT = 1;
+    const t = TIERS[tier]; let bTxt = t.n*METERS_PER + 'M - ' + t.name;
     let reward = 5 + tier * 3;
     if (runContext.rewardPermissions.progress && tier + 1 > prog) {
       prog = tier + 1; store.set('skystack-tiers', prog);
-      bannerText = 'LEVEL CLEAR - ' + t.name; reward += 15;
-      if (prog === TIERS.length) { bannerText = 'SKY CONQUERED!'; reward += 200; }   // beat the game
+      bTxt = 'LEVEL CLEAR - ' + t.name; reward += 15;
+      if (prog === TIERS.length) { bTxt = 'SKY CONQUERED!'; reward += 200; }   // beat the game
     }
+    note(bTxt, '#FFD75E', 1, 140);
     if (canEarnRewards(runContext)) {
       addCoins(reward, W/2, 40);
       floaters.push({ text:'+'+reward, x:W/2, y:towerTopY()-BH-18, vy:-.35, life:1.4, color:'#FFD75E' });
@@ -1830,11 +1841,12 @@ const PAD = 6;
 const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
-    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H, ME_PROG, SHOP_TOP, BOOST_TOP;
+    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, NOTIFY_CHIP_Y, BOOST_CARD_H, ME_PROG, SHOP_TOP, BOOST_TOP;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
   NOTIFY_Y = 74;   // directly under the full HUD column (combo lane ends 62, wind glyphs end 69)
+  NOTIFY_CHIP_Y = NOTIFY_Y + 16;   // persistent modifier chip row, under the message lane
   NAV_TABS = [
     { id:'home', label:'HOME' },
     { id:'shop', label:'SHOP' },
@@ -2163,14 +2175,18 @@ function update(dt) {
   if (shake > 0) shake = Math.max(0, shake - .25*dt);
   if (squash > 0) squash = Math.max(0, squash - .07*dt);
   if (flashT > 0) flashT = Math.max(0, flashT - .05*dt);
-  if (bannerT > 0) bannerT = Math.max(0, bannerT - .006*dt);
+  if (curNote) { curNote.t += dt; if (curNote.t >= curNote.dur) curNote = null; }
+  if (!curNote && notes.length) {
+    let bi = 0;
+    for (let i = 1; i < notes.length; i++) if (notes[i].pri > notes[bi].pri) bi = i;
+    curNote = notes.splice(bi, 1)[0]; curNote.t = 0;
+  }
   if (regionIntro) { regionIntro.t += dt; if (regionIntro.t >= regionIntro.dur) regionIntro = null; }
   if (coinPop > 0) coinPop = Math.max(0, coinPop - .05*dt);
   if (fadeT > 0) fadeT = Math.max(0, fadeT - .06*dt);
   if (overLock > 0) overLock -= dt;
   if (state === 'levelwin') winT += dt;
   if (state === 'levelfail') failT += dt;
-  if (toastT > 0) toastT = Math.max(0, toastT - .014*dt);
   if (mascot.hop > 0) mascot.hop = Math.max(0, mascot.hop - .06*dt);
   if (mascot.exprT > 0) { mascot.exprT -= dt; if (mascot.exprT <= 0 && state !== 'gameover') mascot.expr = 'normal'; }
 
@@ -4112,12 +4128,10 @@ function render() {
 
   if (paused && (state === 'playing' || state === 'dropping')) renderPause();
 
-  if (bannerT > 0) {
-    const a = Math.min(1,bannerT*2.2)*(bannerT>.85?(1-bannerT)/.15:1);
-    drawNotifyStrip(bannerText, Math.max(0,a), '#FFD75E');
-  }
-  if (toastT > 0 && toastMsg) {
-    drawNotifyStrip(toastMsg, Math.min(1, toastT*2), 'rgba(255,246,232,0.4)', bannerT > 0 ? 16 : 0);
+  if (curNote) {
+    const p = curNote.t / curNote.dur;                       // fast fade-in, hold, fade-out tail
+    const a = Math.min(1, p * 8) * (p > .85 ? (1 - p) / .15 : 1);
+    drawNotifyStrip(curNote.text, Math.max(0, a), curNote.accent);
   }
   if (fadeT > 0) { ctx.globalAlpha = fadeT; ctx.fillStyle = '#0B0E1A'; ctx.fillRect(0,0,W,H); ctx.globalAlpha = 1; }
 }
@@ -5479,23 +5493,21 @@ function renderModifierHUD(h) {
   if (!runContext||!runContext.modifierPermissions.enabled) return;
   const m=runContext.modifiers.find(x=>{const p=modifierRuntime(x);return p&&(p.status==='active'||p.status==='announced');});
   if (!m) return;
-  const p=modifierRuntime(m), active=p.status==='active', y=H-(tutStep>=0?61:31);
-  const fitW=s=>s.length*6-1<=W-16;   // text budget inside the 4px-inset strip with 4px inner pads
-  ctx.fillStyle='rgba(11,14,26,0.82)';ctx.fillRect(4,y,W-8,30);
-  ctx.fillStyle=active?'rgba(255,215,94,0.8)':'rgba(94,200,242,0.75)';   // full 1px outline — the strip floats free of the screen edges
-  ctx.fillRect(4,y,W-8,1);ctx.fillRect(4,y+29,W-8,1);ctx.fillRect(4,y,1,30);ctx.fillRect(W-5,y,1,30);
+  const p=modifierRuntime(m), active=p.status==='active';
+  const y=NOTIFY_CHIP_Y+(tutStep>=0?16:0);   // drop below the two-line tutorial hint when onboarding is up
   const blocksLeft=Math.max(0,m.endAltitude-h+1), inN=Math.max(0,m.startAltitude-h);
-  let head=active?m.name+' - '+blocksLeft+' BLOCKS':'UP NEXT '+m.name+' IN '+inN;
-  if (!fitW(head)) head=active?m.name+' - '+blocksLeft:'NEXT '+m.name+' IN '+inN;
-  txt(head,W/2,y+5,1,active?'#FFD75E':'#BFE8FF','center');
-  const rbase=active?modifierProgressText(m,p):m.rule;
-  const rtext=fitW(rbase+' - +'+m.rewardCoins)?rbase+' - +'+m.rewardCoins:rbase;
-  txt(rtext,W/2,y+16,1,'#FFF6E8','center');
-  const lane=modifierLaneBounds(m,active&&(m.family==='target'));
-  ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(8,y+26,W-16,2);
-  ctx.fillStyle=active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(lane.left),y+25,Math.max(2,Math.round(lane.right-lane.left)),3);
-  if (m.family==='gust' && Math.round(W/2-(rtext.length*6-1)/2) >= 48)   // draw the wind tag only when it clears the rule text
-    txt(m.direction>0?'WIND >':'< WIND',m.direction>0?W-9:9,y+16,1,'#BFE8FF',m.direction>0?'right':'left');
+  let t=active?m.name+' - '+blocksLeft:m.name+' IN '+inN;
+  if (t.length*6-1>W-40) t=m.name;
+  const tw=Math.min(W-16,t.length*6-1+14), x=Math.round(W/2-tw/2);
+  ctx.fillStyle='rgba(11,14,26,0.82)';ctx.fillRect(x,y,tw,13);
+  ctx.fillStyle=active?'rgba(255,215,94,0.8)':'rgba(94,200,242,0.75)';   // full 1px outline
+  ctx.fillRect(x,y,tw,1);ctx.fillRect(x,y+12,tw,1);ctx.fillRect(x,y,1,13);ctx.fillRect(x+tw-1,y,1,13);
+  txt(t,W/2,y+3,1,active?'#FFD75E':'#BFE8FF','center');
+  if (m.family==='gust' && (m.direction>0 ? x+tw+9<=W : x-9>=0))   // arrow only when it fits on screen
+    txt(m.direction>0?'>':'<',m.direction>0?x+tw+4:x-4,y+3,1,'#BFE8FF',m.direction>0?'left':'right');
+  const lane=modifierLaneBounds(m,active&&(m.family==='target'));   // corridor mini-map: real screen x positions
+  ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(8,y+15,W-16,2);
+  ctx.fillStyle=active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(lane.left),y+15,Math.max(2,Math.round(lane.right-lane.left)),2);
 }
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
@@ -5570,13 +5582,11 @@ function renderHUD(h) {
   }
   renderModifierHUD(h);
   // first-run / PRACTICE onboarding: compact, world-readable, and replayable
-  if (tutStep >= 0) {
+  if (tutStep >= 0 && !curNote) {
     const lesson = TUT_LESSONS[Math.min(tutStep, TUT_LESSONS.length-1)];
-    ctx.fillStyle = 'rgba(11,14,26,0.82)'; ctx.fillRect(0, H-29, W, 29);
-    ctx.fillStyle = 'rgba(255,215,94,0.55)'; ctx.fillRect(0, H-29, W, 1);
-    txt((m.practice ? 'PRACTICE ' : '') + lesson.title, W/2, H-23, 1, '#FFD75E', 'center');
     const lbody = (lesson.compact && lesson.body.length*6-1 > W-12) ? lesson.compact : lesson.body;
-    txt(lbody, W/2, H-11, 1, '#FFF6E8', 'center');
+    drawNotifyStrip((m.practice ? 'PRACTICE ' : '') + lesson.title, .92, 'rgba(255,215,94,0.55)');
+    drawNotifyStrip(lbody, .92, 'rgba(255,246,232,0.3)', 14);
   }
   // sound toggle
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(SND_BTN.x-1,SND_BTN.y-1,SND_BTN.w+2,SND_BTN.h+2);

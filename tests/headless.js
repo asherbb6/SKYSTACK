@@ -202,16 +202,19 @@ const lc = makeGame();
 lc.run('mode = "endless"; resetRun();');
 lc.run('while (blocks.length < TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
-check('endless first reach of stage 1: LEVEL CLEAR banner', () => lc.run('bannerText === "LEVEL CLEAR - CAVES"'));
+check('endless first reach of stage 1: LEVEL CLEAR note queued', () => lc.run(
+  'notes.concat(curNote?[curNote]:[]).some(n=>n.text==="LEVEL CLEAR - CAVES")'));
 check('endless first reach of stage 1: prog -> 1', () => lc.run('prog === 1'));
 check('prog persisted to storage', () => saved(lc, 'skystack-tiers') === 1 ? true : 'stored: ' + saved(lc, 'skystack-tiers'));
 lc.run('resetRun(); while (blocks.length < TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
-check('endless re-reaching a cleared stage: plain milestone banner', () => lc.run('bannerText === (TIERS[0].n*METERS_PER) + "M - " + TIERS[0].name'));
+check('endless re-reaching a cleared stage: plain milestone note', () => lc.run(
+  'notes.concat(curNote?[curNote]:[]).some(n=>n.text===(TIERS[0].n*METERS_PER)+"M - "+TIERS[0].name)'));
 lc.run('prog = TIERS.length - 1; resetRun(); tier = TIERS.length - 1;');
 lc.run('while (blocks.length < TIERS[TIERS.length-1].n) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
-check('endless reaching THE STARS first time: SKY CONQUERED banner', () => lc.run('bannerText === "SKY CONQUERED!"'));
+check('endless reaching THE STARS first time: SKY CONQUERED note queued', () => lc.run(
+  'notes.concat(curNote?[curNote]:[]).some(n=>n.text==="SKY CONQUERED!")'));
 check('game beaten: prog = all stages', () => lc.run('prog === TIERS.length'));
 check('renderSkyMap champion state runs (crown/gate)', () => { lc.run('renderSkyMap()'); return true; });
 check('renderHome conquered state runs', () => { lc.run('state = "home"; renderHome()'); return true; });
@@ -1273,30 +1276,19 @@ check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 ever
 check('v94 campaign HUD row keeps a 7px side margin (not edge-flush)', () =>
   /txt\(lft,7,33/.test(src) && /txt\(rgt,W-7,33/.test(src));   // v96 parameterized the labels; the 7px anchors are the invariant
 
-check('v94 banner/toast render as a shared HUD notification strip below the HUD block', () =>
+check('v105 all notifications render through one top-middle queue (no banner/toast pair)', () =>
   /function drawNotifyStrip\(/.test(src) &&
-  /bannerT > 0.*drawNotifyStrip\(bannerText/.test(src.replace(/\r?\n/g, ' ')) &&
-  /toastT > 0.*drawNotifyStrip\(toastMsg/.test(src.replace(/\r?\n/g, ' ')));
+  /function note\(/.test(src) &&
+  /drawNotifyStrip\(curNote\.text/.test(src) &&
+  !/drawNotifyStrip\(toastMsg/.test(src) && !/drawNotifyStrip\(bannerText/.test(src));
 check('v94 notification strip sits directly under the HUD block, not mid-play-column', () => fresh.run(
   '(() => { W=320;H=480;relayout(); return NOTIFY_Y >= 60 && NOTIFY_Y <= 76; })()'));
 
-check('banner/toast overlap fix: toast drops to a second row below the banner instead of sharing NOTIFY_Y', () =>
-  /function drawNotifyStrip\(text, alpha, accent, yOff/.test(src) &&
-  /NOTIFY_Y \+ yOff/.test(src) &&
-  /drawNotifyStrip\(toastMsg, Math\.min\(1, toastT\*2\), 'rgba\(255,246,232,0\.4\)', bannerT > 0 \? 16 : 0\)/.test(src) &&
-  fresh.run(
-    '(() => { W=320;H=480;relayout(); bannerT=1; toastT=1; ' +
-    'let ys = []; const orig = drawNotifyStrip; drawNotifyStrip = (t,a,c,off) => ys.push(NOTIFY_Y + (off||0)); ' +
-    'if (bannerT > 0) drawNotifyStrip(bannerText, 1, "#FFD75E"); ' +
-    'if (toastT > 0) drawNotifyStrip(toastMsg, 1, "rgba(255,246,232,0.4)", bannerT > 0 ? 16 : 0); ' +
-    'drawNotifyStrip = orig; return ys.length === 2 && ys[0] !== ys[1]; })()'));
-
 // ---------- v95 in-run bottom overlays sit at the very bottom of the screen ----------
-check('v95 tutorial hint strip is flush with the bottom edge, not floating mid-tower', () =>
-  /ctx\.fillRect\(0, H-29, W, 29\)/.test(src) &&
-  !/ctx\.fillRect\(0, H-94, W, 29\)/.test(src));
-check('v95 modifier HUD hugs the bottom and stacks just above an active tutorial strip', () =>
-  /y=H-\(tutStep>=0\?61:31\)/.test(src));
+check('v105 nothing textual renders at the screen bottom in-run: both bottom strips deleted', () =>
+  !/ctx\.fillRect\(0, H-29, W, 29\)/.test(src) && !/y=H-\(tutStep>=0\?61:31\)/.test(src));
+check('v105 tutorial hint renders in the top-middle lane only while no note is showing', () =>
+  /tutStep >= 0 && !curNote/.test(src));
 
 // ---------- v96 in-run HUD overlap audit ----------
 // txt() is instrumented to capture every glyph box renderHUD draws; any pair of boxes that
@@ -1339,19 +1331,17 @@ check('v96 balance warning and combo share one lane: danger outranks the celebra
 
 check('v96 notification boxes carry a full 1px outline, not just top/bottom lines', () =>
   /ctx\.fillRect\(x, y, 1, 14\); ctx\.fillRect\(x \+ tw - 1, y, 1, 14\)/.test(src) &&
-  /ctx\.fillRect\(4,y,W-8,1\);ctx\.fillRect\(4,y\+29,W-8,1\);ctx\.fillRect\(4,y,1,30\);ctx\.fillRect\(W-5,y,1,30\)/.test(src));
+  /ctx\.fillRect\(x,y,tw,1\);ctx\.fillRect\(x,y\+12,tw,1\);ctx\.fillRect\(x,y,1,13\);ctx\.fillRect\(x\+tw-1,y,1,13\)/.test(src));
 
-check('v96 modifier banners fit on screen: activation is name-only, telegraph has no duplicate banner', () =>
-  /p\.status='active'; bannerText=m\.name; bannerT=1/.test(src) &&
-  !/bannerText='UP NEXT: '/.test(src));
+check('v96/v105 modifier activation enqueues name then rule; the chip carries the telegraph', () =>
+  /p\.status='active'; note\(m\.name,'#FFD75E',2\); note\(m\.rule,'#BFE8FF',2,100\)/.test(src));
 
 check('v96 notification strip clamps its text to the screen width', () =>
   /while \(text\.length > 1 && text\.length \* 6 \+ 16 > W - 16\) text = text\.slice\(0, -1\)/.test(src));
 
-check('v96 in-run strips share one 0.82 backing opacity (visibility pass)', () =>
-  /rgba\(11,14,26,0\.82\)'; ctx\.fillRect\(x, y, tw, 14\)/.test(src) &&           // banner/toast strip
-  /rgba\(11,14,26,0\.82\)';ctx\.fillRect\(4,y,W-8,30\)/.test(src) &&              // modifier strip
-  /rgba\(11,14,26,0\.82\)'; ctx\.fillRect\(0, H-29, W, 29\)/.test(src));          // tutorial strip
+check('v96 in-run surfaces share one 0.82 backing opacity (visibility pass)', () =>
+  /rgba\(11,14,26,0\.82\)'; ctx\.fillRect\(x, y, tw, 14\)/.test(src) &&           // queue strip
+  /rgba\(11,14,26,0\.82\)';ctx\.fillRect\(x,y,tw,13\)/.test(src));                 // modifier chip
 
 // ---------- v98 icon/cloud/nav art detail ----------
 check('v98 shop nav glyph is a shopping cart with twin wheels, not a crate', () =>
@@ -1530,6 +1520,36 @@ check('v94 Me Progress tab distributes its card across available room instead of
   'if(statsBottom > cardBottom - 8) return false;' +                    // stats stay inside the card
   'if(H >= 390 && ME_PROG.h < 220) return false;' +                     // tall shapes actually grow
   'if(ME_BADGES_BTN.y !== ME_PROG.achY - 3) return false;} return true; })()'));   // tap region tracks the grid
+
+// ---------- v105: top-middle notification queue ----------
+const nq = makeGame();
+nq.run('mode="endless"; resetRun(); state="playing";');
+check('v105 queue: highest priority first, FIFO within a priority', () => nq.run(
+  '(() => { notes=[]; curNote=null;' +
+  ' note("A0",null,0); note("B1",null,1); note("C1",null,1); note("D0",null,0);' +
+  ' const got=[]; for (let i=0;i<4;i++) { update(1); got.push(curNote.text); curNote=null; }' +
+  ' return got.join(",")==="B1,C1,A0,D0"; })()'));
+check('v105 queue: dwell expiry advances to the next note', () => nq.run(
+  '(() => { notes=[]; curNote=null; note("SHORT",null,1,10); note("NEXT",null,0);' +
+  ' update(1); if (curNote.text!=="SHORT") return "wrong first: "+curNote.text;' +
+  ' update(10); update(1); return curNote!==null && curNote.text==="NEXT"; })()'));
+check('v105 queue: priority-3 interrupts the showing note', () => nq.run(
+  '(() => { notes=[]; curNote=null; note("CALM",null,1); update(1);' +
+  ' note("DANGER",null,3); return curNote.text==="DANGER"; })()'));
+check('v105 queue: cap 6 drops the oldest lowest-priority queued note', () => nq.run(
+  '(() => { notes=[]; curNote={text:"HOLD",accent:"#FFF",pri:1,dur:9999,t:0};' +
+  ' for (let i=0;i<6;i++) note("N"+i,null,i===0?0:1); note("LAST",null,1);' +
+  ' return notes.length===6 && !notes.some(n=>n.text==="N0") && notes.some(n=>n.text==="LAST"); })()'));
+check('v105 queue: resetRun clears queue and current note', () => nq.run(
+  '(() => { note("X",null,1); update(1); resetRun(); return notes.length===0 && curNote===null; })()'));
+check('v105: legacy banner/toast state is gone from the source', () =>
+  !/bannerT/.test(src) && !/toastT/.test(src) && !/bannerText/.test(src) && !/toastMsg/.test(src));
+check('v105 modifier chip: docked at NOTIFY_CHIP_Y, shifts below an active tutorial hint', () =>
+  /NOTIFY_CHIP_Y = NOTIFY_Y \+ 16/.test(src) &&
+  /NOTIFY_CHIP_Y\+\(tutStep>=0\?16:0\)/.test(src));
+check('v105 modifier chip keeps the corridor mini-map lane bar at real screen positions', () =>
+  /modifierLaneBounds\(m,active&&\(m\.family==='target'\)\)/.test(src) &&
+  /ctx\.fillRect\(8,y\+15,W-16,2\)/.test(src));
 
 // ---------- v104: drifting balloon power-up ----------
 const bd = makeGame();
