@@ -2482,6 +2482,8 @@ function drawGasCloud(cy) {
   if (y > H || y + bh < 0) return;
   ctx.globalAlpha = (0.14 + 0.04 * Math.sin(tick * 0.12)) * fade;
   ctx.fillStyle = '#9BD44A'; ctx.fillRect(0, y, W, bh);
+  ctx.globalAlpha = 0.32 * fade;                          // crisp edges so the hazard zone reads on any wall
+  ctx.fillStyle = '#B8E668'; ctx.fillRect(0, y, W, 1); ctx.fillRect(0, y + bh - 1, W, 1);
   if (!reduceMotion) {                                    // drifting toxic motes
     ctx.globalAlpha = 0.3 * fade; ctx.fillStyle = '#C4E87A';
     for (let i = 0; i < 8; i++) {
