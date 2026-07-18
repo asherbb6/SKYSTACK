@@ -2350,14 +2350,6 @@ function drawBlock(x, y, w, h, col, isTop, glow, style) {
   style = style || 'gloss';
   const C = (dl, ds) => 'hsl('+hu+','+clamp(sat+(ds||0),0,100)+'%,'+clamp(l+dl,4,96)+'%)';
   const on = w > 8 && h > 6;                                              // draw fine detail only on full-size blocks
-  // ---- outer glow (neon / void) ----
-  if (style === 'glow') {
-    const pulse = reduceMotion ? .6 : .5 + .5*Math.sin(tick*.1 + y*.05);
-    ctx.fillStyle = 'hsl('+hu+',100%,60%)';
-    ctx.globalAlpha = .13 + pulse*.10; ctx.fillRect(x-4, y-3, w+8, h+6);
-    ctx.globalAlpha = .22 + pulse*.12; ctx.fillRect(x-2, y-2, w+4, h+4);
-    ctx.globalAlpha = 1;
-  }
   if (glow > 0) { ctx.globalAlpha = glow*.5; ctx.fillStyle = 'hsl('+hu+',100%,78%)'; ctx.fillRect(x-2, y-2, w+4, h+4); ctx.globalAlpha = 1; }
   // ---- body: soft vertical shading (lit top → shaded bottom) ----
   ctx.fillStyle = C(0);   ctx.fillRect(x, y, w, h);
@@ -2367,35 +2359,86 @@ function drawBlock(x, y, w, h, col, isTop, glow, style) {
   ctx.fillStyle = C(20, -8); ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);            // lit top + left
   ctx.fillStyle = C(-24);    ctx.fillRect(x, y+h-1, w, 1); ctx.fillRect(x+w-1, y, 1, h);    // shaded bottom + right
   ctx.fillStyle = C(-15);    ctx.fillRect(x, y, 1, 1); ctx.fillRect(x+w-1, y+h-1, 1, 1);    // corner clips
-  // ---- per-skin surface finish ----
-  if (style === 'gloss') {                                               // glossy plastic — sheen + travelling highlight
-    ctx.globalAlpha = .55; ctx.fillStyle = '#FFF'; if (on) ctx.fillRect(x+2, y+2, w-4, 1);
-    if (on && !reduceMotion) { const sw = x + ((tick*1.3 + y*5) % (w+18)) - 9; ctx.globalAlpha = .16; ctx.fillRect(Math.round(sw), y+1, 3, h-2); }
-    ctx.globalAlpha = 1;
-  } else if (style === 'stripe') {                                       // satin candy — soft diagonal bands
-    if (on) { ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  // ---- per-skin surface finish (v110: ONE shared clip — no effect may leave the block) ----
+  if (on) {
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    const hsh = ((x*7 + y*13) & 1023);                                   // stable-ish per-block hash
+    if (style === 'gloss') {                                             // glossy plastic — sheen + soft travelling highlight
+      ctx.globalAlpha = .55; ctx.fillStyle = '#FFF'; ctx.fillRect(x+2, y+2, w-4, 1);
+      if (!reduceMotion) { const sw = x + ((tick*.9 + y*5) % (w+18)) - 9;
+        ctx.globalAlpha = .07; ctx.fillRect(Math.round(sw)-1, y+1, 1, h-2); ctx.fillRect(Math.round(sw)+3, y+1, 1, h-2);
+        ctx.globalAlpha = .14; ctx.fillRect(Math.round(sw), y+1, 3, h-2); }
+      ctx.globalAlpha = 1;
+    } else if (style === 'stripe') {                                     // satin candy — soft diagonal bands
       ctx.globalAlpha = .24; ctx.fillStyle = '#FFF'; const o = reduceMotion ? 0 : (tick*.5) % 14;
       for (let sx = x - h - 14 + o; sx < x + w; sx += 14) { ctx.beginPath(); ctx.moveTo(sx, y+h); ctx.lineTo(sx+h, y); ctx.lineTo(sx+h+5, y); ctx.lineTo(sx+5, y+h); ctx.closePath(); ctx.fill(); }
-      ctx.restore(); ctx.globalAlpha = 1; }
-  } else if (style === 'ember') {                                        // molten — cracks + heat pulse + rising ember
-    if (on) { ctx.fillStyle = C(-30); ctx.fillRect(x+2, y+(h/2|0), (w-4)*.55|0, 1); ctx.fillRect(x+(w*.55|0), y+2, 1, h-4);
-      ctx.globalAlpha = reduceMotion ? .5 : .45 + .35*Math.sin(tick*.2 + y); ctx.fillStyle = 'hsl(32,100%,62%)'; ctx.fillRect(x+2, y+(h/2|0), (w-4)*.55|0, 1); ctx.globalAlpha = 1;
-      if (!reduceMotion) { const ex = x + 3 + ((tick*.8 + y) % Math.max(4, w-6)); ctx.fillStyle = 'hsl(46,100%,72%)'; ctx.fillRect(Math.round(ex), y - 1 + (Math.sin(tick*.3+ex)|0), 1, 2); } }
-  } else if (style === 'facet') {                                        // cut gem — angled facets + centre glint
-    if (on) { ctx.globalAlpha = .2; ctx.fillStyle = '#FFF'; for (let fx = x+3; fx < x+w-2; fx += 7) ctx.fillRect(fx, y+2, 1, h-4);
-      ctx.globalAlpha = .32; const gx = x + (w/2|0); ctx.fillRect(gx, y+2, 2, 2); ctx.fillRect(gx-1, y+3, 4, 1);
-      const tw = reduceMotion ? .4 : .2 + .3*(Math.sin(tick*.14 + y)*.5 + .5); ctx.globalAlpha = tw; ctx.fillRect(x + 2 + ((y*7)%(w-4)), y+h-3, 1, 1); ctx.globalAlpha = 1; }
-  } else if (style === 'sparkle') {                                      // frost — frosted rim + drifting twinkle
-    if (on) { ctx.globalAlpha = .45; ctx.fillStyle = '#FFF'; ctx.fillRect(x+1, y+1, w-2, 1); ctx.fillRect(x+1, y+1, 1, h-2);
-      const t2 = Math.floor(tick/8); if (!reduceMotion || t2 === 0) { if ((t2 + (y|0)) % 2 === 0) { const sx = x + 3 + ((y*13 + t2*7) % Math.max(1, w-6)); ctx.globalAlpha = .95; ctx.fillStyle = '#FFF'; ctx.fillRect(Math.round(sx), y+3, 1, 1); ctx.fillRect(Math.round(sx)-1, y+4, 3, 1); ctx.fillRect(Math.round(sx), y+5, 1, 1); } }
-      ctx.globalAlpha = 1; }
-  } else if (style === 'shimmer') {                                      // metal — bright top + sweeping specular
-    if (on) { ctx.fillStyle = C(26); ctx.fillRect(x+1, y+1, w-2, 1);
-      if (!reduceMotion) { const shx = x + ((tick*1.6) % (w+22)) - 11; ctx.save(); ctx.beginPath(); ctx.rect(x+1, y+1, w-2, h-2); ctx.clip();
-        ctx.globalAlpha = .5; ctx.fillStyle = '#FFFDE8'; ctx.fillRect(Math.round(shx), y+1, 3, h-2); ctx.fillStyle = '#FFF'; ctx.fillRect(Math.round(shx)+1, y+1, 1, h-2); ctx.restore(); ctx.globalAlpha = 1; } }
-  } else if (style === 'glow') {                                         // neon — bright core + pulsing edges
-    if (on) { ctx.fillStyle = C(32); ctx.fillRect(x+2, y+2, w-4, 1);
-      if (!reduceMotion) { ctx.globalAlpha = .5 + .5*Math.sin(tick*.15 + y); ctx.fillStyle = C(38); ctx.fillRect(x+1, y+1, 1, h-2); ctx.fillRect(x+w-2, y+1, 1, h-2); ctx.globalAlpha = 1; } }
+      ctx.globalAlpha = 1;
+    } else if (style === 'ember') {                                      // molten — jagged magma veins + embers rising inside
+      const vy1 = y + Math.max(2, (h/3|0)), vy2 = y + Math.min(h-3, (h*2/3|0));
+      const pu = reduceMotion ? .5 : .45 + .35*Math.sin(tick*.12 + y*.3);
+      const seg = Math.max(3, ((w-6)/3)|0);
+      ctx.fillStyle = 'hsl(24,100%,58%)'; ctx.globalAlpha = pu;
+      for (let s3 = 0; s3 < 3; s3++) { const off = (s3 + (hsh&1)) % 2 ? 1 : -1;
+        ctx.fillRect(x+3 + s3*seg, vy1 + (s3%2?off:0), seg-1, 1);
+        ctx.fillRect(x+3 + s3*seg, vy2 + (s3%2?0:off), seg-1, 1); }
+      ctx.globalAlpha = pu*.6; ctx.fillStyle = 'hsl(46,100%,70%)'; ctx.fillRect(x+3+seg, vy1, seg-1, 1);
+      ctx.globalAlpha = 1;
+      if (!reduceMotion) for (let e2 = 0; e2 < 2; e2++) {                // sparks die out before the top edge
+        const cyc = ((tick*.6 + e2*37 + hsh) % (h*4)) / 4;
+        const ey = y + h - 2 - cyc, ex = x + 3 + ((hsh>>e2) + e2*29) % Math.max(2, w-6);
+        if (ey > y) { ctx.globalAlpha = clamp((ey - y) / 3, 0, 1)*.8; ctx.fillStyle = 'hsl(40,100%,68%)';
+          ctx.fillRect(Math.round(ex), Math.round(ey), 1, 1); ctx.globalAlpha = 1; }
+      }
+    } else if (style === 'facet') {                                      // cut gem — diagonal wedges + travelling bevel glint
+      ctx.fillStyle = '#FFF'; ctx.globalAlpha = .10;
+      for (let d2 = 0; d2 < 3; d2++) ctx.fillRect(x+1, y+1+d2, Math.max(2, (w*.5|0) - d2*((w/6)|0)), 1);
+      ctx.fillStyle = '#000'; ctx.globalAlpha = .12;
+      for (let d2 = 0; d2 < 3; d2++) { const ww2 = Math.max(2, (w*.5|0) - d2*((w/6)|0)); ctx.fillRect(x+w-1-ww2, y+h-2-d2, ww2, 1); }
+      const gp = (tick*.7 + hsh) % Math.max(1, w-6);
+      ctx.fillStyle = '#FFF'; ctx.globalAlpha = reduceMotion ? .5 : .5 + .3*Math.sin(tick*.2);
+      ctx.fillRect(x+2 + (reduceMotion ? ((w-6)/2|0) : Math.round(gp)), y+1, 2, 1);
+      const tw2 = reduceMotion ? .4 : .2 + .3*(Math.sin(tick*.14 + y)*.5 + .5);
+      ctx.globalAlpha = tw2; ctx.fillRect(x + (w*.5|0), y + (h*.5|0), 1, 1);
+      ctx.globalAlpha = 1;
+    } else if (style === 'sparkle') {                                    // frost — frosted rim + smooth cross twinkles
+      ctx.globalAlpha = .35; ctx.fillStyle = '#FFF';
+      ctx.fillRect(x+1, y+1, w-2, 1); ctx.fillRect(x+1, y+h-2, w-2, 1);
+      ctx.fillRect(x+1, y+1, 1, h-2); ctx.fillRect(x+w-2, y+1, 1, h-2);
+      for (let t3 = 0; t3 < 3; t3++) {
+        const a3 = reduceMotion ? (t3 === 0 ? .5 : 0) : Math.pow(Math.max(0, Math.sin(tick*.07 + t3*2.1 + hsh)), 2);
+        if (a3 <= .02) continue;
+        const tx2 = x + 3 + ((hsh*(t3+3) + t3*41) % Math.max(1, w-6)), ty2 = y + 3 + (((hsh>>(t3+1)) + t3*17) % Math.max(1, h-6));
+        ctx.globalAlpha = a3*.95; ctx.fillRect(tx2, ty2-1, 1, 3); ctx.fillRect(tx2-1, ty2, 3, 1);
+      }
+      ctx.globalAlpha = 1;
+    } else if (style === 'shimmer') {                                    // metal — bright top + specular sweep with trailing shine
+      ctx.fillStyle = C(26); ctx.fillRect(x+1, y+1, w-2, 1);
+      if (!reduceMotion) { const shx = x + ((tick*1.6) % (w+22)) - 11;
+        ctx.globalAlpha = .5; ctx.fillStyle = '#FFFDE8'; ctx.fillRect(Math.round(shx), y+1, 3, h-2);
+        ctx.fillStyle = '#FFF'; ctx.fillRect(Math.round(shx)+1, y+1, 1, h-2);
+        ctx.globalAlpha = .18; ctx.fillStyle = '#FFFDE8'; ctx.fillRect(Math.round(shx)-6, y+1, 2, h-2);
+        ctx.globalAlpha = 1; }
+    } else if (style === 'glow') {                                       // neon tube — four pulsing inner edges + running current
+      const pu2 = reduceMotion ? .55 : .35 + .35*Math.sin(tick*.12 + y*.2);
+      ctx.fillStyle = C(38); ctx.globalAlpha = pu2;
+      ctx.fillRect(x+1, y+1, w-2, 1); ctx.fillRect(x+1, y+h-2, w-2, 1);
+      ctx.fillRect(x+1, y+1, 1, h-2); ctx.fillRect(x+w-2, y+1, 1, h-2);
+      ctx.globalAlpha = .8; ctx.fillStyle = C(32); ctx.fillRect(x+2, y+2, w-4, 1);
+      if (!reduceMotion) {
+        const per = 2*(w-2) + 2*(h-2), cp2 = (tick*1.2 + hsh) % per;
+        const edge = d3 => { let d = (cp2 - d3 + per) % per, px2, py2;
+          if (d < w-2) { px2 = x+1+d; py2 = y+1; }
+          else if (d < w-2 + h-2) { px2 = x+w-2; py2 = y+1 + (d-(w-2)); }
+          else if (d < 2*(w-2) + h-2) { px2 = x+w-2 - (d-(w-2)-(h-2)); py2 = y+h-2; }
+          else { px2 = x+1; py2 = y+h-2 - (d-2*(w-2)-(h-2)); }
+          return [Math.round(px2), Math.round(py2)]; };
+        const c1 = edge(0), c2 = edge(2);
+        ctx.globalAlpha = .95; ctx.fillStyle = '#FFF'; ctx.fillRect(c1[0], c1[1], 1, 1);
+        ctx.globalAlpha = .45; ctx.fillRect(c2[0], c2[1], 1, 1);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
   }
   if (isTop && flashT > 0) { ctx.globalAlpha = flashT*.85; ctx.fillStyle = '#FFF'; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
 }
@@ -4603,7 +4646,7 @@ function renderPause() {
 // ---------- sky map (level select: one row per level, drag-scrolls, footer launches) ----------
 // list layout: one generous row per level on a straight climbing trail down a
 // centered column; the list drag-scrolls whenever it is taller than the screen
-const MAP_ROW = 60, MAP_HEAD = 38, MAP_FOOT = 10;
+const MAP_ROW = 60, MAP_CARD_H = 48, MAP_HEAD = 38, MAP_FOOT = 10;
 // per-stage floating-island palette, index-aligned to the 11 TIERS
 // (cave rock, grass, grass, cloud, cloud, cloud, rock, ice, space-rock, metal, gold)
 const ISLES = [
@@ -4619,15 +4662,12 @@ const ISLES = [
   { top:'#9090AC', s:'#4E4E6C', e:'#333350' },              // 9 orbit — metal
   { top:'#FFD75E', s:'#9A7420', e:'#5E4610' }               // 10 the stars — gold
 ];
-// numbered badges weave left/right down an S-curve; only x winds, y stays evenly
-// spaced by altitude so scroll + progress math is unchanged
+// v110: level CARDS — every node centers on midX (the old S-curve weave is gone); y stays
+// evenly spaced by altitude so scroll + progress math is unchanged
 function skyMapNodes() {
   const viewTop = MAP_HEAD + 4, viewBot = H - MAP_FOOT - 4;
   const colW = Math.min(W - 8, 300), colX = Math.round((W - colW) / 2);
   const n = TIERS.length, midX = Math.round(W / 2);
-  const islandW = Math.min(W - 24, 104);
-  const amp = clamp(Math.round(W * 0.16), 8, Math.max(6, Math.round((W - islandW) / 2) - 2));
-  const wv = i => midX + Math.round(amp * Math.sin(i * 1.25 + 0.7));
   const contentH = (n + 2) * MAP_ROW;                       // ground + levels + gate
   mapScrollMax = Math.max(0, contentH - (viewBot - viewTop));
   mapScroll = clamp(mapScroll, 0, mapScrollMax);
@@ -4635,9 +4675,9 @@ function skyMapNodes() {
     ? viewBot - 16 + Math.round(mapScroll)
     : Math.round((viewTop + viewBot) / 2 + contentH / 2) - 16;
   const pts = [];
-  for (let i = 0; i < n; i++) pts.push({ x: wv(i), y: base - (i + 1) * MAP_ROW });
+  for (let i = 0; i < n; i++) pts.push({ x: midX, y: base - (i + 1) * MAP_ROW });
   return { pts, start: { x: midX, y: base }, gate: { x: midX, y: base - (n + 1) * MAP_ROW },
-           colX, colW, midX, amp, islandW, viewTop, viewBot };
+           colX, colW, midX, viewTop, viewBot };
 }
 function openSkyMap() {   // focus the view on the next goal
   skyMap = true; mapDrag = null; mapScroll = 0;
@@ -4651,12 +4691,12 @@ function openSkyMap() {   // focus the view on the next goal
 function mapTapAt(p) {
   const L = skyMapNodes();
   if (p.y <= MAP_HEAD) { skyMap = false; sfx.tap(); return; }               // header / X closes
-  const HITX = 26, HITY = 24;
   const inView = y2 => y2 > L.viewTop - 6 && y2 < L.viewBot + 6;
+  const onCard = pt => Math.abs(p.x - pt.x) <= L.colW/2 && Math.abs(p.y - pt.y) <= MAP_CARD_H/2;   // v110: the full card is the target
   for (let i = 0; i < TIERS.length; i++) {
     const pt = L.pts[i];
     if (!inView(pt.y)) continue;
-    if (Math.abs(p.x - pt.x) <= HITX && Math.abs(p.y - pt.y) <= HITY) {
+    if (onCard(pt)) {
       if (i <= prog) {
         if (selLevel === i) { skyMap = false; startLevel(i); }              // second tap plays it
         else { selLevel = i; sfx.tap(); }
@@ -4664,7 +4704,7 @@ function mapTapAt(p) {
       return;
     }
   }
-  if (inView(L.gate.y) && Math.abs(p.x - L.gate.x) <= HITX && Math.abs(p.y - L.gate.y) <= HITY) { sfx.deny(); return; }
+  if (inView(L.gate.y) && onCard(L.gate)) { sfx.deny(); return; }
 }
 function dkHex(hex, f) {
   const v = parseInt(hex.slice(1), 16);
@@ -5041,93 +5081,69 @@ function renderSkyMap() {
   // Keep trail labels and stage art inside the map viewport. The old translucent header let
   // offscreen stage copy ghost through it on narrow phones.
   ctx.save();ctx.beginPath();ctx.rect(0,L.viewTop,W,L.viewBot-L.viewTop);ctx.clip();
-  drawMapDecor(L, ph);   // birds, balloons, plane, aurora, galaxy, moon, planet — behind the islands
-  // best-height marker point along the winding trail (mascot rides it, walked dots glow)
-  let mp = null;
-  if (bestHeight > 0) {
-    const nextIdx = TIERS.findIndex(t => bestHeight < t.n);
-    if (nextIdx === -1) mp = { x: L.gate.x, y: L.gate.y };
-    else {
-      const prevN = nextIdx === 0 ? 0 : TIERS[nextIdx-1].n;
-      const frac = clamp((bestHeight - prevN) / (TIERS[nextIdx].n - prevN), 0, 1);
-      const a2 = nextIdx === 0 ? L.start : L.pts[nextIdx-1], b2 = L.pts[nextIdx];
-      mp = { x: Math.round(a2.x + (b2.x - a2.x) * frac), y: Math.round(a2.y - frac * MAP_ROW) };
-    }
-  }
-  // winding dotted trail: ground -> each stage -> the gate. walked part glows gold
-  const chain = [L.start, ...L.pts, L.gate];
-  for (let j = 0; j < chain.length - 1; j++) {
-    const a2 = chain[j], b2 = chain[j+1];
-    const seg = Math.hypot(b2.x - a2.x, b2.y - a2.y), steps = Math.max(2, Math.round(seg / 5));
-    for (let s2 = 1; s2 < steps; s2++) {
-      const tt = s2 / steps, dx = Math.round(a2.x + (b2.x - a2.x) * tt), dy = Math.round(a2.y + (b2.y - a2.y) * tt);
-      if (dy < L.viewTop - 3 || dy > L.viewBot + 3) continue;
-      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(dx - 1, dy + 1, 3, 2);
-      ctx.fillStyle = (mp && dy >= mp.y) ? 'rgba(255,215,94,0.85)' : 'rgba(255,246,232,0.5)';
-      ctx.fillRect(dx - 1, dy, 3, 2);
-    }
-  }
-  // ground marker where the trail meets the earth
-  if (L.start.y > L.viewTop - 6 && L.start.y < L.viewBot + 12) {
-    pixDisc(L.start.x, L.start.y, 4, 'rgba(255,246,232,0.3)');
-    pixDisc(L.start.x, L.start.y, 2, '#141022');
-    txt('GROUND', L.start.x, L.start.y + 6, 1, 'rgba(255,246,232,0.4)', 'center');
-  }
-  // stages, drawn top (farthest) down so nearer islands overlap the ones above
+  drawMapDecor(L, ph);   // birds, balloons, plane, aurora, galaxy, moon, planet — behind the cards
+  // v110: Extra Modes-style level cards over the themed sky. v100 rule kept: while a stage
+  // is SELECTED its second line becomes the start-condition caption.
   const champ = prog >= TIERS.length;
+  const nextByHeight = bestHeight > 0 ? TIERS.findIndex(t => bestHeight < t.n) : -1;
+  const bestCard = bestHeight <= 0 ? -1 : nextByHeight === -1 ? TIERS.length : nextByHeight;
+  if (L.start.y > L.viewTop - 6 && L.start.y < L.viewBot + 12)
+    txt('GROUND', L.midX, L.start.y - 3, 1, 'rgba(255,246,232,0.4)', 'center');
   for (let k = TIERS.length; k >= 0; k--) {
     const isGate = k === TIERS.length;
     const pt = isGate ? L.gate : L.pts[k];
-    if (pt.y < L.viewTop - 26 || pt.y > L.viewBot + 28) continue;
-    const bob = reduceMotion ? 0 : Math.round(Math.sin(tick*.045 + k*1.3)*2);   // islands drift like they float
+    const cy2 = Math.round(pt.y - MAP_CARD_H/2), cx2 = L.colX, cw2 = L.colW;
+    if (cy2 + MAP_CARD_H < L.viewTop - 2 || cy2 > L.viewBot + 2) continue;
+    const t = isGate ? null : TIERS[k];
+    const cleared = !isGate && k < prog, isNext = !isGate && k === prog, unlocked = !isGate && k <= prog;
+    const sel = !isGate && selLevel === k && unlocked;
+    const accent = isGate ? VISUAL_SYSTEM.palette.gold : unlocked ? t.c : 'rgba(255,246,232,0.24)';
+    pixelFrame(cx2, cy2, cw2, MAP_CARD_H, sel ? uiA(.16) : 'rgba(17,17,25,0.88)', accent, sel || (isGate && champ));
+    ctx.fillStyle = accent; ctx.globalAlpha = sel || isNext || isGate ? 1 : .36;
+    ctx.fillRect(cx2+4, cy2+5, 2, MAP_CARD_H-10); ctx.globalAlpha = 1;
+    // island + weather miniature through a clipped thumbnail window
+    const thX = cx2+10, thY = cy2+8, thS = 32;
+    ctx.save(); ctx.beginPath(); ctx.rect(thX, thY, thS, thS); ctx.clip();
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(thX, thY, thS, thS);
+    if (isGate && !champ) {                                   // the sealed golden door, native scale
+      const gx2 = thX + thS/2, gy2 = thY + thS/2 - 2;
+      ctx.fillStyle = '#9A7420'; ctx.fillRect(gx2-10, gy2-9, 20, 19);
+      ctx.fillStyle = '#FFD75E'; ctx.fillRect(gx2-8, gy2-7, 16, 17);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(gx2-8, gy2-7, 16, 1);
+      ctx.fillStyle = '#5E4610'; ctx.fillRect(gx2-4, gy2-1, 8, 11);
+      txt('?', gx2, gy2+1, 1, '#FFD75E', 'center');
+    } else {                                                  // the stage island, scaled to fit (gate-champ = golden dais)
+      const bob = reduceMotion ? 0 : Math.round(Math.sin(tick*.045 + k*1.3)*2);
+      ctx.translate(thX + thS/2, thY + thS*0.55 + bob*0.3); ctx.scale(0.32, 0.32);
+      drawIsland(isGate ? 10 : k, 0, 0);
+      drawStageWeather(isGate ? 10 : k, 0, -6, ph);
+    }
+    ctx.restore();
+    const tx0 = thX + thS + 6, txR = cx2 + cw2 - 7, dimTxt = 'rgba(255,246,232,0.45)';
     if (isGate) {
-      if (champ) {
-        drawIsland(10, pt.x, pt.y + 6 + bob);   // the golden dais
-        mapNode3D(pt.x, pt.y, 7, '#FFD75E', '#7A5A14'); pixDisc(pt.x, pt.y, 4, '#4A3A0C');
-        ctx.fillStyle = '#FFD75E'; ctx.fillRect(pt.x-2, pt.y-1, 5, 2);
-        ctx.fillRect(pt.x-2, pt.y-2, 1, 1); ctx.fillRect(pt.x, pt.y-2, 1, 1); ctx.fillRect(pt.x+2, pt.y-2, 1, 1);
-        txt('SKY CHAMPION', pt.x, pt.y - 24, 1, '#FFD75E', 'center');
-        txt('THE GATE IS OPEN', pt.x, pt.y + 18, 1, 'rgba(255,246,232,0.6)', 'center');
-      } else {   // sealed golden gate at the summit
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(pt.x-11, pt.y+9, 22, 3);
-        ctx.fillStyle = '#9A7420'; ctx.fillRect(pt.x-10, pt.y-9, 20, 19);
-        ctx.fillStyle = '#FFD75E'; ctx.fillRect(pt.x-8, pt.y-7, 16, 17);
-        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(pt.x-8, pt.y-7, 16, 1);
-        ctx.fillStyle = '#5E4610'; ctx.fillRect(pt.x-4, pt.y-1, 8, 11);
-        txt('?', pt.x, pt.y + 1, 1, '#FFD75E', 'center');
-        txt('? ? ?', pt.x, pt.y - 24, 1, 'rgba(255,246,232,0.5)', 'center');
-        txt('SEALED - ' + TIERS[TIERS.length-1].n*METERS_PER + 'M', pt.x, pt.y + 16, 1, 'rgba(255,246,232,0.45)', 'center');
+      txt(champ ? 'SKY CHAMPION' : '? ? ?', tx0, cy2+11, 1, '#FFD75E', 'left');
+      txt(champ ? 'THE GATE IS OPEN' : 'SEALED - ' + TIERS[TIERS.length-1].n*METERS_PER + 'M', tx0, cy2+27, 1, 'rgba(255,246,232,0.55)', 'left');
+    } else {
+      txt((k+1) + '. ' + t.name, tx0, cy2+11, 1, unlocked ? t.c : dimTxt, 'left');
+      txt(t.n*METERS_PER + 'M', txR, cy2+11, 1, unlocked ? 'rgba(255,246,232,0.7)' : dimTxt, 'right');
+      if (sel) {
+        const cp = checkpointForLevel(k);
+        txt(cp.startAltitude ? cp.name.split(' ')[0]+' CP - '+(cp.scoreMultiplier+'X').replace('0.','.') : 'GROUND - FULL SCORE',
+            tx0, cy2+27, 1, 'rgba(255,246,232,0.75)', 'left');
+        const pw2 = 34, px2 = cx2 + cw2 - pw2 - 6;
+        plate3D(px2, cy2 + MAP_CARD_H - 14, pw2, 9, playA(.8 + .12*Math.sin(tick*.1)));
+        txt('PLAY', px2 + pw2/2, cy2 + MAP_CARD_H - 12, 1, '#08301F', 'center');
+      } else {
+        for (let s2 = 0; s2 < 3; s2++) drawStarPix(tx0 + s2*8, cy2 + 26, 1, unlocked && s2 < (levelStars[k] || 0));
+        txt(cleared ? 'CLEARED' : isNext ? 'NEXT' : 'LOCKED', txR, cy2+27, 1,
+            cleared ? '#62E8B5' : isNext ? t.c : dimTxt, 'right');
       }
-      continue;
     }
-    const t = TIERS[k];
-    const cleared = k < prog, isNext = k === prog, unlocked = k <= prog, sel = selLevel === k && unlocked;
-    // floating themed island (bobs gently underneath the pinned badge) + its weather
-    drawIsland(k, pt.x, pt.y + 5 + bob);
-    drawStageWeather(k, pt.x, pt.y + bob, ph);
-    // stage label stacked above the badge (clear of the badge top). v100: while a stage is
-    // SELECTED its second line becomes the start-condition caption — the old pt.y+33 caption
-    // row collided with the next-lower stage's title (MAP_ROW leaves no free band there)
-    txt((k+1) + '. ' + t.name, pt.x, pt.y - 30, 1, unlocked ? t.c : 'rgba(255,246,232,0.45)', 'center');
-    const cp = checkpointForLevel(k);
-    const line2 = sel
-      ? (cp.startAltitude ? cp.name.split(' ')[0]+' CP - '+(cp.scoreMultiplier+'X').replace('0.','.') : 'GROUND START - FULL SCORE')
-      : t.n*METERS_PER + 'M' + (cleared ? '' : isNext ? ' - NEXT' : ' - LOCKED');
-    const l2w = line2.length*6-1, l2x = clamp(pt.x, 3+l2w/2, W-3-l2w/2);   // winding trail: clamp on-screen
-    txt(line2, l2x, pt.y - 21, 1, sel ? 'rgba(255,246,232,0.75)' : 'rgba(255,246,232,0.55)', 'center');
-    // numbered badge on the trail
-    mapBadge(k+1, pt.x, pt.y, cleared, isNext, unlocked, sel);
-    // stars under the badge
-    if (unlocked) for (let s2 = 0; s2 < 3; s2++) drawStarPix(pt.x - 8 + s2*8, pt.y + 15, 1, s2 < (levelStars[k] || 0));
-    // selected stage: a PLAY pill (a second tap on the badge launches it)
-    if (sel) {
-      const pw2 = 34, px2 = Math.round(pt.x - pw2/2);
-      plate3D(px2, pt.y + 20, pw2, 9, playA(.8 + .12*Math.sin(tick*.1)));
-      txt('PLAY', pt.x, pt.y + 22, 1, '#08301F', 'center');
-    }
+    // mascot perches on the card holding your best height (skipped while selected — the
+    // PLAY pill owns that corner)
+    if (bestCard === k && !sel) { ctx.save(); ctx.beginPath(); ctx.rect(cx2, cy2, cw2, MAP_CARD_H); ctx.clip();
+      drawMascot(cx2 + cw2 - 16, cy2 + MAP_CARD_H - 4); ctx.restore(); }
   }
-  // mascot marks your best height on the winding trail
-  if (mp && mp.y > L.viewTop - 6 && mp.y < L.viewBot + 6) drawMascot(mp.x, mp.y + 2);
   ctx.restore();
   // header
   ctx.fillStyle = 'rgba(11,14,26,0.96)'; ctx.fillRect(0, 0, W, MAP_HEAD);

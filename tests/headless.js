@@ -24,9 +24,9 @@ function anyProxy() {
   return p;
 }
 
-function makeGame(storageSeed, reducedMotion, audioEnabled) {
+function makeGame(storageSeed, reducedMotion, audioEnabled, ctx2dOverride) {
   const mem = new Map(Object.entries(storageSeed || {}));
-  const ctx2d = anyProxy();
+  const ctx2d = ctx2dOverride || anyProxy();
   const canvas = {
     width: 0, height: 0, style: {},
     getContext: () => ctx2d,
@@ -114,8 +114,8 @@ check('skyMapNodes: 11 pts + start + gate', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.pts.length === 11 && L.start && L.gate; })()'));
 check('skyMapNodes: badge rows evenly spaced in altitude', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.gate.y === L.pts[10].y - MAP_ROW; })()'));
-check('skyMapNodes: trail weaves left/right but stays inside the column', () => fresh.run(
-  '(() => { const L = skyMapNodes(); const xs = L.pts.map(p=>p.x); return xs.every(x => x >= L.colX && x <= L.colX + L.colW) && new Set(xs).size > 1; })()'));
+check('v110 skyMapNodes: cards centered on midX (weave removed)', () => fresh.run(
+  '(() => { const L = skyMapNodes(); return L.pts.every(p => p.x === L.midX) && L.colX >= 0 && L.colX + L.colW <= W; })()'));
 check('skyMapNodes: column centered and inside canvas', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.colX >= 0 && L.colX + L.colW <= W && Math.abs((L.colX) - (W - L.colX - L.colW)) <= 1; })()'));
 check('openSkyMap clamps scroll and selects the next level', () => fresh.run(
@@ -240,13 +240,13 @@ check('map tap: tapping the pre-selected next badge plays it', () => tap.run(
 tap.run('gameOver("fall"); failT = 60; state = "home"; openSkyMap();');
 check('map tap: sealed gate refuses, map stays open', () => tap.run(
   '(() => { mapScroll = mapScrollMax; const L = skyMapNodes(); __T(L.gate.x, L.gate.y); return skyMap === true && state === "home"; })()'));
-check('map tap: empty space does not close or select', () => tap.run(
-  '(() => { openSkyMap(); const sel0 = selLevel; const L = skyMapNodes(); __T(L.colX + 2, Math.round((L.viewTop + L.viewBot)/2)); return skyMap === true && selLevel === sel0; })()'));
+check('map tap: empty space (the gap between cards) does not close or select', () => tap.run(
+  '(() => { openSkyMap(); const sel0 = selLevel; const L = __C(1); __T(L.midX, Math.round((L.pts[1].y + L.pts[2].y)/2)); return skyMap === true && selLevel === sel0; })()'));
 check('map tap: header tap closes the map', () => tap.run(
   '(() => { __T(Math.round(W/2), 20); return skyMap === false; })()'));
 check('map drag: scrolls without selecting or launching', () => tap.run(
   '(() => { openSkyMap(); const s0 = mapScroll; const L = skyMapNodes(); __p = {x:L.colX+3, y:L.pts[1].y}; pressDown({}); __p = {x:L.colX+3, y:L.pts[1].y + 40}; pressMove({}); pressUp({}); return mapScroll !== s0 && selLevel === prog && state === "home" && skyMap === true; })()'));
-check('map renders the redesigned winding trail at every scroll', () => {
+check('map renders the level-card list at every scroll', () => {
   const r = makeGame({ 'skystack-height': '900', 'skystack-tiers': '11' });   // champion: gate open
   r.run('state = "home"; openSkyMap();');
   r.run('for (let s = 0; s <= mapScrollMax; s += 40) { mapScroll = s; renderSkyMap(); }');
@@ -1254,8 +1254,8 @@ check('v92 fine icons: every power-up, star, plate, and speaker renders without 
     'muted = false; state = "playing";');
   return /v92: every power-up icon redrawn on the half-pixel fine grid/.test(src);
 });
-check('v92 symmetry: button labels center exactly and map captions clamp on-screen', () =>
-  /r\.y\+\(r\.h-7\*sc\)\/2/.test(src) && /clamp\(pt\.x, 3\+l2w\/2, W-3-l2w\/2\)/.test(src) &&
+check('v92 symmetry: button labels center exactly (map caption clamp retired with the v110 card layout)', () =>
+  /r\.y\+\(r\.h-7\*sc\)\/2/.test(src) &&
   fresh.run('TUT_LESSONS.every(l => !l.compact || (l.compact.length < l.body.length && l.compact.length*6-1 <= 180-12))'));
 
 // ---------- v93 Climb Orders breathing room + coin baselines ----------
@@ -1798,6 +1798,69 @@ check('v104 balloon: crossing the far edge despawns it with no reward and no esc
   ' const rb = runBalloons; update(1); return balloon === null && runBalloons === rb; })()'));
 check('v104 balloon: legacy escape/intro states are gone from the source', () =>
   !/balloon\.away/.test(src) && !/balloon\.inT/.test(src) && !/it escapes upward/.test(src));
+
+// ---------- v110: skin finish containment + rework ----------
+// The harness ctx is an anyProxy (sets are swallowed), so containment is tested through a
+// REAL recording ctx injected via makeGame's ctx2dOverride — with motion ON so the
+// travelling effects (the historical escapees) actually draw.
+check('v110 skin finishes never draw outside the block (all 7 styles, all sizes, motion on)', () => {
+  const rec = { rects: [], clip: null, stack: [], pend: null };
+  const chain = anyProxy();
+  const base = {
+    fillRect: (a, b, c, d) => rec.rects.push({ a, b, c, d, clip: rec.clip }),
+    rect: (a, b, c, d) => { rec.pend = [a, b, c, d]; },
+    clip: () => { rec.clip = rec.pend; },
+    save: () => { rec.stack.push(rec.clip); },
+    restore: () => { rec.clip = rec.stack.length ? rec.stack.pop() : null; }
+  };
+  const ctxRec = new Proxy(base, {
+    get(t, k) {
+      if (k in t) return t[k];
+      if (k === Symbol.toPrimitive) return () => 0;
+      if (k === 'then') return undefined;
+      return chain;
+    },
+    set(t, k, v) { t[k] = v; return true; }
+  });
+  const g = makeGame(null, false, false, ctxRec);
+  let total = 0;                                       // guards against a vacuous pass
+  for (const st of ['gloss', 'stripe', 'ember', 'facet', 'sparkle', 'shimmer', 'glow'])
+    for (const [bw, bh] of [[96, 14], [40, 10], [16, 9], [6, 5]])
+      for (let t4 = 0; t4 < 40; t4 += 7) {
+        rec.rects.length = 0; rec.clip = null; rec.stack.length = 0; rec.pend = null;
+        g.run('tick=' + t4 + '; drawBlock(20,30,' + bw + ',' + bh + ',{h:200,s:80,l:56},true,0,"' + st + '")');
+        total += rec.rects.length;
+        for (const r of rec.rects) {
+          const inside = r.a >= 20 && r.b >= 30 && r.a + r.c <= 20 + bw && r.b + r.d <= 30 + bh;
+          const clipped = r.clip && r.clip[0] >= 20 && r.clip[1] >= 30 &&
+            r.clip[0] + r.clip[2] <= 20 + bw && r.clip[1] + r.clip[3] <= 30 + bh;
+          if (!inside && !clipped) return st + ' ' + bw + 'x' + bh + ' rect ' + r.a + ',' + r.b + ',' + r.c + ',' + r.d;
+        }
+      }
+  return total > 300 ? true : 'only ' + total + ' rects recorded — instrumentation broke';
+});
+
+// ---------- v110: sky map level cards ----------
+check('v110 card hit-test spans the full card width', () => tap.run(
+  '(() => { const L = __C(2); __T(L.colX + 3, L.pts[2].y); return selLevel === 2 && skyMap === true; })()'));
+check('v110 map cards stay inside the column and never overlap', () => fresh.run(
+  '(() => { const W0=W,H0=H; try { for (const [w,hh] of [[180,390],[180,520],[242,300],[320,480],[480,270]]) { W=w;H=hh;relayout();' +
+  'skyMap=true; const L=skyMapNodes();' +
+  'const cards=[...L.pts, L.gate].map(p=>({y0:p.y-MAP_CARD_H/2, y1:p.y+MAP_CARD_H/2}));' +
+  'if (L.colX < 0 || L.colX + L.colW > W) return false;' +
+  'for (let i=0;i<cards.length-1;i++) if (cards[i].y0 <= cards[i+1].y1) return false;' +
+  '} } finally { skyMap=false; W=W0; H=H0; relayout(); } return true; })()'));
+check('v110 sky map renders card grammar; trail and full-size islands gone from the world layer', () =>
+  /Extra Modes-style level cards/.test(src) && !/winding dotted trail/.test(src) &&
+  !/const wv = i => midX \+ Math\.round\(amp/.test(src));
+check('v110 finish section runs under one shared clip', () =>
+  /per-skin surface finish \(v110: ONE shared clip/.test(src));
+check('v110 old escapes are gone (ember above-block spark, glow outer halo)', () =>
+  !/y - 1 \+ \(Math\.sin\(tick\*\.3\+ex\)\|0\)/.test(src) &&
+  !/ctx\.fillRect\(x-4, y-3, w\+8, h\+6\)/.test(src));
+check('v110 redesigned styles carry their markers', () =>
+  /jagged magma veins/.test(src) && /cut gem/.test(src) &&
+  /smooth cross twinkles/.test(src) && /neon tube/.test(src));
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
