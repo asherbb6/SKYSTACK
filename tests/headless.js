@@ -1531,6 +1531,36 @@ check('v94 Me Progress tab distributes its card across available room instead of
   'if(H >= 390 && ME_PROG.h < 220) return false;' +                     // tall shapes actually grow
   'if(ME_BADGES_BTN.y !== ME_PROG.achY - 3) return false;} return true; })()'));   // tap region tracks the grid
 
+// ---------- v104: drifting balloon power-up ----------
+const bd = makeGame();
+bd.run('mode="endless"; resetRun(); state="playing"; while (blocks.length < 12) blocks.push({x:60,w:96,col:blockCol(blocks.length)});');
+check('v104 balloon: spawns off-screen at a side edge, drifting inward, at the registry altitude', () => bd.run(
+  '(() => { let g=0; while (!balloon && g++ < 400) { lastBalloonRow = 0; maybeSpawnBalloon(); }' +
+  ' if (!balloon) return "never spawned";' +
+  ' const B = BALANCE_REGISTRY.balloon;' +
+  ' const edgeOK = (balloon.x === -B.margin && balloon.vx === B.driftSpeed) || (balloon.x === W + B.margin && balloon.vx === -B.driftSpeed);' +
+  ' const altOK = balloon.wy === GROUND_Y - (12 + B.altitudeRows) * BH - BH/2;' +
+  ' return edgeOK && altOK && balloon.row === undefined && balloon.inT === undefined && balloon.away === undefined; })()'));
+check('v104 balloon: drifts horizontally with dt around a fixed altitude', () => bd.run(
+  '(() => { const x0 = balloon.x, wy0 = balloon.wy; update(1); update(1);' +
+  ' return Math.abs(balloon.x - (x0 + balloon.vx * 2)) < 1e-9 && balloon.wy === wy0; })()'));
+check('v104 balloon: a falling block pops it mid-air and applies the gift', () => bd.run(
+  '(() => { balloon = { x: W/2, vx: BALANCE_REGISTRY.balloon.driftSpeed, wy: GROUND_Y - 20*BH, ph: 0, type: "shield" };' +
+  ' shield = 0; const rb = runBalloons, sb = stats.balloons;' +
+  ' faller = { x: W/2 - 10, y: GROUND_Y - 20*BH - BH/2, w: 40, vy: 0, col: blockCol(2), golden: false };' +
+  ' state = "dropping"; update(1);' +
+  ' const ok = balloon === null && shield === 1 && runBalloons === rb + 1 && stats.balloons === sb + 1;' +
+  ' faller = null; state = "playing"; return ok; })()'));
+check('v104 balloon: drifting into the tower pops it', () => bd.run(
+  '(() => { const top = blocks[blocks.length - 1];' +
+  ' balloon = { x: top.x + 4, vx: BALANCE_REGISTRY.balloon.driftSpeed, wy: GROUND_Y - (blocks.length - 1) * BH - BH/2, ph: 0, type: "gold" };' +
+  ' const rb = runBalloons; update(1); return balloon === null && runBalloons === rb + 1 && goldenNext === true; })()'));
+check('v104 balloon: crossing the far edge despawns it with no reward and no escape tease', () => bd.run(
+  '(() => { balloon = { x: W + BALANCE_REGISTRY.balloon.margin + 1, vx: BALANCE_REGISTRY.balloon.driftSpeed, wy: GROUND_Y - 40*BH, ph: 0, type: "wide" };' +
+  ' const rb = runBalloons; update(1); return balloon === null && runBalloons === rb; })()'));
+check('v104 balloon: legacy escape/intro states are gone from the source', () =>
+  !/balloon\.away/.test(src) && !/balloon\.inT/.test(src) && !/it escapes upward/.test(src));
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
 check('sw.js cache bumped to v103', () => /const CACHE = 'skystack-v103'/.test(sw));

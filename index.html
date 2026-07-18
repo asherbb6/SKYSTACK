@@ -920,6 +920,7 @@ const BALANCE_REGISTRY = deepFreeze({
   placement:{ balanceMemory:0.5, balanceOffset:0.5, silverPerfectRatio:0.20, goldPerfectRatio:0.45 },
   wind:{ firstDelayFrames:260, minStartBlocks:25, minStrength:0.16, strengthRange:0.30, minDurationFrames:100, durationRangeFrames:80, minCooldownFrames:280, cooldownRangeFrames:320 },
   harness:{ fps:60, corridorWidth:220, ordinaryTimingFactor:1.18, perfectEvery:3 },
+  balloon:{ driftSpeed:0.35, altitudeRows:3, minRowGap:8, spawnChance:0.5, margin:14, hitR:10 },
   seed:{ dailyXor:0x9E3779B9 }, materials:MATERIALS
 });
 const DIFFICULTY_LANES = deepFreeze({
@@ -1492,20 +1493,31 @@ function enterFever() {
 }
 function maybeSpawnBalloon() {
   if (!canSpawnPickups(runContext)) return;
+  const B = BALANCE_REGISTRY.balloon;
   if (balloon || blocks.length < 8) return;
-  if (blocks.length - lastBalloonRow < 8) return;
-  if (rnd() > 0.5) { lastBalloonRow = blocks.length; return; }
-  const top = blocks[blocks.length - 1];
-  const side = rnd() < 0.5 ? -1 : 1;
-  const SR = slideRange();
-  const bx = side < 0 ? Math.max(SR.l + 10, top.x - 16) : Math.min(SR.r - 10, top.x + top.w + 16);
-  balloon = { x: bx, row: blocks.length + 1, ph: rnd() * 6.28, type: pick(GIFT_POOL), inT: 0, away: 0 };
+  if (blocks.length - lastBalloonRow < B.minRowGap) return;
+  if (rnd() > B.spawnChance) { lastBalloonRow = blocks.length; return; }
+  const side = rnd() < 0.5 ? -1 : 1;                 // floats in from a screen edge — its own telegraph
+  balloon = {
+    x: side < 0 ? -B.margin : W + B.margin,
+    vx: side < 0 ? B.driftSpeed : -B.driftSpeed,
+    wy: GROUND_Y - (blocks.length + B.altitudeRows) * BH - BH/2,
+    ph: rnd() * 6.28, type: pick(GIFT_POOL)
+  };
   lastBalloonRow = blocks.length;
 }
-function balloonWorldY() {
-  const rise = (1 - balloon.inT) * 56;               // drifts UP into position instead of popping in
-  const esc = balloon.away * balloon.away * 110;     // missed: accelerates away into the sky
-  return GROUND_Y - balloon.row * BH - BH/2 + rise - esc + Math.sin(tick * .06 + balloon.ph) * 3;
+function balloonWorldY() { return balloon.wy + Math.sin(tick * .06 + balloon.ph) * 3; }
+function balloonTouches(x, y, w, h) {                // circle-vs-rect: balloons are fragile, blocks are solid
+  const R = BALANCE_REGISTRY.balloon.hitR, bx = balloon.x, by = balloonWorldY();
+  const cx = clamp(bx, x, x + w), cy2 = clamp(by, y, y + h);
+  return (bx - cx) * (bx - cx) + (by - cy2) * (by - cy2) <= R * R;
+}
+function popBalloon() {
+  runBalloons++; runPowerups++; stats.balloons++;
+  const bx = balloon.x, by = balloonWorldY();
+  applyPower(balloon.type, bx, by);
+  for (let i = 0; i < 10; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life: 1, color: POW[balloon.type].c1 });
+  sfx.pop(); balloon = null;
 }
 
 function land() {
@@ -1514,14 +1526,6 @@ function land() {
   const offset = f.x - top.x;
   const m = activeMode();
   const dda = runContext.assistPolicy === 'adaptive';
-
-  if (balloon && !balloon.away && Math.abs((GROUND_Y - balloon.row * BH) - (towerTopY() - BH)) < BH &&
-      balloon.x >= f.x - 4 && balloon.x <= f.x + f.w + 4) {
-    runBalloons++; runPowerups++; stats.balloons++;
-    applyPower(balloon.type, balloon.x, balloonWorldY());
-    for (let i = 0; i < 10; i++) particles.push({ x: balloon.x, y: balloonWorldY(), vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life: 1, color: POW[balloon.type].c1 });
-    sfx.pop(); balloon = null;
-  }
 
   if (overlap <= 1) {
     if (shield > 0 || !m.fail) {
@@ -1635,7 +1639,6 @@ function afterPlace(f, updateBalance, placedCenter, outcome) {
   for (const p of pickups) { if (p.got || p.row !== r) continue; if (p.x >= b.x && p.x <= b.x + b.w) collectPickup(p, p.x, towerTopY()); }
   schedulePickups();
   maybeSpawnBalloon();
-  if (balloon && !balloon.away && blocks.length > balloon.row + 1) balloon.away = 0.01;   // missed — it escapes upward
   const h = blocks.length;
   advanceTutorial(h);
   const placedOutcome=outcome||{perfect:false,cut:false,miss:false,center:placedCenter};
@@ -1941,7 +1944,7 @@ function adaptToScreen() {
   for (const b of blocks) b.x += dx;
   if (slider) { slider.x += dx; slider.y += dgy; }
   if (faller) { faller.x += dx; faller.y += dgy; }
-  if (balloon) balloon.x = clamp(balloon.x + dx, 10, W - 10);
+  if (balloon) { balloon.x += dx; balloon.wy += dgy; }
   const SRn = slideRange();
   for (const p of pickups) p.x = clamp(p.x + dx, SRn.l + 20, SRn.r - 20);   // keep pickups reachable
   for (const d of debris) { d.x += dx; d.y += dgy; }
@@ -2203,11 +2206,15 @@ function update(dt) {
   } else wind = null;
 
   if (balloon && (state === 'playing' || state === 'dropping')) {
-    if (balloon.inT < 1) balloon.inT = Math.min(1, balloon.inT + .02*dt);
-    if (balloon.away) {
-      balloon.away += .014*dt;
-      balloon.x += Math.sin(tick*.1 + balloon.ph) * .35 * dt;
-      if (balloonWorldY() - cameraY < -40) balloon = null;
+    const B = BALANCE_REGISTRY.balloon;
+    balloon.x += balloon.vx * dt;
+    if ((balloon.vx > 0 && balloon.x > W + B.margin) || (balloon.vx < 0 && balloon.x < -B.margin)) balloon = null;   // missed: floats off the far side
+    else {
+      if (state === 'dropping' && faller && balloonTouches(faller.x, faller.y, faller.w, BH)) popBalloon();          // sniped mid-air
+      if (balloon) {
+        const idx = Math.floor((GROUND_Y - balloonWorldY()) / BH);                                                   // tower block at its altitude
+        if (idx >= 0 && idx < blocks.length && balloonTouches(blocks[idx].x, GROUND_Y - (idx + 1) * BH, blocks[idx].w, BH)) popBalloon();
+      }
     }
   }
   if (dropPending > 0 && state === 'playing') {
@@ -2394,7 +2401,6 @@ function drawBalloon(cy) {
   const P = POW[balloon.type];
   const sway = Math.sin(tick*.05 + balloon.ph);
   const bx = Math.round(balloon.x), by = Math.round(y);
-  ctx.globalAlpha = Math.min(1, balloon.inT * 1.6);        // fades in while drifting up
   // envelope: dark silhouette rim, bright body, sheen, taper + knot
   ctx.fillStyle = P.c2;
   ctx.fillRect(bx-5, by-7, 10, 10); ctx.fillRect(bx-6, by-6, 12, 8); ctx.fillRect(bx-4, by-8, 8, 12);
@@ -2408,7 +2414,6 @@ function drawBalloon(cy) {
   const gx = bx + Math.round(sway * 2), gy = by + 16;
   pixDisc(gx, gy, 6, P.c2); pixDisc(gx, gy, 5, '#141022');
   drawIcon(balloon.type, gx-4, gy-4, true);
-  ctx.globalAlpha = 1;
 }
 const MASCOT_BODY = '#FFE7A8', MASCOT_SHADE = '#E8B860';
 function drawMascot(cx, topScreenY) {
