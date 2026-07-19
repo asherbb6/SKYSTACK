@@ -1936,6 +1936,25 @@ check('v115 reveal is wired off goT with a reduceMotion instant path and no alph
   /if \(state === 'gameover'\) goT \+= dt;/.test(src) &&
   /overLock = 40; goT = 0;/.test(src) &&
   /ctx\.globalAlpha = 1;\s+\/\/ reveal is transient/.test(src));
+
+// ---------- v116: accurate sky-map skies (SKY_STOPS, not the cycling skyColor) ----------
+check('v116 mapSkyRGB returns each biome\'s true sky: caves dark, surface a bright day-blue, space near-black', () => fresh.run(
+  '(() => {' +
+  ' if (typeof mapSkyRGB !== "function" || typeof sampleStops !== "function") return false;' +
+  ' const lum = c => c[0]*.299 + c[1]*.587 + c[2]*.114;' +
+  ' const caves = mapSkyRGB(TIERS[0].n*0.5, 0.5);' +                 // deep in the caves = dark
+  ' const surf  = mapSkyRGB((TIERS[0].n+TIERS[1].n)/2, 0.5);' +      // SURFACE = clear sunny day
+  ' const space = mapSkyRGB(TIERS[8].n + 10, 0.5);' +               // SPACE = near-black cosmos
+  ' return lum(surf) > lum(caves) && lum(surf) > lum(space) && surf[2] > surf[0] && space.every(ch => ch < 40);' +
+  ' })()') === true);
+check('v116 biome sky gradient is lighter at the horizon (v=1) than the zenith (v=0)', () => fresh.run(
+  '(() => { const lum = c => c[0]*.299+c[1]*.587+c[2]*.114; const top = sampleStops(SKY_STOPS[1], 0), bot = sampleStops(SKY_STOPS[1], 1); return lum(bot) > lum(top); })()') === true);
+check('v116 sky map is monotonic-ish darkening past the day tiers (jet stream brighter than orbit)', () => fresh.run(
+  '(() => { const lum = c => c[0]*.299+c[1]*.587+c[2]*.114; return lum(mapSkyRGB(TIERS[4].n, 0.5)) > lum(mapSkyRGB(TIERS[9].n, 0.5)); })()') === true);
+check('v116 the map backdrop + postcards use SKY_STOPS, not the cycling skyColor', () =>
+  /const sky = mapSkyRGB\(blocksAt\(y2\), 0\.5\)/.test(src) &&
+  /const stops = SKY_STOPS\[isGate \? TIERS\.length - 1 : k\]/.test(src) &&
+  /const s = sampleStops\(stops, b \/ h\)/.test(src));
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -1961,7 +1980,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v115', () => /const CACHE = 'skystack-v115'/.test(sw));
+check('sw.js cache bumped to v116', () => /const CACHE = 'skystack-v116'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

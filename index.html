@@ -2797,6 +2797,27 @@ function drawBiomeSky(cy, h) {
   if (f > 0) skyWash(SKY_STOPS[i + 1], f);
   drawSun(h);
 }
+// ---- accurate Sky-Map skies ----
+// The Sky Map used to paint its backdrop + postcards with skyColor(), which CYCLES (period ~216
+// blocks) and doesn't line up with the biome tiers — so each stage row showed an arbitrary slice of
+// a repeating rainbow. These sample the SAME SKY_STOPS the real in-run sky uses, so every stage on
+// the map reads as its true biome (dark caves -> sunny day -> sunset -> black space).
+const hexTriplet = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+function sampleStops(stops, v) {          // colour of a SKY_STOPS gradient at vertical fraction v (0 top..1 bottom)
+  v = clamp(v, 0, 1);
+  let a = stops[0], b = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) if (v <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; break; }
+  const f = (v - a[0]) / ((b[0] - a[0]) || 1), ca = hexTriplet(a[1]), cb = hexTriplet(b[1]);
+  return [Math.round(ca[0]+(cb[0]-ca[0])*f), Math.round(ca[1]+(cb[1]-ca[1])*f), Math.round(ca[2]+(cb[2]-ca[2])*f)];
+}
+function mapSkyRGB(alt, v) {               // biome-accurate sky colour at an altitude, blended across the tier boundary
+  const sf = clamp(stageFloat(alt), 0, TIERS.length - 1);
+  const i = Math.min(sf | 0, TIERS.length - 2), f = sf - i;
+  const a = sampleStops(SKY_STOPS[i], v);
+  if (f <= 0) return a;
+  const b = sampleStops(SKY_STOPS[i + 1], v);
+  return [Math.round(a[0]+(b[0]-a[0])*f), Math.round(a[1]+(b[1]-a[1])*f), Math.round(a[2]+(b[2]-a[2])*f)];
+}
 // the sun: high & white on the ground, sinking huge and orange into the sunset, gone by night
 function drawSun(h) {
   const vis = clamp((108 - h) / 24, 0, 1); if (vis <= 0.02) return;
@@ -5060,10 +5081,10 @@ function mapScene(k, isGate, champ, x, y, w, h, ph) {
     return;
   }
   // ---- sky gradient (all tiers above ground + the gate) ----
-  const altN = isGate ? TIERS[TIERS.length-1].n + 40 : TIERS[k].n;
-  const prevN = isGate ? TIERS[TIERS.length-1].n : (k > 0 ? TIERS[k-1].n : 0);
+  // the card's OWN biome sky (SKY_STOPS), zenith (darker) at top -> horizon (lighter) at the base
+  const stops = SKY_STOPS[isGate ? TIERS.length - 1 : k];
   for (let b = 0; b < h; b += 2) {
-    const s = skyColor(prevN + (1 - b/h) * (altN - prevN));
+    const s = sampleStops(stops, b / h);
     R(0, b, w, 2, 'rgb('+s[0]+','+s[1]+','+s[2]+')');
   }
   if (k === 1) {                                             // SURFACE: sun + rolling meadow hills
@@ -5166,9 +5187,10 @@ function renderSkyMap() {
     const i = Math.floor(k), f = k - i;
     return bl(i) + (bl(i + 1) - bl(i)) * f;
   };
-  // themed backdrop: the actual in-game skies, anchored to the stage rows
+  // themed backdrop: the actual in-game biome skies (SKY_STOPS), anchored to the stage rows —
+  // a continuous, accurate gradient down the climb, not the old cycling skyColor rainbow
   for (let y2 = 0; y2 < H; y2 += 3) {
-    const sky = skyColor(blocksAt(y2));
+    const sky = mapSkyRGB(blocksAt(y2), 0.5);
     ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')';
     ctx.fillRect(0, y2, W, 3);
   }
