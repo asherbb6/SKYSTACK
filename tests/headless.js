@@ -2065,6 +2065,31 @@ check('v121 the squash render uses squashPow with an overshoot curve, still redu
   /const s = squashPow \* Math\.exp\(-5\*t\) \* Math\.cos\(t\*7\);/.test(src) &&
   /if \(isTop && squash>0 && !reduceMotion\)/.test(src) &&
   /function landFx\(w\)/.test(src));
+check('v121 topple tumbles the whole visible tower as debris and hides exactly those, blocks intact', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun();' +
+    ' for(let i=0;i<30;i++) blocks.push({x:W/2-48,w:96,col:{h:0,s:0,l:50}});' +
+    ' cameraY = towerTopY() - (H - 100); const len0 = blocks.length, deb0 = debris.length;' +
+    ' balance = TOPPLE + 5; gameOver("topple");' +
+    ' const spawned = debris.length - deb0;' +
+    ' if (blocks.length !== len0) return "blocks.length changed: " + blocks.length + " vs " + len0;' +
+    ' if (spawned <= 6) return "not deeper than the old top-6: " + spawned;' +          // the whole VISIBLE tower, > the old fixed 6
+    ' if (spawned >= len0) return "tumbled beyond the visible set: " + spawned;' +      // only the on-screen blocks
+    ' if (toppleHideTop !== spawned) return "hideTop " + toppleHideTop + " != spawned " + spawned;' +
+    ' return true; })()') === true;
+});
+check('v121 reduceMotion topple stays calm (tumbles the top ~6) and reset clears the state', () => {
+  const g = makeGame(undefined, true);   // reduceMotion
+  const calm = g.run('(() => { mode="endless"; resetRun(); for(let i=0;i<30;i++) blocks.push({x:W/2-48,w:96,col:{h:0,s:0,l:50}});' +
+    ' cameraY = towerTopY() - (H - 100); balance = TOPPLE + 5; gameOver("topple"); return toppleHideTop; })()');
+  if (!(calm > 0 && calm <= 6)) return 'reduceMotion not calm: ' + calm;
+  const cleared = g.run('(() => { resetRun(); return toppleHideTop === 0 && squashPow === 0; })()');
+  return cleared === true ? true : 'resetRun did not clear topple state';
+});
+check('v121 debris renders in the block skin (drawBlock), not a flat hsl fill', () =>
+  /drawBlock\(-Math\.round\(d\.w\/2\), -Math\.round\(d\.h\/2\), Math\.round\(d\.w\), Math\.round\(d\.h\), d\.col, false, 0, sstyle\)/.test(src) &&
+  !/ctx\.fillStyle='hsl\('\+d\.col\.h\+',65%,48%\)'/.test(src) &&
+  /if \(toppleHideTop>0 && i >= blocks\.length - toppleHideTop\)/.test(src));
 
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
