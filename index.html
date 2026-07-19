@@ -1556,10 +1556,20 @@ function drop() {
   if (!slider || dropPending > 0) return;
   dropPending = BALANCE_REGISTRY.drop.graceFrames;     // ~85ms grace: the block keeps sliding briefly
 }
+// v125: the wind pushes a falling block sideways. Acceleration, not a constant slide — the block
+// starts falling straight, bends into the gust, and is moving sideways fastest as it lands. Uses the
+// wind the game already simulates (str already carries the biome's MATERIALS[i].wind exposure), so
+// there is no new per-biome knob and NO new randomness (DAILY stays bit-identical for its seed).
+const DRIFT_ACCEL = 0.6;
+function driftForce() {
+  if (!wind) return 0;
+  const env = Math.sin(Math.min(wind.t/wind.dur, 1) * Math.PI);
+  return wind.dir * wind.str * env * DRIFT_ACCEL * activeDifficulty().drift;
+}
 function releaseBlock() {
   if (!slider) return;
   // launch with downward velocity so the tap reads as instant, not delayed
-  faller = { x: slider.x, w: slider.w, y: slider.y, vy: dropPhysicsFor(tier).initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
+  faller = { x: slider.x, x0: slider.x, w: slider.w, y: slider.y, vx: 0, vy: dropPhysicsFor(tier).initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
   slider = null; state = 'dropping';
   if (tutStep === 0) tutStep = 1;
 }
@@ -2476,6 +2486,7 @@ function update(dt) {
   }
   if (faller && state === 'dropping') {
     faller.vy += BALANCE_REGISTRY.drop.gravity*matAt(tier).grav*dt; faller.y += faller.vy*dt;   // v123: biome gravity (== dropPhysicsFor(tier).gravity, inlined to keep this hot path allocation-free)
+    faller.vx = (faller.vx || 0) + driftForce()*dt; faller.x += faller.vx*dt;                   // v125: wind drift (|| 0 — hand-built fallers in the suite have no vx, and NaN would silently fail every overlap)
     if (!reduceMotion && tick % 2 < dt) trails.push({ x:faller.x, y:faller.y, w:faller.w, life:.6, h:faller.col.h });
     if (faller.y >= towerTopY() - BH) { faller.y = towerTopY() - BH; land(); }
   }

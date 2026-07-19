@@ -2365,6 +2365,93 @@ check('v124 the report states which difficulty it modelled', () =>
   fresh.run('levelBalanceReport(4,"assisted",.35,"hard").difficulty === "hard" && ' +
     'levelBalanceReport(4,"assisted",.35).difficulty === "medium"'));
 
+// ---------- v125: wind-drift trajectory (falling blocks get a lateral path) ----------
+check('v125 with no wind a drop is byte-identical to v124 — no lateral movement at all', () => {
+  const g = makeGame();
+  return g.run('(() => { setDifficulty("endless","hard"); mode="endless"; resetRun(); state="playing";' +
+    ' wind = null;' +
+    ' spawnSlider(); const x0 = slider.x; releaseBlock(); state="dropping";' +
+    ' for (let i=0;i<4;i++) update(1);' +
+    ' const moved = Math.abs(faller.x - x0);' +
+    ' setDifficulty("endless","medium");' +
+    ' return moved === 0 ? true : "drifted with no wind: " + moved; })()') === true;
+});
+check('v125 a gust bends the fall into a real curve (lateral speed grows as it falls)', () => {
+  const g = makeGame();
+  return g.run('(() => { setDifficulty("endless","medium"); mode="endless"; resetRun(); state="playing";' +
+    ' tier = 5;' +
+    ' wind = { dir:1, str:0.7, dur:200, t:100 };' +
+    ' spawnSlider(); const x0 = slider.x; releaseBlock(); state="dropping";' +
+    ' update(1); const v1 = faller.vx;' +
+    ' update(1); const v2 = faller.vx;' +
+    ' const drifted = faller.x - x0;' +
+    ' setDifficulty("endless","medium");' +
+    ' if (!(v2 > v1 && v1 > 0)) return "not accelerating: v1=" + v1 + " v2=" + v2;' +
+    ' if (!(drifted > 0)) return "did not drift downwind: " + drifted;' +
+    ' return true; })()') === true;
+});
+check('v125 drift follows the wind direction', () => {
+  const g = makeGame();
+  const drift = (dir) => g.run('(() => { mode="endless"; resetRun(); state="playing"; tier = 5;' +
+    ' wind = { dir:' + dir + ', str:0.7, dur:200, t:100 };' +
+    ' spawnSlider(); const x0 = slider.x; releaseBlock(); state="dropping";' +
+    ' for (let i=0;i<4;i++) update(1); return faller.x - x0; })()');
+  return drift(1) > 0 && drift(-1) < 0;
+});
+check('v125 EASY drifts less than MEDIUM, MEDIUM less than HARD, for the same gust', () => {
+  const g = makeGame();
+  const drift = (id) => g.run('(() => { setDifficulty("endless","' + id + '"); mode="endless"; resetRun();' +
+    ' state="playing"; tier = 5; wind = { dir:1, str:0.7, dur:200, t:100 };' +
+    ' spawnSlider(); const x0 = slider.x; releaseBlock(); state="dropping";' +
+    ' for (let i=0;i<4;i++) update(1); return faller.x - x0; })()');
+  const e = drift('easy'), m = drift('medium'), h = drift('hard');
+  g.run('setDifficulty("endless","medium");');
+  return e < m && m < h && e > 0;
+});
+check('v125 a hand-built faller with no vx still lands correctly (no NaN poisoning)', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing"; tier = 5;' +
+    ' wind = { dir:1, str:0.7, dur:200, t:100 };' +
+    ' const top = blocks[blocks.length-1];' +
+    ' faller = { x:top.x, y:towerTopY()-BH, w:top.w, col:blockCol(blocks.length), golden:false };' +
+    ' slider = null; state = "dropping"; update(1);' +
+    ' if (!isFinite(faller.x)) return "faller.x went non-finite: " + faller.x;' +
+    ' land();' +
+    ' return state === "playing" ? true : "hand-built faller failed to land: " + state; })()') === true;
+});
+// airtime and exposure are separate levers: hold the wind IDENTICAL and vary only the biome
+check('v125 SPACE low-g is airborne longer, so the same wind carries it further than normal gravity', () => {
+  const g = makeGame();
+  const fall = (ti) => JSON.parse(g.run('(() => { mode="endless"; resetRun(); state="playing"; tier = ' + ti + ';' +
+    ' wind = { dir:1, str:0.5, dur:200, t:100 };' +
+    ' spawnSlider(); const x0 = slider.x; releaseBlock(); state="dropping";' +
+    ' let f=0, d=0; while (state === "dropping" && f < 60) { update(1); f++; if (faller) d = faller.x - x0; }' +
+    ' return JSON.stringify([d, f]); })()'));
+  const space = fall(8), stars = fall(10);
+  // NB: return a BOOLEAN — check() treats any truthy value as a pass, so a diagnostic string would
+  // silently make this test pass before the feature exists (it did, on the first run).
+  if (!(space[1] > stars[1])) { console.error('  SPACE not airborne longer: ' + space[1] + ' vs ' + stars[1]); return false; }
+  if (!(space[0] > stars[0])) { console.error('  SPACE did not drift further: ' + space[0] + ' vs ' + stars[0]); return false; }
+  return true;
+});
+check('v125 biome exposure still matters: the same wind moves a JET STREAM block more than a CAVES one', () => {
+  const g = makeGame();
+  const drift = (ti) => g.run('(() => { mode="endless"; resetRun(); state="playing"; tier = ' + ti + ';' +
+    ' wind = { dir:1, str:(0.16+0.30)*MATERIALS[' + ti + '].wind, dur:200, t:100 };' +
+    ' spawnSlider(); const x0 = slider.x; releaseBlock(); state="dropping";' +
+    ' let f=0, d=0; while (state === "dropping" && f < 60) { update(1); f++; if (faller) d = faller.x - x0; }' +
+    ' return d; })()');
+  const caves = drift(0), jet = drift(5);
+  return jet > caves * 2 && caves >= 0;
+});
+check('v125 PRACTICE never drifts (its mode config spawns no wind at all)', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="practice"; resetRun(); state="playing";' +
+    ' if (curMode().wind !== false) return "practice mode config changed — it should be wind:false";' +
+    ' for (let i=0;i<900;i++) update(1);' +
+    ' return wind === null ? true : "wind spawned in PRACTICE"; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
