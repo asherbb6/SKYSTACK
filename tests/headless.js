@@ -2047,6 +2047,25 @@ check('v120 a locked, unaffordable shop item shows a have/cost gauge label; affo
   return unlock === true ? true : 'affordable did not show UNLOCK (or still showed gauge)';
 });
 
+// ---------- v121: physics feel phase 1 (weight & juice) — render/fx only ----------
+check('v121 landFx sets squash + a weight-scaled squashPow; a placed block is logic-identical to before', () => {
+  const setup = 'mode="endless"; resetRun(); blocks=[{x:W/2-48,w:96,col:{h:0,s:0,l:50}}]; tier=0;' +
+    ' faller={x:W/2-48,w:96,y:towerTopY()-BH,vy:0,col:{h:0,s:0,l:50},golden:false}; state="dropping"; land();';
+  const g = makeGame();               // reduceMotion=false
+  const a = g.run('(() => {' + setup + ' return JSON.stringify({n:blocks.length, x:blocks[1].x, w:blocks[1].w, bal:balance, sq:squash, pow:squashPow}); })()');
+  const gr = makeGame(undefined, true);   // reduceMotion=true — logic MUST match
+  const b = gr.run('(() => {' + setup + ' return JSON.stringify({n:blocks.length, x:blocks[1].x, w:blocks[1].w, bal:balance, sq:squash, pow:squashPow}); })()');
+  const A = JSON.parse(a), B = JSON.parse(b);
+  if (!(A.n === 2 && A.sq === 1 && A.pow > 0 && A.pow <= 1)) return 'landFx not applied: ' + a;
+  return (A.x === B.x && A.w === B.w && A.bal === B.bal && A.n === B.n) ? true
+    : 'reduceMotion changed placement logic: ' + a + ' vs ' + b;
+});
+check('v121 the squash render uses squashPow with an overshoot curve, still reduceMotion-gated', () =>
+  /const t = 1 - squash;/.test(src) &&
+  /const s = squashPow \* Math\.exp\(-5\*t\) \* Math\.cos\(t\*7\);/.test(src) &&
+  /if \(isTop && squash>0 && !reduceMotion\)/.test(src) &&
+  /function landFx\(w\)/.test(src));
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +

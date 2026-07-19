@@ -1056,7 +1056,7 @@ let cameraY = 0, cameraTarget = 0, camVel = 0, shake = 0, fadeT = 0;
 let paused = false;
 let dropPending = 0;   // tiny grace window between tap and release (people pre-tap expecting delay)
 let combo = 0, maxCombo = 0, hueBase = Math.random() * 360;
-let squash = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
+let squash = 0, squashPow = 0, toppleHideTop = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
 let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, runSkybreaks = 0, coinPop = 0, tick = 0;
 let score = 0;
 let notes = [], curNote = null;   // one-at-a-time top-middle notification queue (v105)
@@ -1414,7 +1414,7 @@ function resetRun() {
   initChallengeRuntime();
   initModifierRuntime();
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
-  balance = 0; swayX = 0; paused = false; dropPending = 0;
+  balance = 0; swayX = 0; paused = false; dropPending = 0; squashPow = 0; toppleHideTop = 0;
   timeLeft = activeChallenge()&&activeChallenge().duration?activeChallenge().duration:(m.time || 0);
   PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
   assist = runContext.difficultyProfile.startingAssist;
@@ -1587,6 +1587,12 @@ function popBalloon() {
   sfx.pop(); balloon = null;
 }
 
+// v121: one impact model — block width + current combo set how deep the top block squashes on landing
+// (render-only; see the squash render). Heavier/deep-combo landings squash + spring more.
+function landFx(w) {
+  squash = 1;
+  squashPow = clamp(0.42 + (w / BASE_W) * 0.30 + Math.min(combo, 10) * 0.028, 0.42, 1);
+}
 function land() {
   const top = blocks[blocks.length - 1], f = faller;
   const oL = Math.max(f.x, top.x), oR = Math.min(f.x + f.w, top.x + top.w), overlap = oR - oL;
@@ -1604,7 +1610,7 @@ function land() {
       blocks.push({ x: nx, w: nw, col: f.col });
       floaters.push({ text: m.fail ? 'SHIELD!' : 'SAVED', x:W/2, y:towerTopY()-BH, vy:-.4, life:1.4, color:'#5EC8F2' });
       for (let i = 0; i < 20; i++) particles.push({ x:nx+nw/2, y:towerTopY()-BH, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life:1, color:'#5EC8F2' });
-      sfx.shield(); shake = Math.max(shake, 3); faller = null; squash = 1;
+      sfx.shield(); shake = Math.max(shake, 3); faller = null; landFx(nw);
       cameraTarget = towerTopY() - (H - 100); state = 'playing'; afterPlace(f, false, nx+nw/2, {perfect:false,cut:false,miss:true,center:nx+nw/2}); spawnSlider(); return;
     }
     if (activeChallenge()&&activeChallenge().failOnImperfect) { setExpr('sad',999); gameOver('precision'); return; }
@@ -1633,7 +1639,7 @@ function land() {
     if (combo > 1) floaters.push({ text:'X'+combo, x:W/2, y:towerTopY()-BH+6, vy:-.4, life:1.1, color:'#FFF6E8' });
     if (streakMult > 1) floaters.push({ text:'COINS X'+streakMult, x:W/2, y:towerTopY()-BH+16, vy:-.42, life:1.2, color:'#FFE28A' });
     burst(nx+nw/2, towerTopY()-BH, 14+Math.min(combo,10), f.col, true);
-    shake = Math.max(shake, 2);
+    shake = Math.max(shake, clamp(2 + Math.min(combo,10)*0.22 + (nw/BASE_W - 1)*2, 2, 5));   // v121: weight/combo
     mascot.hop = 1; setExpr(fever || combo >= 5 ? 'wow' : 'happy', 24);
     if (canSpawnPickups(runContext) && combo % 5 === 0) {
       const g = pick(GIFT_POOL);
@@ -1662,11 +1668,12 @@ function land() {
     debris.push({ x:cutX, y:f.y, w:cutW, h:BH, vx:offset>0?.9:-.9, vy:-.4, rot:0, vr:(offset>0?1:-1)*(.06+Math.random()*.08), col:f.col });
     sfx.land(); sfx.slice(); setExpr('normal', 12);
     burst(offset>0?oR:f.x, towerTopY()-BH/2, 8, f.col, false);
-    shake = Math.max(shake, Math.min(cutW*.18, 3.5));
+    shake = Math.max(shake, clamp(Math.min(cutW*.18, 3.5) + (nw/BASE_W - 1)*1.5, 1.5, 4.5));   // v121: weight
   }
-  if (!reduceMotion) for (let k = 0; k < 6; k++) {   // landing dust at the block's feet
+  const dust = reduceMotion ? 0 : Math.round(6 + squashPow * 6);   // v121: heavier landings kick more dust
+  for (let k = 0; k < dust; k++) {   // landing dust at the block's feet
     const sideX = (k % 2 ? nx : nx + nw) + (Math.random()-.5)*4;
-    particles.push({ x: sideX, y: towerTopY() - 2, vx: (k%2?-1:1)*(.3+Math.random()*.7), vy: -Math.random()*.5, life: .55, color: 'rgba(255,246,232,0.75)' });
+    particles.push({ x: sideX, y: towerTopY() - 2, vx: (k%2?-1:1)*(.3+Math.random()*.7)*(1+squashPow*.5), vy: -Math.random()*.5*(1+squashPow*.5), life: .55, color: 'rgba(255,246,232,0.75)' });
   }
   if (f.golden) { addCoins(10, nx + nw/2, towerTopY()-BH); floaters.push({ text:'GOLDEN X5', x:W/2, y:towerTopY()-BH-16, vy:-.4, life:1.3, color:'#FFE28A' }); sfx.golden(); }
   if (widenNext) { const grow2 = Math.min(14, BASE_W - nw); if (grow2 > 0) { nx -= grow2/2; nw += grow2; nx = clamp(nx, 0, W - nw); } widenNext = false; }
@@ -1682,13 +1689,13 @@ function land() {
     shake = Math.max(shake, reduceMotion ? 3 : 6);
     mascot.hop = 1; setExpr('wow', 40);
     sfx.skybreak(); hapt([30, 30, 60]);
-    faller = null; squash = 1; cameraTarget = towerTopY() - (H - 100); state = 'playing';
+    faller = null; landFx(BASE_W); cameraTarget = towerTopY() - (H - 100); state = 'playing';
     afterPlace(f, false, W/2, {perfect:isPerfect,cut:!isPerfect,miss:false,center:W/2});
     spawnSlider(); return;
   }
 
   blocks.push({ x:nx, w:nw, col:f.col });
-  faller = null; squash = 1; cameraTarget = towerTopY() - (H - 100); state = 'playing';
+  faller = null; landFx(nw); cameraTarget = towerTopY() - (H - 100); state = 'playing';
   afterPlace(f, true, nx + nw/2, {perfect:isPerfect,cut:!isPerfect,miss:false,center:nx+nw/2});
   if (Math.abs(balance) > TOPPLE) {
     if (m.practice) {
@@ -1847,7 +1854,7 @@ function doRevive() {
   if (!reviveOffered || coins < reviveCost()) { sfx.deny(); return; }
   transactCoins(-reviveCost(),false);
   reviveUsed = true; reviveOffered = false;
-  debris = []; balance = 0; swayX = 0; wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;   // scrub the death state
+  debris = []; balance = 0; swayX = 0; wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames; toppleHideTop = 0; squashPow = 0;   // scrub the death state
   faller = null; dropPending = 0; overCause = ''; overLock = 0; shake = 0;
   shield = Math.min(shield + 1, 2);            // a shield so the comeback can breathe
   mascot.expr = 'normal'; mascot.exprT = 0;
@@ -4443,7 +4450,11 @@ function renderWorld(cy, shX) {
   for (let i=0;i<blocks.length;i++) {
     const b = blocks[i]; let y = Math.round(GROUND_Y-(i+1)*BH-cy), bh=BH, bw=b.w, bx=b.x;
     const isTop = i === blocks.length-1;
-    if (isTop && squash>0 && !reduceMotion) { const sq=Math.sin(squash*Math.PI)*.35; bh=Math.round(BH*(1-sq*.4)); bw=Math.round(b.w*(1+sq*.25)); bx=b.x-(bw-b.w)/2; y+=BH-bh; }
+    if (isTop && squash>0 && !reduceMotion) {                 // v121: compress -> overshoot -> settle, depth = squashPow
+      const t = 1 - squash;
+      const s = squashPow * Math.exp(-5*t) * Math.cos(t*7);   // +s squashes (short+wide), -s stretches (tall+thin)
+      bh=Math.round(BH*(1 - s*0.42)); bw=Math.round(b.w*(1 + s*0.28)); bx=b.x-(bw-b.w)/2; y+=BH-bh;
+    }
     if (isTop) { topScreenX = b.x + b.w/2; topScreenY = Math.round(GROUND_Y-(i+1)*BH-cy); }
     // checkpoint structure and selected cosmetic Base are independent immutable run-start fields
     const structure=runContext?runContext.startingStructureSnapshot:{kind:'ground',region:0};
