@@ -900,18 +900,21 @@ reconcileCollections(true);
 prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed unlocks from lifetime best
 // per-region block material — affects FEEL (fair + subtle, tune freely):
 // spd = slider-speed multiplier, wob = drift-wobble amount, wind = local wind exposure.
+// v117: wob is 0 everywhere — the high-altitude sin() drift wobble ("slower/fast/slower/fast") is
+// gone. Per-biome SPEED (spd) differences stay (COSMIC 0.86 = a floaty slow drift, etc.); the field
+// is kept as a reserved knob for the upcoming per-environment physics pass (low gravity, etc.).
 const MATERIALS = [
-  { name:'STONE',  spd:0.90, wob:0,    wind:0.3 },   // 0 CAVES        — heavy, steady, sheltered
-  { name:'WOOD',   spd:1.00, wob:0,    wind:0.8 },   // 1 SURFACE
-  { name:'WOOD',   spd:1.00, wob:0,    wind:0.9 },   // 2 TREETOPS
-  { name:'BREEZE', spd:1.02, wob:0,    wind:1.0 },   // 3 LOWER SKY    — open air above the canopy
-  { name:'CLOUD',  spd:1.00, wob:0.18, wind:1.1 },   // 4 CLOUD NINE   — wobbly footing
-  { name:'STEEL',  spd:1.06, wob:0,    wind:1.6 },   // 5 JET STREAM   — fast, windy corridor
-  { name:'GLASS',  spd:1.05, wob:0,    wind:1.3 },   // 6 STRATOSPHERE
-  { name:'ICE',    spd:1.10, wob:0,    wind:1.0 },   // 7 AURORA       — quick, slick
-  { name:'COSMIC', spd:0.86, wob:0.22, wind:0.4 },   // 8 SPACE        — floaty, low-gravity
-  { name:'COSMIC', spd:0.86, wob:0.22, wind:0.4 },   // 9 ORBIT
-  { name:'STAR',   spd:0.92, wob:0.15, wind:0.5 }    // 10 THE STARS
+  { name:'STONE',  spd:0.90, wob:0, wind:0.3 },   // 0 CAVES        — heavy, steady, sheltered
+  { name:'WOOD',   spd:1.00, wob:0, wind:0.8 },   // 1 SURFACE
+  { name:'WOOD',   spd:1.00, wob:0, wind:0.9 },   // 2 TREETOPS
+  { name:'BREEZE', spd:1.02, wob:0, wind:1.0 },   // 3 LOWER SKY    — open air above the canopy
+  { name:'CLOUD',  spd:1.00, wob:0, wind:1.1 },   // 4 CLOUD NINE
+  { name:'STEEL',  spd:1.06, wob:0, wind:1.6 },   // 5 JET STREAM   — fast, windy corridor
+  { name:'GLASS',  spd:1.05, wob:0, wind:1.3 },   // 6 STRATOSPHERE
+  { name:'ICE',    spd:1.10, wob:0, wind:1.0 },   // 7 AURORA       — quick, slick
+  { name:'COSMIC', spd:0.86, wob:0, wind:0.4 },   // 8 SPACE        — floaty, slow drift
+  { name:'COSMIC', spd:0.86, wob:0, wind:0.4 },   // 9 ORBIT
+  { name:'STAR',   spd:0.92, wob:0, wind:0.5 }    // 10 THE STARS
 ];
 const BALANCE_REGISTRY = deepFreeze({
   physics:{ blockHeight:14, baseWidth:96, metersPerBlock:3, topple:34, perfectPx:2.6 },
@@ -2316,8 +2319,8 @@ function update(dt) {
   }
   if (slider && state === 'playing') {
     const feverSlow = fever ? 0.78 : 1;
-    const wobF = slider.wob ? (1 + Math.sin(tick * 0.22) * slider.wob) : 1;   // cloud/cosmic footing wobbles the drift speed
-    slider.x += slider.dir * slider.speed * wobF * feverSlow * (rushT > 0 ? BALANCE_REGISTRY.balloon.rushMul : 1) * dt;
+    // v117: constant drift — the old high-altitude sin() speed wobble is gone (fever/rush still scale it)
+    slider.x += slider.dir * slider.speed * feverSlow * (rushT > 0 ? BALANCE_REGISTRY.balloon.rushMul : 1) * dt;
     if (wind) { const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI); slider.x += wind.dir * wind.str * env * dt; }
     const SR = slideRange();
     const min = SR.l - slider.w*.55, max = SR.r - slider.w*.45;
@@ -4708,22 +4711,24 @@ function skyMapNodes() {
   const viewTop = MAP_HEAD + 4, viewBot = H - MAP_FOOT - 4;
   const colW = Math.min(W - 8, 300), colX = Math.round((W - colW) / 2);
   const n = TIERS.length, midX = Math.round(W / 2);
-  const contentH = (n + 2) * MAP_ROW;                       // ground + levels + gate
+  const contentH = (n + 1) * MAP_ROW;                       // levels + gate — the first card owns the very bottom now
   mapScrollMax = Math.max(0, contentH - (viewBot - viewTop));
   mapScroll = clamp(mapScroll, 0, mapScrollMax);
-  const base = mapScrollMax > 0
-    ? viewBot - 16 + Math.round(mapScroll)
-    : Math.round((viewTop + viewBot) / 2 + contentH / 2) - 16;
+  const bottomPad = (MAP_CARD_H >> 1) + 4;                  // the first card sits snug at the bottom, fully inside the clip
+  const firstY = mapScrollMax > 0                           // CAVES (level 1) at the very bottom; higher tiers stack upward
+    ? viewBot - bottomPad + Math.round(mapScroll)
+    : Math.round((viewTop + viewBot) / 2 + contentH / 2) - bottomPad;
   const pts = [];
-  for (let i = 0; i < n; i++) pts.push({ x: midX, y: base - (i + 1) * MAP_ROW });
-  return { pts, start: { x: midX, y: base }, gate: { x: midX, y: base - (n + 1) * MAP_ROW },
+  for (let i = 0; i < n; i++) pts.push({ x: midX, y: firstY - i * MAP_ROW });
+  // start.y stays one row below the first card — the altitude-0 anchor for the backdrop sky (off-screen)
+  return { pts, start: { x: midX, y: firstY + MAP_ROW }, gate: { x: midX, y: firstY - n * MAP_ROW },
            colX, colW, midX, viewTop, viewBot };
 }
 function openSkyMap() {   // focus the view on the next goal
   skyMap = true; mapDrag = null; mapScroll = 0;
   selLevel = Math.min(prog, TIERS.length - 1);
   const L = skyMapNodes();                                  // computes mapScrollMax
-  const k = Math.min(prog, TIERS.length) + 1;               // row index of the next goal / gate
+  const k = Math.min(prog, TIERS.length);                   // row index of the next goal / gate (first card owns the bottom)
   mapScroll = clamp(k * MAP_ROW - (L.viewBot - L.viewTop) / 2 + MAP_ROW, 0, mapScrollMax);
 }
 // a tap (pointerup without drag) on the open map: header/X closes; a badge selects,
@@ -5202,14 +5207,8 @@ function renderSkyMap() {
     ctx.globalAlpha = a * 0.10; ctx.fillStyle = i % 2 ? '#C77EFF' : '#5E8CFF';
     pixDisc(nx, ny, 16, ctx.fillStyle); pixDisc(nx+8, ny+4, 12, ctx.fillStyle);
   }
-  // far haze clouds drift behind everything at a slow parallax rate
-  for (let i = 0; i < 6; i++) {
-    const vy = (((i*97 + 30) + mapScroll*0.4) % (H+100) + H+100) % (H+100) - 50;
-    if (vy < -18 || vy > H+18) continue;
-    const cxp = ((i*71 + ph*(.06 + i*.02)) % (W+70) + W+70) % (W+70) - 35;
-    ctx.globalAlpha = 0.06; ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(cxp-9, vy, 18, 3); ctx.fillRect(cxp-5, vy-2, 12, 2); ctx.fillRect(cxp+3, vy+2, 8, 1);
-  }
+  // v117: the barely-visible full-screen "far haze clouds" are gone — they smudged over the dark
+  // cave bottom where clouds make no sense. Per-biome cloud life still lives in drawMapDecor.
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(11,14,26,0.5)'; ctx.fillRect(0, 0, W, H);   // night veil for readability
   // starfield fades in with altitude, parallaxing slower than the trail; a few twinkle in color
@@ -5248,8 +5247,6 @@ function renderSkyMap() {
   const champ = prog >= TIERS.length;
   const nextByHeight = bestHeight > 0 ? TIERS.findIndex(t => bestHeight < t.n) : -1;
   const bestCard = bestHeight <= 0 ? -1 : nextByHeight === -1 ? TIERS.length : nextByHeight;
-  if (L.start.y > L.viewTop - 6 && L.start.y < L.viewBot + 12)
-    txt('GROUND', L.midX, L.start.y - 3, 1, 'rgba(255,246,232,0.4)', 'center');
   for (let k = TIERS.length; k >= 0; k--) {
     const isGate = k === TIERS.length;
     const pt = isGate ? L.gate : L.pts[k];

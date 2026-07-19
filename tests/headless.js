@@ -1955,6 +1955,27 @@ check('v116 the map backdrop + postcards use SKY_STOPS, not the cycling skyColor
   /const sky = mapSkyRGB\(blocksAt\(y2\), 0\.5\)/.test(src) &&
   /const stops = SKY_STOPS\[isGate \? TIERS\.length - 1 : k\]/.test(src) &&
   /const s = sampleStops\(stops, b \/ h\)/.test(src));
+
+// ---------- v117: sky-map bottom cleanup + no high-altitude drift wobble ----------
+check('v117 no biome wobbles the block drift any more (all MATERIALS.wob === 0)', () => fresh.run(
+  'MATERIALS.every(m => m.wob === 0)') === true);
+check('v117 per-biome drift SPEED still varies (COSMIC space drifts slower, JET STREAM faster)', () => fresh.run(
+  '(() => { const spd = MATERIALS.map(m => m.spd); return spd[8] < 1 && spd[5] > 1 && new Set(spd).size > 1; })()') === true);
+check('v117 the drift is constant — the sin() speed wobble is gone from the slider update', () =>
+  !/slider\.wob \? \(1 \+ Math\.sin/.test(src) && !/wobbles the drift speed/.test(src));
+check('v117 the Sky Map first card (CAVES) sits at the very bottom, fully inside the view', () => {
+  const g = makeGame();
+  return g.run('(() => { W=180;H=390;relayout(); skyMap=true; mapScroll=0; const L=skyMapNodes();' +
+    ' if (mapScrollMax <= 0) return "map not scrollable";' +
+    ' const bottom = L.pts[0].y + MAP_CARD_H/2;' +               // bottom edge of the first card
+    ' if (bottom > L.viewBot) return "first card clipped: "+bottom+" > "+L.viewBot;' +
+    ' if (bottom < L.viewBot - 10) return "first card not at the bottom: "+bottom+" vs "+L.viewBot;' +
+    ' return L.start.y - L.pts[0].y === MAP_ROW; })()') === true
+    ? true : g.run('(() => { W=180;H=390;relayout(); skyMap=true; mapScroll=0; const L=skyMapNodes(); return L.pts[0].y + MAP_CARD_H/2 + " / viewBot " + L.viewBot; })()');
+});
+check('v117 the map ground row is gone — no GROUND label, no full-screen haze clouds', () =>
+  !/txt\('GROUND', L\.midX/.test(src) && !/far haze clouds drift behind everything/.test(src) &&
+  /levels \+ gate — the first card owns the very bottom/.test(src));
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -1980,7 +2001,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v116', () => /const CACHE = 'skystack-v116'/.test(sw));
+check('sw.js cache bumped to v117', () => /const CACHE = 'skystack-v117'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
