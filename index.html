@@ -4689,7 +4689,7 @@ function renderPause() {
 // ---------- sky map (level select: one row per level, drag-scrolls, footer launches) ----------
 // list layout: one generous row per level on a straight climbing trail down a
 // centered column; the list drag-scrolls whenever it is taller than the screen
-const MAP_ROW = 64, MAP_CARD_H = 54, MAP_HEAD = 38, MAP_FOOT = 10;
+const MAP_ROW = 64, MAP_CARD_H = 54, MAP_HEAD = 38;
 // per-stage floating-island palette, index-aligned to the 11 TIERS
 // (cave rock, grass, grass, cloud, cloud, cloud, rock, ice, space-rock, metal, gold)
 const ISLES = [
@@ -4708,7 +4708,7 @@ const ISLES = [
 // v110: level CARDS — every node centers on midX (the old S-curve weave is gone); y stays
 // evenly spaced by altitude so scroll + progress math is unchanged
 function skyMapNodes() {
-  const viewTop = MAP_HEAD + 4, viewBot = H - MAP_FOOT - 4;
+  const viewTop = MAP_HEAD + 4, viewBot = H - 4;   // v118: no footer band — the first card sits ~flush at the very bottom
   const colW = Math.min(W - 8, 300), colX = Math.round((W - colW) / 2);
   const n = TIERS.length, midX = Math.round(W / 2);
   const contentH = (n + 1) * MAP_ROW;                       // levels + gate — the first card owns the very bottom now
@@ -5237,11 +5237,9 @@ function renderSkyMap() {
   // offscreen stage copy ghost through it on narrow phones.
   ctx.save();ctx.beginPath();ctx.rect(0,L.viewTop,W,L.viewBot-L.viewTop);ctx.clip();
   drawMapDecor(L, ph);   // birds, balloons, plane, aurora, galaxy, moon, planet — behind the cards
-  // column panel (kept): a soft dark surface behind the whole stack so the cards don't float
-  // over raw sky. v112: the edge highlight lines + the gold left-edge track are GONE — Asher:
-  // "remove the weird long vertical line on the left".
-  ctx.fillStyle = 'rgba(7,8,15,0.28)';
-  ctx.fillRect(L.colX - 6, L.viewTop, L.colW + 12, L.viewBot - L.viewTop);
+  // v118: the translucent backing panel behind the whole stack is GONE (Asher: "remove the weird
+  // translucent rectangle behind all of the cards"). Each card's own opaque frame carries it over
+  // the themed sky, so nothing floats.
   // v110: Extra Modes-style level cards over the themed sky. v100 rule kept: while a stage
   // is SELECTED its second line becomes the start-condition caption.
   const champ = prog >= TIERS.length;
@@ -5296,19 +5294,22 @@ function renderSkyMap() {
     if (bestCard === k && !sel) drawMascot(cx2 + cw2 - 16, cy2);
   }
   ctx.restore();
-  // header
-  ctx.fillStyle = 'rgba(11,14,26,0.96)'; ctx.fillRect(0, 0, W, MAP_HEAD);
-  ctx.fillStyle = 'rgba(255,246,232,0.12)'; ctx.fillRect(0, MAP_HEAD, W, 1);
+  // header — v118: the opaque header BAND is gone (Asher: "remove the weird top bar that looks/acts
+  // like the background"). The title / stars / hint / X now float straight over the themed sky, each
+  // carried by its own drop-shadow so they stay legible on bright and dark skies alike.
   txt('SKY MAP', W/2+1, 6, 2, 'rgba(0,0,0,0.5)', 'center');
   txt('SKY MAP', W/2, 5, 2, '#FFF6E8', 'center');
   // campaign mastery at a glance: total stars earned across the climb
   const starTot = levelStars.reduce((a,b)=>a+(b||0),0);
   const starLbl = 'STARS ' + starTot + '/' + TIERS.length*3;
   drawStarPix(9, 25, 1, true);
+  txt(starLbl, 17, 23, 1, 'rgba(0,0,0,0.5)', 'left');
   txt(starLbl, 16, 22, 1, '#FFD75E', 'left');
   const hint = W<220?'DRAG TO CLIMB':'CHOOSE YOUR PATH';
-  if (16 + starLbl.length*6-1 + 8 <= W-22 - (hint.length*6-1))   // v100: the hint yields to the stars label instead of colliding
-    txt(hint,W-22,22,1,'rgba(255,246,232,0.56)','right');
+  if (16 + starLbl.length*6-1 + 8 <= W-22 - (hint.length*6-1)) {   // v100: the hint yields to the stars label instead of colliding
+    txt(hint,W-21,23,1,'rgba(0,0,0,0.5)','right');
+    txt(hint,W-22,22,1,'rgba(255,246,232,0.66)','right');
+  }
   pixelFrame(W-18, 6, 13, 13, 'rgba(11,14,26,0.74)', 'rgba(255,246,232,0.26)', false);   // close box
   txt('X', W-12, 8, 1, 'rgba(255,246,232,0.85)', 'center');
   // v112: the slim scrollbar is hidden (Asher) — momentum glide + the card rhythm carry the

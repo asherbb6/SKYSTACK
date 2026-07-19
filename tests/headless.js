@@ -1878,7 +1878,7 @@ check('v110 shop INFO label yields to a long passive name on both detail rows', 
 // ---------- v111: sky map postcards + polish ----------
 check('v111 map rhythm: MAP_ROW 64 / MAP_CARD_H 54', () => fresh.run('MAP_ROW === 64 && MAP_CARD_H === 54'));
 check('v112 postcard SCENE painter replaces island-in-box; rail + scrollbar removed', () =>
-  /environment postcard/.test(src) && /function mapScene/.test(src) && /column panel/.test(src) &&
+  /environment postcard/.test(src) && /function mapScene/.test(src) &&
   !/progress rail/.test(src) && !/fillRect\(W - 3/.test(src) && !/drawIsland\(isGate/.test(src));
 check('v112 sky map scroll reversed to wheel-down = down the list, fed into momentum velocity', () =>
   /mapScrollV/.test(src) && /mapScrollV = clamp\(mapScrollV - e\.deltaY/.test(src));
@@ -1976,6 +1976,31 @@ check('v117 the Sky Map first card (CAVES) sits at the very bottom, fully inside
 check('v117 the map ground row is gone — no GROUND label, no full-screen haze clouds', () =>
   !/txt\('GROUND', L\.midX/.test(src) && !/far haze clouds drift behind everything/.test(src) &&
   /levels \+ gate — the first card owns the very bottom/.test(src));
+
+// ---------- v118: sky-map chrome cleanup (no header/footer bars, no card-backing panel) ----------
+check('v118 the opaque header band + its divider are gone (title/stars still drawn)', () =>
+  !/ctx\.fillRect\(0, 0, W, MAP_HEAD\)/.test(src) &&
+  !/ctx\.fillRect\(0, MAP_HEAD, W, 1\)/.test(src) &&
+  /txt\('SKY MAP', W\/2, 5, 2, '#FFF6E8', 'center'\)/.test(src));
+check('v118 the translucent card-backing panel is gone', () =>
+  !/column panel/.test(src) && !/ctx\.fillStyle = 'rgba\(7,8,15,0\.28\)'/.test(src) &&
+  !/L\.colW \+ 12, L\.viewBot - L\.viewTop/.test(src));
+check('v118 floating header text carries a drop-shadow for legibility over raw sky', () =>
+  /txt\(starLbl, 17, 23, 1, 'rgba\(0,0,0,0\.5\)', 'left'\)/.test(src) &&
+  /txt\(hint,W-21,23,1,'rgba\(0,0,0,0\.5\)','right'\)/.test(src));
+check('v118 no footer band — viewBot extends to H-4 and MAP_FOOT is retired', () => fresh.run(
+  '(() => { W=180;H=390;relayout(); const L=skyMapNodes(); const ok = L.viewBot === H - 4;' +
+  ' const gone = typeof MAP_FOOT === "undefined"; return ok && gone; })()') === true);
+check('v118 the first card still sits ~flush at the (now lower) bottom, fully inside the view', () => {
+  const g = makeGame();
+  return g.run('(() => { W=180;H=390;relayout(); skyMap=true; mapScroll=0; const L=skyMapNodes();' +
+    ' if (mapScrollMax <= 0) return "map not scrollable";' +
+    ' const bottom = L.pts[0].y + MAP_CARD_H/2;' +
+    ' if (bottom > L.viewBot) return "first card clipped: "+bottom+" > "+L.viewBot;' +
+    ' if (bottom < L.viewBot - 10) return "first card not at the bottom: "+bottom+" vs "+L.viewBot;' +
+    ' return L.viewBot === H - 4; })()') === true
+    ? true : g.run('(() => { W=180;H=390;relayout(); skyMap=true; mapScroll=0; const L=skyMapNodes(); return L.pts[0].y + MAP_CARD_H/2 + " / viewBot " + L.viewBot; })()');
+});
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2001,7 +2026,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v117', () => /const CACHE = 'skystack-v117'/.test(sw));
+check('sw.js cache bumped to v118', () => /const CACHE = 'skystack-v118'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
