@@ -2001,6 +2001,25 @@ check('v118 the first card still sits ~flush at the (now lower) bottom, fully in
     ' return L.viewBot === H - 4; })()') === true
     ? true : g.run('(() => { W=180;H=390;relayout(); skyMap=true; mapScroll=0; const L=skyMapNodes(); return L.pts[0].y + MAP_CARD_H/2 + " / viewBot " + L.viewBot; })()');
 });
+
+// ---------- v119: real pixel-art biome covers on the sky-map cards ----------
+check('v119 biome covers: 11 index-aligned slugs + an Image-guarded lazy loader', () =>
+  /const COVERS = \['caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'\]/.test(src) &&
+  /function ensureCovers\(\)/.test(src) && /if \(coverImg \|\| typeof Image === 'undefined'\) return;/.test(src) &&
+  /im\.src = 'covers\/' \+ nm \+ '\.png'/.test(src) && /ensureCovers\(\);\s*\n\s*const L = skyMapNodes\(\)/.test(src));
+check('v119 the card draws the cover image (cover-fit) with a mapScene fallback', () =>
+  /ctx\.drawImage\(cover, sx2, sy2, sw2, sh2, thX, thY, thW, thH\)/.test(src) &&
+  /const cover = isGate \? null : \(coverImg && coverImg\[k\]\)/.test(src) &&
+  /cover\.complete && cover\.naturalWidth > 0/.test(src) &&
+  /mapScene\(isGate \? -1 : k, isGate, champ, thX, thY, thW, thH, ph\);   \/\/ fallback/.test(src));
+check('v119 enlarged thumbnail keeps the pinned text start (tx0 = cx2+48)', () =>
+  /const thW = 34, thH = 44, thX = cx2\+8, thY = cy2\+5;/.test(src) &&
+  /const tx0 = thX \+ thW \+ 6/.test(src));   // 8 + 34 + 6 = 48, identical to the old 10 + 32 + 6
+check('v119 headless has no Image, so coverImg stays null and the map still renders via mapScene', () => {
+  const g = makeGame();
+  return g.run('(() => { W=180;H=390;relayout(); skyMap=true; mapScroll=0; ensureCovers(); if (coverImg !== null) return "coverImg not null in headless"; renderSkyMap(); return coverImg === null; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2026,7 +2045,11 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v118', () => /const CACHE = 'skystack-v118'/.test(sw));
+check('sw.js cache bumped to v119', () => /const CACHE = 'skystack-v119'/.test(sw));
+check('v119 sw.js precaches the 11 biome cover PNGs', () =>
+  /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
+  /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
+  /\.\.\.COVERS/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));
