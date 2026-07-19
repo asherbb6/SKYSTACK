@@ -2091,6 +2091,20 @@ check('v121 debris renders in the block skin (drawBlock), not a flat hsl fill', 
   !/ctx\.fillStyle='hsl\('\+d\.col\.h\+',65%,48%\)'/.test(src) &&
   /if \(toppleHideTop>0 && i >= blocks\.length - toppleHideTop\)/.test(src));
 
+// ---------- v123: physics phase 2 — per-biome gravity (SPACE / ORBIT low-g) ----------
+check('v123 every biome carries a grav knob; only SPACE(8) and ORBIT(9) are low-g', () =>
+  fresh.run('MATERIALS.every(m => typeof m.grav === "number") && MATERIALS[8].grav === 0.45 && ' +
+    'MATERIALS[9].grav === 0.45 && MATERIALS.every((m,i) => (i===8||i===9) || m.grav === 1)'));
+check('v123 dropPhysicsFor at grav 1 is byte-identical to the global drop (every other biome untouched)', () =>
+  fresh.run('(() => { const p = dropPhysicsFor(0);' +
+    ' return p.gravity === BALANCE_REGISTRY.drop.gravity && p.initialVelocity === BALANCE_REGISTRY.drop.initialVelocity; })()'));
+check('v123 low-g pulls gently but keeps a real launch kick (half-scaled initial velocity)', () =>
+  fresh.run('(() => { const s = dropPhysicsFor(8), n = dropPhysicsFor(0);' +
+    ' return s.gravity === n.gravity*0.45 && s.initialVelocity === n.initialVelocity*(1+0.45)/2 &&' +
+    ' s.initialVelocity > n.initialVelocity*0.45; })()'));
+check('v123 fallFramesFor() still returns the frozen 5, and a low-g fall takes longer', () =>
+  fresh.run('fallFramesFor() === 5 && fallFramesFor(undefined, 1) === 5 && fallFramesFor(undefined, 0.45) > 5'));
+
 // ---------- v122: topple tuned to happen more often (deliberate difficulty shift) ----------
 check('v122 topple tolerance is pinned at the tightened 28 (was 34)', () =>
   fresh.run('BALANCE_REGISTRY.physics.topple === 28 && TOPPLE === 28'));
