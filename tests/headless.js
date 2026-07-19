@@ -2105,6 +2105,24 @@ check('v123 low-g pulls gently but keeps a real launch kick (half-scaled initial
 check('v123 fallFramesFor() still returns the frozen 5, and a low-g fall takes longer', () =>
   fresh.run('fallFramesFor() === 5 && fallFramesFor(undefined, 1) === 5 && fallFramesFor(undefined, 0.45) > 5'));
 
+check('v123 the live drop is biome-aware: SPACE launches gentler and accelerates slower than CAVES', () => {
+  const g = makeGame();
+  const r = g.run('(() => { mode="endless"; resetRun(); state="playing";' +
+    ' const sample = (ti) => { tier = ti; spawnSlider(); releaseBlock(); const v0 = faller.vy;' +
+    '   state = "dropping"; update(1); const v1 = faller.vy; faller = null; state = "playing"; return [v0, v1 - v0]; };' +
+    ' const caves = sample(0), space = sample(8);' +
+    ' if (caves[0] !== BALANCE_REGISTRY.drop.initialVelocity) return "grav-1 launch regressed: " + caves[0];' +
+    ' if (Math.abs(caves[1] - BALANCE_REGISTRY.drop.gravity) > 1e-9) return "grav-1 accel regressed: " + caves[1];' +
+    ' if (!(space[0] < caves[0])) return "SPACE launch not gentler: " + space[0] + " vs " + caves[0];' +
+    ' if (!(space[1] < caves[1])) return "SPACE accel not lower: " + space[1] + " vs " + caves[1];' +
+    // the per-frame integrate inlines the formula for speed — prove it still equals the one helper
+    ' for (const ti of [0,8,9,10]) { const s = sample(ti), p = dropPhysicsFor(ti);' +
+    '   if (s[0] !== p.initialVelocity) return "tier " + ti + " launch " + s[0] + " != helper " + p.initialVelocity;' +
+    '   if (Math.abs(s[1] - p.gravity) > 1e-9) return "tier " + ti + " accel " + s[1] + " != helper " + p.gravity; }' +
+    ' return true; })()');
+  return r === true;
+});
+
 // ---------- v122: topple tuned to happen more often (deliberate difficulty shift) ----------
 check('v122 topple tolerance is pinned at the tightened 28 (was 34)', () =>
   fresh.run('BALANCE_REGISTRY.physics.topple === 28 && TOPPLE === 28'));

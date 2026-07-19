@@ -1475,7 +1475,7 @@ function drop() {
 function releaseBlock() {
   if (!slider) return;
   // launch with downward velocity so the tap reads as instant, not delayed
-  faller = { x: slider.x, w: slider.w, y: slider.y, vy: BALANCE_REGISTRY.drop.initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
+  faller = { x: slider.x, w: slider.w, y: slider.y, vy: dropPhysicsFor(tier).initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
   slider = null; state = 'dropping';
   if (tutStep === 0) tutStep = 1;
 }
@@ -2366,7 +2366,7 @@ function update(dt) {
     }
   }
   if (faller && state === 'dropping') {
-    faller.vy += BALANCE_REGISTRY.drop.gravity*dt; faller.y += faller.vy*dt;
+    faller.vy += BALANCE_REGISTRY.drop.gravity*matAt(tier).grav*dt; faller.y += faller.vy*dt;   // v123: biome gravity (== dropPhysicsFor(tier).gravity, inlined to keep this hot path allocation-free)
     if (!reduceMotion && tick % 2 < dt) trails.push({ x:faller.x, y:faller.y, w:faller.w, life:.6, h:faller.col.h });
     if (faller.y >= towerTopY() - BH) { faller.y = towerTopY() - BH; land(); }
   }
