@@ -2261,6 +2261,68 @@ check('v124 the picker renders for a pickable mode and is never opened for PRACT
     ' mode = "practice"; return difficultyPickable("practice") === false; })()') === true;
 });
 
+check('v124 a pre-v124 save keeps every record intact and readable as the MEDIUM records', () => {
+  const legacy = JSON.stringify({ version:2, data:{ 'skystack-best':4200, 'skystack-height':137,
+    'skystack-modebests':{ endless:{ blocks:137, score:4200 } }, 'skystack-levelstars':[3,2,1] } });
+  const g = makeGame({ 'skystack-save': legacy });
+  return g.run('(() => { mode = "endless"; setDifficulty("endless","medium"); runContext = null;' +
+    ' const r = recordsFor("medium");' +
+    ' return r.best === 4200 && r.height === 137 && r.modes.endless.blocks === 137 && r.stars[0] === 3; })()') === true;
+});
+check('v124 an EASY run can never overwrite the MEDIUM/HARD records', () => {
+  const g = makeGame({ 'skystack-save': JSON.stringify({ version:2, data:{ 'skystack-best':4200, 'skystack-height':137 } }) });
+  return g.run('(() => { setDifficulty("endless","easy"); mode = "endless"; resetRun(); state = "playing";' +
+    ' score = 99999; for (let i=0;i<400;i++) blocks.push({x:W/2-48,w:96,col:{h:0,s:0,l:50}});' +
+    ' gameOver("quit");' +
+    ' const med = recordsFor("medium"), easy = recordsFor("easy");' +
+    ' if (med.best !== 4200 || med.height !== 137) return "MEDIUM record was overwritten by an EASY run";' +
+    ' if (!(easy.best >= 99999)) return "EASY record was not stored: " + easy.best;' +
+    ' return true; })()') === true;
+});
+check('v124 records round-trip per difficulty through a reload', () => {
+  const g = makeGame();
+  g.run('(() => { saveRecords("hard", { best:777, height:42, modes:{ endless:{ blocks:42, score:777 } }, stars:[1] }); return true; })()');
+  const again = makeGame({ 'skystack-save': g.mem.get('skystack-save') });
+  return again.run('(() => { const r = recordsFor("hard");' +
+    ' return r.best === 777 && r.height === 42 && r.modes.endless.score === 777 && r.stars[0] === 1; })()') === true;
+});
+
+check('v124 stars earned on HARD are the ones displayed on HARD, and never leak into MEDIUM', () => {
+  const g = makeGame();
+  return g.run('(() => { mode = "level"; runContext = null;' +
+    ' saveRecords("medium", { best:0, height:0, modes:{}, stars:[1,1] });' +
+    ' saveRecords("hard",   { best:0, height:0, modes:{}, stars:[3,2] });' +
+    ' setDifficulty("level","hard");   const onHard = shownStars().slice(0,2).join(",");' +
+    ' setDifficulty("level","medium"); const onMed  = shownStars().slice(0,2).join(",");' +
+    ' if (onHard !== "3,2") return "HARD stars not shown: " + onHard;' +
+    ' if (onMed !== "1,1") return "HARD stars leaked into MEDIUM: " + onMed;' +
+    ' return true; })()') === true;
+});
+check('v124 the star-chart collection counts the BEST stars across difficulties, so switching never loses progress', () => {
+  const g = makeGame();
+  return g.run('(() => { mode = "level"; runContext = null;' +
+    ' saveRecords("medium", { best:0, height:0, modes:{}, stars:[3,0,2] });' +
+    ' saveRecords("hard",   { best:0, height:0, modes:{}, stars:[1,3,0] });' +
+    ' const b = bestStarsAcross();' +
+    ' if (b[0] !== 3 || b[1] !== 3 || b[2] !== 2) return "not a per-level max: " + b.join(",");' +
+    ' setDifficulty("level","easy");' +                          // switching to an unplayed tier must not shrink it
+    ' const after = bestStarsAcross();' +
+    ' return after[0] === 3 && after[1] === 3 && after[2] === 2; })()') === true;
+});
+
+check('v124 shownStars() is cached for the render loop but never goes stale after a save or a switch', () => {
+  const g = makeGame();
+  return g.run('(() => { mode = "level"; runContext = null; setDifficulty("level","hard");' +
+    ' saveRecords("hard", { best:0, height:0, modes:{}, stars:[1] });' +
+    ' if (shownStars()[0] !== 1) return "initial read wrong: " + shownStars()[0];' +
+    ' saveRecords("hard", { best:0, height:0, modes:{}, stars:[3] });' +       // same difficulty, new value
+    ' if (shownStars()[0] !== 3) return "stale after save: " + shownStars()[0];' +
+    ' setDifficulty("level","medium");' +                                     // switching must re-read too
+    ' saveRecords("medium", { best:0, height:0, modes:{}, stars:[2] });' +
+    ' if (shownStars()[0] !== 2) return "stale after switch: " + shownStars()[0];' +
+    ' return true; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +

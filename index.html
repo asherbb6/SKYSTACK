@@ -772,6 +772,48 @@ let best = store.get('skystack-best', 0), bestHeight = store.get('skystack-heigh
 // A level starts pre-stacked at the previous stage and is won at its own stage height.
 let prog = store.get('skystack-tiers', 0);
 let levelStars = store.get('skystack-levelstars', []);
+// v124: MEDIUM keeps the LEGACY record keys untouched (so pre-v124 saves need no migration at all);
+// EASY/HARD records live in their own domain. An easy run can never touch a medium/hard best.
+function recordsFor(diffId) {
+  if (diffId === 'medium') return { best:best, height:bestHeight, modes:modeBests, stars:levelStars };
+  const all = store.get('skystack-diffrecords', {}), bag = (all && typeof all === 'object' && !Array.isArray(all)) ? all : {};
+  const r = (bag[diffId] && typeof bag[diffId] === 'object') ? bag[diffId] : {};
+  return { best:r.best|0, height:r.height|0,
+    modes:(r.modes && typeof r.modes === 'object' && !Array.isArray(r.modes)) ? r.modes : {},
+    stars:Array.isArray(r.stars) ? r.stars : [] };
+}
+// what the UI should draw: the stars of the difficulty you are currently set to. Cached because this
+// sits in render loops and recordsFor() deep-copies the save for the non-MEDIUM tiers; saveRecords()
+// and a difficulty switch both invalidate it, so it can never go stale.
+let starView = { id:null, stars:[] };
+function shownStars() {
+  const id = activeDifficulty().id;
+  if (starView.id !== id) starView = { id:id, stars:recordsFor(id).stars };
+  return starView.stars;
+}
+function invalidateStarView() { starView = { id:null, stars:[] }; }
+// collections pay out on mastery, so they take the BEST per level across every difficulty —
+// switching difficulty must never appear to take away progress you already earned.
+function bestStarsAcross() {
+  const out = [];
+  for (const id of DIFFICULTY_ORDER) {
+    const s = recordsFor(id).stars;
+    for (let i = 0; i < s.length; i++) if ((s[i] || 0) > (out[i] || 0)) out[i] = s[i] || 0;
+  }
+  return out;
+}
+function saveRecords(diffId, rec) {
+  invalidateStarView();
+  if (diffId === 'medium') {
+    best = rec.best|0; bestHeight = rec.height|0; modeBests = rec.modes || {}; levelStars = rec.stars || [];
+    store.set('skystack-best', best); store.set('skystack-height', bestHeight);
+    store.set('skystack-modebests', modeBests); store.set('skystack-levelstars', levelStars);
+    return;
+  }
+  const all = store.get('skystack-diffrecords', {}), bag = (all && typeof all === 'object' && !Array.isArray(all)) ? all : {};
+  bag[diffId] = { best:rec.best|0, height:rec.height|0, modes:rec.modes || {}, stars:rec.stars || [] };
+  store.set('skystack-diffrecords', bag);
+}
 let pendingLevel = -1;   // level chosen on the map, consumed by the next resetRun
 let pendingCheckpointId = null; // checkpoint choice is independent from the selected campaign goal
 let pendingRunSeed = null; // explicit retry only: replay the owned RNG/modifier schedule
@@ -865,6 +907,41 @@ const TIERS = [
   { n:540, name:'THE STARS',    c:'#FFF6E8' }
 ];
 
+// v124: the PLAYER-facing difficulty. A pure multiplier layer over the raw knobs — the adaptive
+// assist system underneath is deliberately untouched. MEDIUM is exactly 1 everywhere, so it is
+// byte-identical to what shipped in v123 (same trick as v123's grav:1). drift/driftCanMiss are
+// declared here for v125 (per-biome wind drift) and are unused until then.
+const DIFFICULTY_TIERS = deepFreeze({
+  easy:   { id:'easy',   name:'EASY',   desc:'FORGIVING - LEAN FURTHER', sliderSpeed:0.85, topple:1.25, drift:0.5, driftCanMiss:false },
+  medium: { id:'medium', name:'MEDIUM', desc:'THE CLIMB AS BUILT',       sliderSpeed:1,    topple:1,    drift:1,   driftCanMiss:false },
+  hard:   { id:'hard',   name:'HARD',   desc:'FAST - TIPS EASILY',       sliderSpeed:1.30, topple:0.65, drift:2,   driftCanMiss:true }
+});
+const DIFFICULTY_ORDER = ['easy','medium','hard'];
+// PRACTICE is contractually no-fail; DAILY is a seeded run shared across players — both stay MEDIUM.
+const DIFFICULTY_LOCKED = deepFreeze({ practice:'medium', daily:'medium' });
+function difficultyScope(modeId, challengeId) { return challengeId ? 'challenge:' + challengeId : modeId; }
+function storedDifficulty(scope) {
+  const m = store.get('skystack-difficulty', {}), v = m && typeof m === 'object' ? m[scope] : null;
+  return DIFFICULTY_TIERS[v] ? v : 'medium';                    // unknown/corrupt repairs to MEDIUM
+}
+function setDifficulty(scope, id) {
+  if (!DIFFICULTY_TIERS[id]) return;
+  const m = store.get('skystack-difficulty', {});
+  const next = (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+  next[scope] = id; store.set('skystack-difficulty', next); invalidateStarView();
+}
+function difficultyFor(modeId, challengeId) {
+  const lock = DIFFICULTY_LOCKED[modeId];
+  return DIFFICULTY_TIERS[lock ? lock : storedDifficulty(difficultyScope(modeId, challengeId))];
+}
+function difficultyPickable(modeId) { return !DIFFICULTY_LOCKED[modeId]; }
+// inside a run the snapshot wins (difficulty is immutable per run, like character choice)
+function activeDifficulty() {
+  if (runContext && DIFFICULTY_TIERS[runContext.difficulty]) return DIFFICULTY_TIERS[runContext.difficulty];
+  return difficultyFor(mode, null);
+}
+function toppleLimit() { return TOPPLE * activeDifficulty().topple; }
+
 // ---------- collection sets (S5) ----------
 // Collections recognize existing direct-purchase cosmetics and campaign stars. Completion pays
 // coins once; it never grants run power, changes a Base, or modifies Pure/Daily rules.
@@ -875,7 +952,7 @@ const COLLECTION_REGISTRY = deepFreeze([
   collectionSet('epic-crew','EPIC CREW',['neon','mono','sakura','void'],100,()=>[owned.filter(id=>['neon','mono','sakura','void'].includes(id)).length,4]),
   collectionSet('legend-crew','LEGEND CREW',['gold','royal','prism'],150,()=>[owned.filter(id=>['gold','royal','prism'].includes(id)).length,3]),
   collectionSet('base-gallery','BASE GALLERY',BASE_REGISTRY.map(b=>b.id),100,()=>[BASE_REGISTRY.filter(b=>ownedBases.includes(b.id)).length,BASE_REGISTRY.length]),
-  collectionSet('star-chart','STAR CHART',[],125,()=>[levelStars.reduce((n,x)=>n+coinAmount(x),0),22])
+  collectionSet('star-chart','STAR CHART',[],125,()=>[bestStarsAcross().reduce((n,x)=>n+coinAmount(x),0),22])
 ]);
 function normalizeCollectionState(v) {
   const src=normalizeFutureSaveValue('collections',v);
@@ -941,40 +1018,6 @@ const DIFFICULTY_LANES = deepFreeze({
   assisted:{ id:'assisted', modes:['level','endless','time','challenge'], fail:true, assist:{ policy:'adaptive', min:0, max:BALANCE_REGISTRY.assist.max }, recovery:'ASSIST + SHIELD/REVIVE' },
   unassisted:{ id:'unassisted', modes:['pure','daily'], fail:true, assist:{ policy:'off', min:0, max:0 }, recovery:'NONE' }
 });
-// v124: the PLAYER-facing difficulty. A pure multiplier layer over the raw knobs — the adaptive
-// assist system underneath is deliberately untouched. MEDIUM is exactly 1 everywhere, so it is
-// byte-identical to what shipped in v123 (same trick as v123's grav:1). drift/driftCanMiss are
-// declared here for v125 (per-biome wind drift) and are unused until then.
-const DIFFICULTY_TIERS = deepFreeze({
-  easy:   { id:'easy',   name:'EASY',   desc:'FORGIVING - LEAN FURTHER', sliderSpeed:0.85, topple:1.25, drift:0.5, driftCanMiss:false },
-  medium: { id:'medium', name:'MEDIUM', desc:'THE CLIMB AS BUILT',       sliderSpeed:1,    topple:1,    drift:1,   driftCanMiss:false },
-  hard:   { id:'hard',   name:'HARD',   desc:'FAST - TIPS EASILY',       sliderSpeed:1.30, topple:0.65, drift:2,   driftCanMiss:true }
-});
-const DIFFICULTY_ORDER = ['easy','medium','hard'];
-// PRACTICE is contractually no-fail; DAILY is a seeded run shared across players — both stay MEDIUM.
-const DIFFICULTY_LOCKED = deepFreeze({ practice:'medium', daily:'medium' });
-function difficultyScope(modeId, challengeId) { return challengeId ? 'challenge:' + challengeId : modeId; }
-function storedDifficulty(scope) {
-  const m = store.get('skystack-difficulty', {}), v = m && typeof m === 'object' ? m[scope] : null;
-  return DIFFICULTY_TIERS[v] ? v : 'medium';                    // unknown/corrupt repairs to MEDIUM
-}
-function setDifficulty(scope, id) {
-  if (!DIFFICULTY_TIERS[id]) return;
-  const m = store.get('skystack-difficulty', {});
-  const next = (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
-  next[scope] = id; store.set('skystack-difficulty', next);
-}
-function difficultyFor(modeId, challengeId) {
-  const lock = DIFFICULTY_LOCKED[modeId];
-  return DIFFICULTY_TIERS[lock ? lock : storedDifficulty(difficultyScope(modeId, challengeId))];
-}
-function difficultyPickable(modeId) { return !DIFFICULTY_LOCKED[modeId]; }
-// inside a run the snapshot wins (difficulty is immutable per run, like character choice)
-function activeDifficulty() {
-  if (runContext && DIFFICULTY_TIERS[runContext.difficulty]) return DIFFICULTY_TIERS[runContext.difficulty];
-  return difficultyFor(mode, null);
-}
-function toppleLimit() { return TOPPLE * activeDifficulty().topple; }
 const LEVEL_BLUEPRINTS = deepFreeze([
   { identity:'FOUNDATION',      focus:'STEADY STONE',       duration:{min:90,target:110,max:130}, difficulty:1,  pace:'INTRO',    speedScale:1 },
   { identity:'FIRST LIGHT',     focus:'OPENING WIND',       duration:{min:18,target:24,max:32},   difficulty:2,  pace:'QUICK',    speedScale:1 },
@@ -1845,7 +1888,8 @@ function levelComplete() {
   winStars = 1 + (ratio >= stars.silverPerfectRatio ? 1 : 0) + (ratio >= stars.goldPerfectRatio ? 1 : 0);
   winFirst = i + 1 > prog;
   if (winFirst) { prog = i + 1; store.set('skystack-tiers', prog); }
-  if (winStars > (levelStars[i] || 0)) { levelStars[i] = winStars; store.set('skystack-levelstars', levelStars); }
+  const starDiff = activeDifficulty().id, SR = recordsFor(starDiff);     // v124: stars are per-difficulty
+  if (winStars > (SR.stars[i] || 0)) { SR.stars[i] = winStars; saveRecords(starDiff, SR); }
   winReward = 15 + i * 10 + winStars * 5 + (winFirst ? 25 : 0) + (winFirst && prog === TIERS.length ? 200 : 0);
   transactCoins(winReward,true);
   runSettled = true; reviveOffered = false;   // wins settle on the spot
@@ -1881,12 +1925,13 @@ function gameOver(cause) {
     const c=activeChallenge();
     if (c) recordChallengeOutcome();
     if (!c||c.id==='time60') {
-      if (score > best) { best = score; newBest = true; store.set('skystack-best', best); }
-      if (blocks.length > bestHeight) { bestHeight = blocks.length; store.set('skystack-height', bestHeight); }
-      const rec = modeBests[runContext.mode] || { blocks: 0, score: 0 };
+      const dId = activeDifficulty().id, R = recordsFor(dId);            // v124: records are per-difficulty
+      if (score > R.best) { R.best = score; newBest = true; }
+      if (blocks.length > R.height) R.height = blocks.length;
+      const rec = R.modes[runContext.mode] || { blocks: 0, score: 0 };
       if (blocks.length > rec.blocks) rec.blocks = blocks.length;
       if (score > (rec.score || 0)) { rec.score = score; newBest = true; }
-      modeBests[runContext.mode] = rec; store.set('skystack-modebests', modeBests);
+      R.modes[runContext.mode] = rec; saveRecords(dId, R);
     }
   }
   if (runContext.mode === 'daily') {
@@ -4665,11 +4710,11 @@ function renderHome() {
     txt('REPLAY THE JOURNEY', W/2, goalY, 1, 'rgba(255,246,232,0.6)', 'center');
   } else {
     txt(nt.name, W/2, nameY, 2, nt.c, 'center');
-    const starSum = levelStars.reduce((a,b)=>a+(b||0),0);
+    const starSum = shownStars().reduce((a,b)=>a+(b||0),0);
     txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, goalY, 1, 'rgba(255,246,232,0.62)', 'center');
   }
   // this level's stars flanked by its biome art
-  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, starsY, 1, k < (levelStars[nl] || 0));
+  for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, starsY, 1, k < (shownStars()[nl] || 0));
   drawStageDecoScaled(nl, hc.x + 18, starsY-1, 1);
   drawStageDecoScaled(nl, hc.x + hc.w - 18, starsY-1, 1);
 
@@ -5394,7 +5439,7 @@ function renderSkyMap() {
         plate3D(px2, py2, pw2, 12, playA(.8 + .12*Math.sin(tick*.1)), t.c);
         txt('PLAY', px2 + pw2/2, py2 + 3, 1, '#08301F', 'center');
       } else {
-        for (let s2 = 0; s2 < 3; s2++) drawStarPix(tx0 + s2*8, cy2 + 27, 1, unlocked && s2 < (levelStars[k] || 0));
+        for (let s2 = 0; s2 < 3; s2++) drawStarPix(tx0 + s2*8, cy2 + 27, 1, unlocked && s2 < (shownStars()[k] || 0));
         txt(cleared ? 'CLEARED' : isNext ? 'NEXT' : 'LOCKED', txR, cy2+27, 1,
             cleared ? '#62E8B5' : isNext ? t.c : dimTxt, 'right');
       }
@@ -5410,7 +5455,7 @@ function renderSkyMap() {
   txt('SKY MAP', W/2+1, 6, 2, 'rgba(0,0,0,0.5)', 'center');
   txt('SKY MAP', W/2, 5, 2, '#FFF6E8', 'center');
   // campaign mastery at a glance: total stars earned across the climb
-  const starTot = levelStars.reduce((a,b)=>a+(b||0),0);
+  const starTot = shownStars().reduce((a,b)=>a+(b||0),0);
   const starLbl = 'STARS ' + starTot + '/' + TIERS.length*3;
   drawStarPix(9, 25, 1, true);
   txt(starLbl, 17, 23, 1, 'rgba(0,0,0,0.5)', 'left');
