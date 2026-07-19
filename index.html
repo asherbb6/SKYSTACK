@@ -1700,6 +1700,14 @@ function landFx(w) {
 }
 function land() {
   const top = blocks[blocks.length - 1], f = faller;
+  // v125: on EASY/MEDIUM drift may cost you a perfect, but it may never steal a block you had aimed
+  // correctly. Expressed at landing (not as a per-frame clamp) because whether a drop misses depends
+  // on where the player aimed, which only the un-drifted release position x0 knows.
+  if (f && !activeDifficulty().driftCanMiss && f.x0 !== undefined) {
+    const wouldHave = Math.min(f.x0 + f.w, top.x + top.w) - Math.max(f.x0, top.x);
+    const now = Math.min(f.x + f.w, top.x + top.w) - Math.max(f.x, top.x);
+    if (wouldHave > 1 && now <= 1) f.x = f.x > top.x ? top.x + top.w - 2 : top.x - f.w + 2;
+  }
   const oL = Math.max(f.x, top.x), oR = Math.min(f.x + f.w, top.x + top.w), overlap = oR - oL;
   const offset = f.x - top.x;
   const m = activeMode();

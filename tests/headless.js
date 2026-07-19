@@ -2452,6 +2452,53 @@ check('v125 PRACTICE never drifts (its mode config spawns no wind at all)', () =
     ' return wind === null ? true : "wind spawned in PRACTICE"; })()') === true;
 });
 
+check('v125 EASY/MEDIUM: drift can cost a perfect but can never turn a landed drop into a miss', () => {
+  const g = makeGame();
+  const outcome = (id) => g.run('(() => { setDifficulty("endless","' + id + '"); mode="endless"; resetRun();' +
+    ' state="playing"; tier = 5; shield = 0;' +
+    ' wind = { dir:1, str:3, dur:200, t:100 };' +
+    ' const top = blocks[blocks.length-1];' +
+    ' faller = { x: top.x + top.w - 2, x0: top.x + top.w - 2, y: towerTopY()-BH, w: top.w, vx:0,' +
+    '   vy: dropPhysicsFor(tier).initialVelocity, col: blockCol(blocks.length), golden:false };' +
+    ' slider = null; state = "dropping";' +
+    ' for (let i=0;i<30 && state==="dropping";i++) update(1);' +
+    ' if (state === "dropping") land();' +
+    ' return state; })()');
+  const easy = outcome('easy'), med = outcome('medium');
+  g.run('setDifficulty("endless","medium");');
+  if (easy !== 'playing') { console.error('  EASY lost a would-have-landed block to drift: ' + easy); return false; }
+  if (med !== 'playing') { console.error('  MEDIUM lost a would-have-landed block to drift: ' + med); return false; }
+  return true;
+});
+check('v125 HARD lets a real gust genuinely blow a block off the tower', () => {
+  const g = makeGame();
+  const r = g.run('(() => { setDifficulty("endless","hard"); mode="endless"; resetRun();' +
+    ' state="playing"; tier = 5; shield = 0;' +
+    ' wind = { dir:1, str:3, dur:200, t:100 };' +
+    ' const top = blocks[blocks.length-1];' +
+    ' faller = { x: top.x + top.w - 2, x0: top.x + top.w - 2, y: towerTopY()-BH, w: top.w, vx:0,' +
+    '   vy: dropPhysicsFor(tier).initialVelocity, col: blockCol(blocks.length), golden:false };' +
+    ' slider = null; state = "dropping";' +
+    ' for (let i=0;i<30 && state==="dropping";i++) update(1);' +
+    ' if (state === "dropping") land();' +
+    ' return state; })()');
+  g.run('setDifficulty("endless","medium");');
+  return r === 'gameover';
+});
+check('v125 the no-miss clamp never IMPROVES a drop that was already going to miss', () => {
+  const g = makeGame();
+  return g.run('(() => { setDifficulty("endless","easy"); mode="endless"; resetRun(); state="playing";' +
+    ' tier = 5; shield = 0; wind = { dir:1, str:3, dur:200, t:100 };' +
+    ' const top = blocks[blocks.length-1];' +
+    ' faller = { x: top.x + top.w + 40, x0: top.x + top.w + 40, y: towerTopY()-BH, w: top.w, vx:0,' +
+    '   vy: dropPhysicsFor(tier).initialVelocity, col: blockCol(blocks.length), golden:false };' +
+    ' slider = null; state = "dropping";' +
+    ' for (let i=0;i<30 && state==="dropping";i++) update(1);' +
+    ' if (state === "dropping") land();' +
+    ' setDifficulty("endless","medium");' +
+    ' return state === "gameover" ? true : "clamp rescued a genuine miss: " + state; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
