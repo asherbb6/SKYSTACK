@@ -24,6 +24,24 @@ function anyProxy() {
   return p;
 }
 
+// v115: a ctx stub that actually stores/returns globalAlpha (the default anyProxy coerces every
+// read to 0, which would hide the reveal's fade). Every other access stays a chainable callable.
+function alphaCtx() {
+  const store = { globalAlpha: 1 };
+  const noop = function () { return p; };
+  const p = new Proxy(noop, {
+    get(t, k) {
+      if (k === 'globalAlpha') return store.globalAlpha;
+      if (k === Symbol.toPrimitive) return () => 0;
+      if (k === 'then') return undefined;
+      return p;
+    },
+    set(t, k, v) { if (k === 'globalAlpha') store.globalAlpha = v; return true; },
+    apply() { return p; }
+  });
+  return p;
+}
+
 function makeGame(storageSeed, reducedMotion, audioEnabled, ctx2dOverride) {
   const mem = new Map(Object.entries(storageSeed || {}));
   const ctx2d = ctx2dOverride || anyProxy();
@@ -1885,6 +1903,39 @@ check('v114 level-up gets an emphasized plated moment, not a dim line', () =>
   !/'LEVEL UP! NOW LV '\+lvl\.level\+' \+25'/.test(src));
 check('v114 top bar renders across levels/xp without throwing and tracks xpNeed', () => fresh.run(
   '(() => { const l0=lvl; let ok=true; for(const st of [{level:1,xp:0},{level:5,xp:499},{level:12,xp:250}]){ lvl=st; try{ topBar(""); }catch(e){ ok=false; } if(xpNeed()!==st.level*100) ok=false; } lvl=l0; return ok; })()') === true);
+
+// ---------- v115: paced, hierarchical game-over reveal ----------
+check('v115 goT reveal clock resets at death and advances while the game-over screen is up', () => {
+  const g = makeGame();
+  g.run('mode="endless"; resetRun(); state="playing"; score=100; while(blocks.length<10) blocks.push({x:0,w:96,col:"#fff"});');
+  g.run('gameOver("miss")');
+  if (g.run('goT') !== 0) return 'goT not reset at death: ' + g.run('goT');
+  g.run('for (let i=0;i<20;i++) update(1);');
+  return g.run('goT >= 15 && state === "gameover"') === true ? true : 'goT did not advance: ' + g.run('goT');
+});
+check('v115 game-over renders across the whole reveal (fresh/mid/done) + reduceMotion without throwing', () => {
+  const g = makeGame();   // reduceMotion=false: the animated path
+  g.run('mode="endless"; resetRun(); state="playing"; score=100; maxCombo=5; while(blocks.length<10) blocks.push({x:0,w:96,col:"#fff"}); gameOver("miss");');
+  g.run('goT=0; renderGameOver(); goT=25; renderGameOver(); goT=300; renderGameOver();');
+  const gr = makeGame(undefined, true);   // reduceMotion=true: the instant path
+  gr.run('mode="endless"; resetRun(); state="playing"; score=100; maxCombo=5; while(blocks.length<10) blocks.push({x:0,w:96,col:"#fff"}); gameOver("miss"); goT=0; renderGameOver();');
+  return true;
+});
+check('v115 earlier lines reveal before later ones; reduceMotion shows every line at once', () => {
+  const setup = 'mode="endless"; resetRun(); state="playing"; score=100; maxCombo=5; while(blocks.length<10) blocks.push({x:0,w:96,col:"#fff"}); gameOver("miss");';
+  const cap = '(()=>{ const cap=[],o=txt; txt=(t)=>{cap.push({t:String(t),a:ctx.globalAlpha});}; try{ goT=GOT; renderGameOver(); } finally { txt=o; } const ti=cap.find(c=>/GAME OVER|CHALLENGE/.test(c.t)), mc=cap.find(c=>/MAX COMBO/.test(c.t)); return [!!(ti&&mc), ti&&ti.a, mc&&mc.a]; })()';
+  const ga = makeGame(undefined, false, false, alphaCtx()); ga.run(setup);   // animated
+  const staged = ga.run(cap.replace('GOT', '28'));                          // mid-reveal: title in, combo not yet
+  const gi = makeGame(undefined, true, false, alphaCtx()); gi.run(setup);   // reduceMotion
+  const instant = gi.run(cap.replace('GOT', '0'));                          // everything at full alpha immediately
+  const ok = staged[0] && staged[1] > 0.9 && staged[2] < 0.1 && instant[0] && instant[1] > 0.99 && instant[2] > 0.99;
+  return ok === true ? true : ('staged=' + JSON.stringify(staged) + ' instant=' + JSON.stringify(instant));
+});
+check('v115 reveal is wired off goT with a reduceMotion instant path and no alpha leak', () =>
+  /const rev = t0 => RM \? 1 : clamp\(\(goT - t0\) \/ 7/.test(src) &&
+  /if \(state === 'gameover'\) goT \+= dt;/.test(src) &&
+  /overLock = 40; goT = 0;/.test(src) &&
+  /ctx\.globalAlpha = 1;\s+\/\/ reveal is transient/.test(src));
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -1910,7 +1961,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v114', () => /const CACHE = 'skystack-v114'/.test(sw));
+check('sw.js cache bumped to v115', () => /const CACHE = 'skystack-v115'/.test(sw));
 check('sub-pixel world scroll: supersampled backing store + fractional camera translate', () =>
   /const fit = Math\.min\(innerWidth \* dpr/.test(src) && /ctx\.setTransform\(RS, 0, 0, RS, 0, 0\)/.test(src) && /cySub = Math\.round\(\(cy - cameraY\) \* RS\) \/ RS/.test(src));
 check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.test(html));

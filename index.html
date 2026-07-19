@@ -780,6 +780,7 @@ let runLaunch = 0;       // blocks pre-stacked for the current run (0 = full gro
 let runContext = null;   // deeply immutable rules/seed snapshot owned by the active run
 let selLevel = 0;        // map selection (session only)
 let winT = 0, failT = 0, winStars = 0, winReward = 0, winFirst = false;
+let goT = 0;   // v115: game-over reveal clock — counts up from the death so results reveal in sequence
 // revive: one paid second chance per run. XP/missions/games settle only when the run
 // truly ends (finalizeRun), so a revived run settles once — post-revive progress included.
 let reviveUsed = false, reviveOffered = false, runSettled = false;
@@ -1797,7 +1798,7 @@ function gameOver(cause) {
   const m = activeMode();
   state = 'gameover'; faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; paused = false; dropPending = 0;
   overCause = cause || 'miss';
-  shake = reduceMotion ? 2 : (cause === 'topple' ? 8 : 6); overLock = 40;
+  shake = reduceMotion ? 2 : (cause === 'topple' ? 8 : 6); overLock = 40; goT = 0;
   if (cause === 'topple') { sfx.topple();
     for (let i = Math.max(0, blocks.length-6); i < blocks.length; i++) { const b = blocks[i]; debris.push({ x:b.x, y:GROUND_Y-(i+1)*BH, w:b.w, h:BH, vx:(balance>0?1:-1)*(0.6+Math.random()), vy:-Math.random()*1.5, rot:0, vr:(balance>0?1:-1)*.12, col:b.col }); } }
   else if (cause==='challenge') sfx.win(); else sfx.over();
@@ -2249,6 +2250,7 @@ function update(dt) {
   if (overLock > 0) overLock -= dt;
   if (state === 'levelwin') winT += dt;
   if (state === 'levelfail') failT += dt;
+  if (state === 'gameover') goT += dt;
   if (mascot.hop > 0) mascot.hop = Math.max(0, mascot.hop - .06*dt);
   if (mascot.exprT > 0) { mascot.exprT -= dt; if (mascot.exprT <= 0 && state !== 'gameover') mascot.expr = 'normal'; }
 
@@ -5871,22 +5873,36 @@ const CAUSE_TXT = { miss:'MISSED!', topple:'TOPPLED!', precision:'NOT PERFECT', 
 function renderGameOver() {
   ctx.fillStyle = 'rgba(11,14,26,0.66)'; ctx.fillRect(0, 0, W, H);
   const shadow = 'rgba(0,0,0,0.35)';
+  // v115: paced, hierarchical reveal. Lines fade + slide up into place in sequence keyed off goT
+  // (the game-over clock), so the eye lands on one reward at a time instead of 14 identical dim
+  // rows at once. Rewards get emphasis (a brief scale-pop); routine tallies just fade in quietly.
+  // reduceMotion => everything instant at full alpha, and the RESTING layout is byte-identical to
+  // before, so there is zero overflow/overlap risk — only the first ~1.5s is animated.
+  const RM = reduceMotion;
+  const rev = t0 => RM ? 1 : clamp((goT - t0) / 7, 0, 1);              // 0..1 fade for a line born at t0
+  const slide = t0 => RM ? 0 : (1 - rev(t0)) * 4;                      // starts 4px low, rises to rest
+  const pop = t0 => RM ? 1 : (rev(t0) < 1 ? 1 + 0.26 * (1 - rev(t0)) : 1);  // emphasis: 1.26x -> 1x
+  const at = t0 => { ctx.globalAlpha = rev(t0); return slide(t0); };   // set alpha, return y-offset
+
+  let s = at(0);
   const title=challengeCleared?'CHALLENGE CLEAR':'GAME OVER';
-  txt(title, W/2+1, 27, 2, shadow, 'center');
-  txt(title, W/2, 26, 2, challengeCleared?'#62E8B5':'#FF5E7E', 'center');
-  txt((CAUSE_TXT[overCause] || '') + ' - ' + activeRunName(), W/2, 46, 1, 'rgba(255,246,232,0.6)', 'center');
-  txt('HEIGHT', W/2, 62, 1, 'rgba(255,246,232,0.7)', 'center');
-  txt(blocks.length*METERS_PER+'M', W/2, 73, 2, newHeight?'#62E8B5':'#FFF6E8', 'center');
-  if (newHeight && Math.floor(tick/20)%2===0) txt('NEW RECORD!', W/2, 91, 1, '#62E8B5', 'center');
-  txt('SCORE '+score+(newBest?' - NEW BEST!':''), W/2, 103, 1, newBest?'#62E8B5':'rgba(255,246,232,0.85)', 'center');
+  txt(title, W/2+1, 27+s, 2*pop(0), shadow, 'center');
+  txt(title, W/2, 26+s, 2*pop(0), challengeCleared?'#62E8B5':'#FF5E7E', 'center');
+  s = at(5); txt((CAUSE_TXT[overCause] || '') + ' - ' + activeRunName(), W/2, 46+s, 1, 'rgba(255,246,232,0.6)', 'center');
+  s = at(10);
+  txt('HEIGHT', W/2, 62+s, 1, 'rgba(255,246,232,0.7)', 'center');
+  txt(blocks.length*METERS_PER+'M', W/2, 73+s, 2*(newHeight?pop(10):1), newHeight?'#62E8B5':'#FFF6E8', 'center');
+  if (newHeight) { s = at(14); if (Math.floor(tick/20)%2===0) txt('NEW RECORD!', W/2, 91+s, pop(14), '#62E8B5', 'center'); }
+  s = at(16); txt('SCORE '+score+(newBest?' - NEW BEST!':''), W/2, 103+s, newBest?pop(16):1, newBest?'#62E8B5':'rgba(255,246,232,0.85)', 'center');
   const runBest=activeChallenge()?challengeRecord(activeChallenge().id):{bestBlocks:bestBlocksFor(runContext.mode),bestScore:bestScoreFor(runContext.mode)};
-  txt('BEST '+runBest.bestBlocks*METERS_PER+'M - '+fmtPts(runBest.bestScore)+' PTS', W/2, 114, 1, '#FFD75E', 'center');
-  drawCoin(W/2-24, 127.5); txt('+'+runCoins, W/2-14, 127, 1, '#FFD75E', 'left');
+  s = at(21); txt('BEST '+runBest.bestBlocks*METERS_PER+'M - '+fmtPts(runBest.bestScore)+' PTS', W/2, 114+s, 1, '#FFD75E', 'center');
+  at(26); drawCoin(W/2-24, 127.5); txt('+'+runCoins, W/2-14, 127, 1, '#FFD75E', 'left');   // coin fades in place (stays centered on its digits)
   if (runSettled) txt('+'+xpThisRun+' XP', W/2+12, 127, 1, '#62E8B5', 'left');
-  if (maxCombo > 1) txt('MAX COMBO X'+maxCombo, W/2, 141, 1, 'rgba(255,246,232,0.8)', 'center');
-  if(challengeReward)txt('CHALLENGE REWARD +'+challengeReward,W/2,151,1,'#FFD75E','center');
-  if (modifierResults.length) txt('MODIFIERS '+modifierWins+'/'+modifierResults.length+' - BONUS +'+modifierBonusCoins,W/2,challengeReward?162:151,1,'#62E8B5','center');
+  if (maxCombo > 1) { s = at(31); txt('MAX COMBO X'+maxCombo, W/2, 141+s, 1, 'rgba(255,246,232,0.8)', 'center'); }
+  if(challengeReward){ s = at(34); txt('CHALLENGE REWARD +'+challengeReward,W/2,151+s,pop(34),'#FFD75E','center'); }
+  if (modifierResults.length) { s = at(36); txt('MODIFIERS '+modifierWins+'/'+modifierResults.length+' - BONUS +'+modifierBonusCoins,W/2,(challengeReward?162:151)+s,1,'#62E8B5','center'); }
   if (reviveOffered) {   // XP/missions settle after the offer — this space is the revive's
+    ctx.globalAlpha = rev(14);   // the revive button fades in early so it's ready when overLock frees taps
     const cost = reviveCost(), ok = coins >= cost;
     const pulse = ok && Math.floor(tick/16)%2 === 0;
     plate3D(REVIVE_BTN.x, REVIVE_BTN.y, REVIVE_BTN.w, REVIVE_BTN.h,
@@ -5897,22 +5913,25 @@ function renderGameOver() {
     txt('1 REVIVE PER RUN', W/2, REVIVE_BTN.y + 27, 1, 'rgba(255,246,232,0.45)', 'center');
   } else if (runSettled) {
     let y = modifierResults.length ? (challengeReward?178:167) : (challengeReward?167:156);
-    if (levelUpsThisRun > 0) {   // v114: the biggest reward gets the biggest treatment, not a dim line
-      const label = 'LEVEL UP!  LV '+lvl.level+'  +'+ECONOMY_RULES.levelUpReward;
-      const tw = label.length*6-1, pulse = Math.floor(tick/14)%2;
+    let ct = 42;   // the reward cascade reveals last, one item at a time, each with its own accent
+    if (levelUpsThisRun > 0) {   // v114/v115: the biggest reward gets the biggest treatment and the first spotlight
+      const so = at(ct); const label = 'LEVEL UP!  LV '+lvl.level+'  +'+ECONOMY_RULES.levelUpReward;
+      const tw = label.length*6-1, pulse = Math.floor(tick/14)%2, yy = y+so;
       ctx.fillStyle = pulse ? 'rgba(255,215,94,0.24)' : 'rgba(255,215,94,0.15)';
-      ctx.fillRect(W/2 - tw/2 - 8, y-2, tw+16, 11);
-      ctx.fillStyle = '#FFD75E'; ctx.fillRect(W/2 - tw/2 - 8, y-2, tw+16, 1); ctx.fillRect(W/2 - tw/2 - 8, y+8, tw+16, 1);
-      txt(label, W/2, y, 1, '#FFF6E8', 'center'); y += 14;
+      ctx.fillRect(W/2 - tw/2 - 8, yy-2, tw+16, 11);
+      ctx.fillStyle = '#FFD75E'; ctx.fillRect(W/2 - tw/2 - 8, yy-2, tw+16, 1); ctx.fillRect(W/2 - tw/2 - 8, yy+8, tw+16, 1);
+      txt(label, W/2, yy, 1, '#FFF6E8', 'center'); y += 14; ct += 7;
     }
-    for (let i = 0; i < achThisRun.length && i < 2; i++) { txt('ACHIEVEMENT: '+achThisRun[i].name+' +'+achThisRun[i].reward, W/2, y, 1, '#C77EFF', 'center'); y += 11; }
-    for (let i = 0; i < collectionThisRun.length && i < 1; i++) { txt('COLLECTION: '+collectionThisRun[i].name+' +'+collectionThisRun[i].reward, W/2, y, 1, '#FFD75E', 'center'); y += 11; }
-    for (let i = 0; i < completedThisRun.length && i < 2; i++) { txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y, 1, '#62E8B5', 'center'); y += 11; }
-    if (runContext.mode === 'daily') { txt('DAILY STREAK ' + daily.streak, W/2, y, 1, '#FF9E5E', 'center'); y += 11; }
+    for (let i = 0; i < achThisRun.length && i < 2; i++) { const so = at(ct); txt('ACHIEVEMENT: '+achThisRun[i].name+' +'+achThisRun[i].reward, W/2, y+so, pop(ct), '#C77EFF', 'center'); y += 11; ct += 6; }
+    for (let i = 0; i < collectionThisRun.length && i < 1; i++) { const so = at(ct); txt('COLLECTION: '+collectionThisRun[i].name+' +'+collectionThisRun[i].reward, W/2, y+so, pop(ct), '#FFD75E', 'center'); y += 11; ct += 6; }
+    for (let i = 0; i < completedThisRun.length && i < 2; i++) { const so = at(ct); txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y+so, pop(ct), '#62E8B5', 'center'); y += 11; ct += 6; }
+    if (runContext.mode === 'daily') { const so = at(ct); txt('DAILY STREAK ' + daily.streak, W/2, y+so, pop(ct), '#FF9E5E', 'center'); y += 11; }
   }
+  ctx.globalAlpha = rev(30);
   ctx.fillStyle = 'rgba(94,200,242,0.9)'; ctx.fillRect(SHARE_BTN.x, SHARE_BTN.y, SHARE_BTN.w, SHARE_BTN.h);
   ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(SHARE_BTN.x, SHARE_BTN.y, SHARE_BTN.w, 1);
   txt('SHARE', W/2, SHARE_BTN.y + 5, 1, '#04222E', 'center');
+  ctx.globalAlpha = 1;   // reveal is transient UI only — never let alpha leak into the next render
   if (overLock <= 0 && Math.floor(tick/30)%2===0) txt(reviveOffered ? 'TAP TO SKIP' : 'TAP TO CONTINUE', W/2, H-68, 1, '#FFF6E8', 'center');
 }
 
