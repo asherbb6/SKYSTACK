@@ -2020,6 +2020,33 @@ check('v119 headless has no Image, so coverImg stays null and the map still rend
   return g.run('(() => { W=180;H=390;relayout(); skyMap=true; mapScroll=0; ensureCovers(); if (coverImg !== null) return "coverImg not null in headless"; renderSkyMap(); return coverImg === null; })()') === true;
 });
 
+// ---------- v120: "coins to go" gauge on locked shop unlock buttons ----------
+check('v120 coins-to-go gauge: helper + both shops wire it in; the afford branch keeps the pinned coin line', () =>
+  /function coinsToGo\(cost\)/.test(src) &&
+  /const frac = clamp\(coins \/ cost, 0, 1\)/.test(src) &&
+  /ctx\.fillRect\(EQUIP_BTN\.x \+ 1, EQUIP_BTN\.y \+ 1, Math\.round\(\(EQUIP_BTN\.w - 2\) \* frac\), EQUIP_BTN\.h - 2\)/.test(src) &&
+  /const lbl = coins \+ '\/' \+ cost/.test(src) &&
+  /} else coinsToGo\(sk\.cost\);/.test(src) && /else coinsToGo\(b\.cost\);/.test(src) &&
+  /drawCoin\(W\/2 \+ 8, EQUIP_BTN\.y\+5\.5\)/.test(src) && /drawCoin\(W\/2\+8,EQUIP_BTN\.y\+5\.5\)/.test(src));
+check('v120 a locked, unaffordable shop item shows a have/cost gauge label; affordable keeps UNLOCK', () => {
+  const g = makeGame();
+  const gauge = g.run('(() => { W=242;H=300;relayout(); state="shop"; shopView="character";' +
+    ' const sk = CHARACTER_REGISTRY.find(c=>c.cost>0 && owned.indexOf(c.id)===-1);' +
+    ' if(!sk) return "no locked paid character"; previewIdx = CHARACTER_REGISTRY.indexOf(sk);' +
+    ' coins = Math.floor(sk.cost/2);' +
+    ' let label=null; const o=txt; txt=(t)=>{ if(/^[0-9]+\\/[0-9]+$/.test(String(t))) label=String(t); };' +
+    ' try { renderShop(); } finally { txt=o; }' +
+    ' return label === coins + "/" + sk.cost ? "gauge:"+label : "no gauge (label="+label+")"; })()');
+  if (!/^gauge:/.test(gauge)) return gauge;
+  const unlock = g.run('(() => { W=242;H=300;relayout(); state="shop"; shopView="character";' +
+    ' const sk = CHARACTER_REGISTRY.find(c=>c.cost>0 && owned.indexOf(c.id)===-1);' +
+    ' previewIdx = CHARACTER_REGISTRY.indexOf(sk); coins = sk.cost + 50;' +
+    ' let sawUnlock=false, sawGauge=false; const o=txt; txt=(t)=>{ t=String(t); if(t==="UNLOCK")sawUnlock=true; if(/^[0-9]+\\/[0-9]+$/.test(t))sawGauge=true; };' +
+    ' try { renderShop(); } finally { txt=o; }' +
+    ' return sawUnlock && !sawGauge; })()');
+  return unlock === true ? true : 'affordable did not show UNLOCK (or still showed gauge)';
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2045,7 +2072,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v119', () => /const CACHE = 'skystack-v119'/.test(sw));
+check('sw.js cache bumped to v120', () => /const CACHE = 'skystack-v120'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

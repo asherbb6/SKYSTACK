@@ -5370,6 +5370,16 @@ function renderModePicker() {
 }
 
 // ---------- SHOP ----------
+// v120: a locked, not-yet-affordable unlock button doubles as a "coins to go" gauge — a soft gold
+// fill creeps across the button as you save up, and the label shows have/cost so the shortfall reads
+// at a glance. Shared by the character and base shops (both use EQUIP_BTN + a gold UNLOCK button).
+function coinsToGo(cost) {
+  const frac = clamp(coins / cost, 0, 1);
+  ctx.fillStyle = 'rgba(255,215,94,0.18)';
+  ctx.fillRect(EQUIP_BTN.x + 1, EQUIP_BTN.y + 1, Math.round((EQUIP_BTN.w - 2) * frac), EQUIP_BTN.h - 2);
+  const lbl = coins + '/' + cost, tw = lbl.length*6 - 1, x0 = Math.round(W/2 - (tw + 11)/2);
+  drawCoin(x0, EQUIP_BTN.y + 5.5); txt(lbl, x0 + 11, EQUIP_BTN.y + 5, 1, 'rgba(255,246,232,0.7)', 'left');
+}
 function renderShop() {
   topBar('SHOP');
   for(const tab of SHOP_TABS){
@@ -5408,9 +5418,11 @@ function renderShop() {
   } else {
     const afford = coins >= sk.cost;
     pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);
-    const ic = afford ? VISUAL_SYSTEM.palette.gold : 'rgba(255,246,232,0.6)';
-    txt('UNLOCK', W/2 - 14, EQUIP_BTN.y+5, 1, ic, 'center');
-    drawCoin(W/2 + 8, EQUIP_BTN.y+5.5); txt(sk.cost, W/2 + 17, EQUIP_BTN.y+5, 1, ic, 'left');
+    if (afford) {
+      const ic = VISUAL_SYSTEM.palette.gold;
+      txt('UNLOCK', W/2 - 14, EQUIP_BTN.y+5, 1, ic, 'center');
+      drawCoin(W/2 + 8, EQUIP_BTN.y+5.5); txt(sk.cost, W/2 + 17, EQUIP_BTN.y+5, 1, ic, 'left');
+    } else coinsToGo(sk.cost);   // v120: coins-to-go gauge until you can afford it
   }
 
   pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.22)',false);
@@ -5505,7 +5517,7 @@ function renderBaseShop(){
   txt(b.name,W/2,SHOP_TOP+68,1,'#FFF6E8','center');txt('COSMETIC BASE',W/2,SHOP_TOP+80,1,b.accent,'center');
   if(isEquipped){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)','rgba(255,246,232,0.26)',false);txt('EQUIPPED',W/2,EQUIP_BTN.y+5,1,'rgba(255,246,232,0.6)','center');}
   else if(isOwned){pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',VISUAL_SYSTEM.palette.mint,true);txt('EQUIP',W/2,EQUIP_BTN.y+5,1,VISUAL_SYSTEM.palette.mint,'center');}
-  else {const afford=coins>=b.cost;pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);const c=afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.6)';txt('UNLOCK',W/2-14,EQUIP_BTN.y+5,1,c,'center');drawCoin(W/2+8,EQUIP_BTN.y+5.5);txt(b.cost,W/2+17,EQUIP_BTN.y+5,1,c,'left');}
+  else {const afford=coins>=b.cost;pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);if(afford){const c=VISUAL_SYSTEM.palette.gold;txt('UNLOCK',W/2-14,EQUIP_BTN.y+5,1,c,'center');drawCoin(W/2+8,EQUIP_BTN.y+5.5);txt(b.cost,W/2+17,EQUIP_BTN.y+5,1,c,'left');}else coinsToGo(b.cost);}   // v120: coins-to-go gauge
   pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?b.accent:'rgba(255,246,232,0.22)',false);
   txt('BASE DETAILS',SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+5,1,isEquipped?b.accent:'#FFF6E8','left');
   // v110: same INFO yield rule as the character detail row
