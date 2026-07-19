@@ -1254,6 +1254,7 @@ function createRunContext(o) {
   const challenge=challengeById(o.challengeId);
   const campaignLevel = Number.isInteger(o.campaignLevel) ? o.campaignLevel : -1;
   const startingAltitude = Math.max(0, o.startingAltitude | 0);
+  const diff = difficultyFor(o.mode, o.challengeId);            // v124: immutable for the whole run
   const p = PERMISSION_REGISTRY[m.id];
   const lane = laneForMode(m.id), levelSpec = campaignLevel >= 0 ? LEVEL_REGISTRY[campaignLevel] : null;
   const char=characterById(challenge&&challenge.characterId?challenge.characterId:o.characterId), passive=PASSIVE_REGISTRY[char.passiveId] || PASSIVE_REGISTRY.classic;
@@ -1263,7 +1264,7 @@ function createRunContext(o) {
   const modifiers=Array.isArray(o.modifiers)?o.modifiers:challenge&&!challenge.modifiers?[]:buildModifierSchedule(o.seed>>>0,m.id,campaignLevel,startingAltitude);
   const recordEligible=p.records && campaignLevel<0 && startingAltitude===0 && checkpoint.recordScope==='ground-up';
   return deepFreeze({
-    mode:m.id, campaignLevel, startingAltitude, seed:o.seed >>> 0,
+    mode:m.id, campaignLevel, startingAltitude, seed:o.seed >>> 0, difficulty:diff.id,
     challengeSnapshot:challenge?JSON.parse(JSON.stringify(challenge)):null,
     assistPolicy:p.assist,
     checkpointSnapshot:{ id:checkpoint.id, name:checkpoint.name, startAltitude:checkpoint.startAltitude, scoreMultiplier:checkpoint.scoreMultiplier, rewardScope:checkpoint.rewardScope, recordScope:checkpoint.recordScope },
@@ -1278,7 +1279,7 @@ function createRunContext(o) {
     rewardPermissions:{ earn:p.rewards, pickups:p.pickups, progress:p.progress, settle:p.rewards, scope:checkpoint.rewardScope, scoreMultiplier:checkpoint.scoreMultiplier },
     recordPermissions:{ write:recordEligible, scope:challenge?'challenge':checkpoint.recordScope, reason:challenge?'challenge':campaignLevel>=0?'campaign-level':checkpoint.recordScope==='ground-up'?'eligible-ground-up':'checkpoint-start' },
     characterSnapshot:{ id:char.id, passiveId:passive.id, passiveEnabled:!!p.passives, mastery:masteryEntry(o.characterMastery) },
-    difficultyProfile:{ lane:lane.id, assistEnvelope:lane.assist, startingAssist:startingAssist(m.id, o.skill), campaignLevel, levelSpeedScale:levelSpec ? levelSpec.speedCurve.campaignScale : 1, slider:BALANCE_REGISTRY.slider }
+    difficultyProfile:{ lane:lane.id, assistEnvelope:lane.assist, startingAssist:startingAssist(m.id, o.skill), campaignLevel, levelSpeedScale:levelSpec ? levelSpec.speedCurve.campaignScale : 1, slider:BALANCE_REGISTRY.slider, difficultyScale:diff.sliderSpeed }
   });
 }
 function canEarnRewards(ctx) { return !!(ctx && ctx.rewardPermissions && ctx.rewardPermissions.earn); }

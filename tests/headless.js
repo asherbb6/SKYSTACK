@@ -2201,6 +2201,41 @@ check('v124 slider speed orders EASY < MEDIUM < HARD at the same altitude, MEDIU
     ' const neutral = difficultyAt(bare, 40, .35).sliderSpeed;' +
     ' return at(0.85) < at(1) && at(1) < at(1.30) && at(1) === neutral; })()'));
 
+check('v124 each mode and challenge remembers its OWN difficulty, and it survives a reload', () => {
+  const g = makeGame();
+  const set = g.run('(() => { setDifficulty("endless","hard"); setDifficulty("pure","easy");' +
+    ' setDifficulty(difficultyScope("challenge","time60"),"easy");' +
+    ' return storedDifficulty("endless") === "hard" && storedDifficulty("pure") === "easy" &&' +
+    '   storedDifficulty("endless") !== storedDifficulty("pure"); })()');
+  if (set !== true) return 'per-scope selection failed';
+  const reloaded = makeGame({ 'skystack-save': g.mem.get('skystack-save') });
+  return reloaded.run('storedDifficulty("endless") === "hard" && storedDifficulty("pure") === "easy"');
+});
+check('v124 an unknown or corrupt difficulty repairs to MEDIUM instead of throwing', () => {
+  for (const bad of [null, 0, 'nightmare', [], {x:1}, true]) {
+    const g = makeGame({ 'skystack-save': JSON.stringify({ version:2, data:{ 'skystack-difficulty': bad } }) });
+    if (!g.run('booted === true')) return 'boot failed for ' + JSON.stringify(bad);
+    if (g.run('storedDifficulty("endless")') !== 'medium') return 'did not repair: ' + JSON.stringify(bad);
+  }
+  return true;
+});
+check('v124 PRACTICE and DAILY stay MEDIUM even when another mode is set to HARD', () =>
+  fresh.run('(() => { setDifficulty("endless","hard"); setDifficulty("practice","hard"); setDifficulty("daily","hard");' +
+    ' const ok = difficultyFor("practice").id === "medium" && difficultyFor("daily").id === "medium" &&' +
+    '   difficultyFor("endless").id === "hard" && !difficultyPickable("practice") && !difficultyPickable("daily") &&' +
+    '   difficultyPickable("endless");' +
+    ' setDifficulty("endless","medium"); return ok; })()'));
+check('v124 difficulty is snapshotted into the run and cannot change mid-run', () => {
+  const g = makeGame();
+  return g.run('(() => { setDifficulty("endless","hard"); mode = "endless"; resetRun();' +
+    ' if (runContext.difficulty !== "hard") return "not snapshotted: " + runContext.difficulty;' +
+    ' if (runContext.difficultyProfile.difficultyScale !== DIFFICULTY_TIERS.hard.sliderSpeed) return "scale missing";' +
+    ' const during = toppleLimit();' +
+    ' setDifficulty("endless","easy");' +
+    ' if (toppleLimit() !== during) return "run difficulty mutated mid-run";' +
+    ' setDifficulty("endless","medium"); return true; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
