@@ -2236,12 +2236,35 @@ check('v124 difficulty is snapshotted into the run and cannot change mid-run', (
     ' setDifficulty("endless","medium"); return true; })()') === true;
 });
 
+// swept, not just the 5 fixtures: the narrow-AND-short corner (e.g. 180x330) is a real device shape
+// and it is exactly where the first two layout attempts collided with CLIMB ORDERS.
+check('v124 the difficulty control never collides or clips across a swept viewport range', () =>
+  fresh.run('(() => { const sizes=[]; for (let w=170; w<=520; w+=10) for (let h=260; h<=500; h+=10) sizes.push([w,h]);' +
+    ' for (const [w,h] of sizes) {' +
+    ' W=w; H=h; relayout();' +
+    ' const modeLabel = MODE_BTN.w >= "EXTRA MODES".length*6 ? "EXTRA MODES" : "MODES";' +
+    ' if (MODE_BTN.w < modeLabel.length*6) return false;' +
+    ' if (MAP_BTN.w < "SKY MAP".length*6) return false;' +
+    ' if (DIFF_BTN.w < "HARD".length*6) return false;' +
+    ' if (DIFF_BTN.y + DIFF_BTN.h > MISS_PANEL.y) return false;' +
+    ' if (DIFF_BTN.y + DIFF_BTN.h > INSTALL_BTN.y) return false;' +
+    ' if (DIFF_BTN.y + DIFF_BTN.h >= NAV_Y) return false;' +
+    ' if (DIFF_BTN.x < HERO_CARD.x || DIFF_BTN.x + DIFF_BTN.w > HERO_CARD.x + HERO_CARD.w) return false;' +
+    ' if (MODE_BTN.x + MODE_BTN.w > DIFF_BTN.x) return false; }' +          // no overlap within the row
+    ' W=320; H=480; relayout(); return true; })()'));
 check('v124 the difficulty control lays out inside the hero card and clear of the nav at every fixture', () =>
   fresh.run('(() => { for (const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300]]) {' +
     ' W=w; H=h; relayout();' +
     ' if (DIFF_BTN.x < 0 || DIFF_BTN.x + DIFF_BTN.w > W) return false;' +
     ' if (DIFF_BTN.y + DIFF_BTN.h >= NAV_Y) return false;' +
-    ' if (DIFF_BTN.y < MAP_BTN.y + MAP_BTN.h) return false;' +
+    ' if (DIFF_BTN.y + DIFF_BTN.h > MISS_PANEL.y) return false;' +          // must not collide with CLIMB ORDERS
+    ' if (DIFF_BTN.y + DIFF_BTN.h > INSTALL_BTN.y) return false;' +
+    ' if (DIFF_BTN.x < HERO_CARD.x || DIFF_BTN.x + DIFF_BTN.w > HERO_CARD.x + HERO_CARD.w) return false;' +
+    ' if (DIFF_BTN.y < HERO_CARD.y + HERO_CARD.h) return false;' +          // below the hero card, not over it
+    // labels must actually FIT their buttons (5x7 font advances 6px per char at scale 1)
+    ' if (MODE_BTN.w < "MODES".length*6) return false;' +
+    ' if (MAP_BTN.w < "SKY MAP".length*6) return false;' +
+    ' if (DIFF_BTN.w < "HARD".length*6) return false;' +
     ' for (const r of DIFF_ROWS) if (r.x < 0 || r.x + r.w > W || r.y + r.h >= NAV_Y) return false; }' +
     ' return true; })()'));
 check('v124 tapping a difficulty row selects it, stores it for THIS mode, and closes the picker', () => {
@@ -2323,6 +2346,25 @@ check('v124 shownStars() is cached for the render loop but never goes stale afte
     ' return true; })()') === true;
 });
 
+check('v124 RE-AUDIT: MEDIUM reports are byte-identical to v123 and every level stays in range', () =>
+  fresh.run('(() => { const v123 = { 0:93.7, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
+    '   8:81.8, 9:150.1, 10:206.1 };' +
+    ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
+    '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
+    '   if (d.ideal !== v123[i]) return false;' +
+    '   if (levelBalanceReport(i,"assisted",.35).durationSeconds.ideal !== v123[i]) return false;' +
+    '   if (d.ordinary < d.range[0] || d.ordinary > d.range[1]) return false; }' +
+    ' return true; })()'));
+check('v124 the model sees difficulty: EASY climbs are modelled slower than HARD', () =>
+  fresh.run('(() => { for (const i of [0, 4, 8, 10]) {' +
+    ' const e = levelBalanceReport(i,"assisted",.35,"easy").durationSeconds.ideal;' +
+    ' const m = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds.ideal;' +
+    ' const h = levelBalanceReport(i,"assisted",.35,"hard").durationSeconds.ideal;' +
+    ' if (!(e > m && m > h)) return false; } return true; })()'));
+check('v124 the report states which difficulty it modelled', () =>
+  fresh.run('levelBalanceReport(4,"assisted",.35,"hard").difficulty === "hard" && ' +
+    'levelBalanceReport(4,"assisted",.35).difficulty === "medium"'));
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2348,7 +2390,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v123', () => /const CACHE = 'skystack-v123'/.test(sw));
+check('sw.js cache bumped to v124', () => /const CACHE = 'skystack-v124'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

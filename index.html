@@ -1363,11 +1363,12 @@ function fallFramesFor(distance, grav) {
   while (y < goal && frames < 120) { vy += p.gravity*g; y += vy; frames++; }
   return frames;
 }
-function levelBalanceReport(levelId, laneId, skillValue) {
+function levelBalanceReport(levelId, laneId, skillValue, difficultyId) {
   const spec=LEVEL_REGISTRY[clamp(levelId|0,0,LEVEL_REGISTRY.length-1)], lane=DIFFICULTY_LANES[laneId] || DIFFICULTY_LANES.assisted;
   const sk=clamp(skillValue === undefined ? 0.35 : skillValue,0,1), aCfg=BALANCE_REGISTRY.assist, hCfg=BALANCE_REGISTRY.harness;
+  const diff=DIFFICULTY_TIERS[difficultyId] || DIFFICULTY_TIERS.medium;                 // v124: defaults to MEDIUM
   const startAssist=lane.assist.policy === 'fixed' ? lane.assist.max : lane.assist.policy === 'off' ? 0 : startingAssist('level',sk);
-  const probe={difficultyProfile:{startingAssist:startAssist,campaignLevel:spec.id,levelSpeedScale:spec.speedCurve.campaignScale,slider:BALANCE_REGISTRY.slider}};
+  const probe={difficultyProfile:{startingAssist:startAssist,campaignLevel:spec.id,levelSpeedScale:spec.speedCurve.campaignScale,slider:BALANCE_REGISTRY.slider,difficultyScale:diff.sliderSpeed}};
   let curAssist=startAssist, minAssist=curAssist, maxAssist=curAssist, ideal=0, speedSum=0, speedMin=Infinity, speedMax=0, windowSum=0, windSum=0;
   const mats=[]; const travel=(hCfg.corridorWidth + BALANCE_REGISTRY.physics.baseWidth)/2;
   for (let h=spec.startAltitude, step=0; h<spec.goalAltitude; h++,step++) {
@@ -1380,7 +1381,7 @@ function levelBalanceReport(levelId, laneId, skillValue) {
     minAssist=Math.min(minAssist,curAssist); maxAssist=Math.max(maxAssist,curAssist);
   }
   const n=spec.blocksRequired, round2=v=>+v.toFixed(2), round1=v=>+v.toFixed(1), ordinary=ideal*hCfg.ordinaryTimingFactor;
-  return { level:spec.id, identity:spec.identity, lane:lane.id, blocks:n, difficultyRating:spec.difficultyRating,
+  return { level:spec.id, identity:spec.identity, lane:lane.id, difficulty:diff.id, blocks:n, difficultyRating:spec.difficultyRating,
     durationSeconds:{ ideal:round1(ideal), ordinary:round1(ordinary), target:spec.targetDurationSeconds.target, range:[spec.targetDurationSeconds.min,spec.targetDurationSeconds.max] },
     sliderSpeed:{ min:round2(speedMin), average:round2(speedSum/n), max:round2(speedMax) }, perfectWindowPx:round2(windowSum/n),
     assist:{ start:round2(startAssist), min:round2(minAssist), max:round2(maxAssist), end:round2(curAssist) },
@@ -2035,11 +2036,22 @@ function relayout() {
   const heroH = H <= 280 ? 96 : 104;
   HERO_CARD = { x: Math.round((W-heroW)/2), y:heroY, w:heroW, h:heroH };
   PLAY_BTN = { x: HERO_CARD.x+12, y: HERO_CARD.y+HERO_CARD.h-24, w: heroW-24, h:18 };
-  const halfW = Math.floor((heroW - 6) / 2);
+  // v124: difficulty SHARES the map/modes row. The home stack is genuinely full on short viewports
+  // (480x270 has no spare vertical room before CLIMB ORDERS/INSTALL), so a new row would collide.
+  // v124: difficulty prefers to SHARE the map/modes row, because the home stack is genuinely full on
+  // short viewports (480x270 has almost no room before CLIMB ORDERS). But on a narrow screen sharing
+  // would squeeze 'EXTRA MODES' (66px of text) into ~50px — so there it takes its own row, which
+  // narrow screens are tall enough to afford. Both branches are asserted at every fixture.
+  // v124: difficulty SHARES the map/modes row. It cannot take a row of its own: the home stack is
+  // full on short viewports (480x270 has ~2px before CLIMB ORDERS) AND on narrow-and-short ones.
+  // Sharing needs the modes label to fit, so narrow screens use the compact 'MODES' — the same
+  // W<220 compact-label convention the picker rows already use.
+  const diffW = 30, btnGap = 5;                                 // fits EASY/MED/HARD (4 chars) and leaves
+                                                                // 'EXTRA MODES' room down to the 200px headless viewport
+  const halfW = Math.floor((heroW - diffW - btnGap*2) / 2);
   MAP_BTN  = { x: HERO_CARD.x, y: HERO_CARD.y + HERO_CARD.h + 6, w: halfW, h:18 };
-  MODE_BTN = { x: HERO_CARD.x + heroW - halfW, y: MAP_BTN.y, w: halfW, h:18 };
-  // v124: difficulty sits on its own row under MAP/EXTRA MODES so the dense hero block is untouched
-  DIFF_BTN = { x: MAP_BTN.x, y: MAP_BTN.y + MAP_BTN.h + 4, w: heroW, h:16 };
+  MODE_BTN = { x: MAP_BTN.x + halfW + btnGap, y: MAP_BTN.y, w: halfW, h:18 };
+  DIFF_BTN = { x: HERO_CARD.x + heroW - diffW, y: MAP_BTN.y, w: diffW, h:18 };
   const dRowW = Math.min(W - 24, 240), dRowH = 34, dRowGap = 4;
   const dTop = Math.round((H - (DIFFICULTY_ORDER.length*(dRowH+dRowGap) - dRowGap)) / 2);
   DIFF_ROWS = DIFFICULTY_ORDER.map((id, i) => ({ x: Math.round((W-dRowW)/2), y: dTop + i*(dRowH+dRowGap), w:dRowW, h:dRowH, id }));
@@ -4722,8 +4734,9 @@ function renderHome() {
 
   // secondary row: SKY MAP + EXTRAS live under the climb, not above it
   pixelButton(MAP_BTN,'SKY MAP',false);
-  pixelButton(MODE_BTN,'EXTRA MODES',false);
-  if (difficultyPickable(mode)) pixelButton(DIFF_BTN, 'DIFFICULTY - ' + difficultyFor(mode, null).name, false);   // v124
+  // v124: pick the label that actually FITS the button rather than guessing from viewport width
+  pixelButton(MODE_BTN, MODE_BTN.w >= 'EXTRA MODES'.length*6 ? 'EXTRA MODES' : 'MODES', false);
+  if (difficultyPickable(mode)) pixelButton(DIFF_BTN, difficultyFor(mode, null).name === 'MEDIUM' ? 'MED' : difficultyFor(mode, null).name, false);   // v124
   // armed boosts indicator (centered icons under the secondary row)
   const armed = LOADOUT.filter(l => loadout[l.id]);
   if (armed.length && mode !== 'daily' && mode !== 'practice') {
