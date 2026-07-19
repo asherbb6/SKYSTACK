@@ -2499,6 +2499,55 @@ check('v125 the no-miss clamp never IMPROVES a drop that was already going to mi
     ' return state === "gameover" ? true : "clamp rescued a genuine miss: " + state; })()') === true;
 });
 
+check('v125 DAILY stays bit-identical for the same seed with drift active (no new randomness)', () => {
+  const runDaily = () => { const g = makeGame();
+    return g.run('(() => { mode="daily"; resetRun(); state="playing";' +
+      ' const path=[]; for (let n=0;n<40;n++) {' +
+      '   spawnSlider(); releaseBlock(); state="dropping";' +
+      '   let f=0; while (state==="dropping" && f<60) { update(1); f++; }' +
+      '   path.push(Math.round((blocks[blocks.length-1].x)*1000));' +
+      '   if (state!=="playing") break; }' +
+      ' return path.join(","); })()'); };
+  const a = runDaily(), b = runDaily();
+  return a === b && a.length > 0;
+});
+check('v125 reduceMotion does NOT change where a block lands (drift is simulation, not decoration)', () => {
+  const land = (reduced) => { const g = makeGame(undefined, reduced);
+    return g.run('(() => { setDifficulty("endless","medium"); mode="endless"; resetRun(); state="playing";' +
+      ' tier = 5; wind = { dir:1, str:0.7, dur:200, t:100 };' +
+      ' const top = blocks[blocks.length-1];' +
+      ' faller = { x: top.x, x0: top.x, y: towerTopY()-BH, w: top.w, vx:0,' +
+      '   vy: dropPhysicsFor(tier).initialVelocity, col: blockCol(blocks.length), golden:false };' +
+      ' slider = null; state = "dropping";' +
+      // capture the last airborne x: land() nulls the faller, so reading it after the loop throws
+      ' let lastX = faller.x;' +
+      ' for (let i=0;i<30 && state==="dropping";i++) { update(1); if (faller) lastX = faller.x; }' +
+      ' return Math.round(lastX * 1000); })()'); };
+  return land(false) === land(true);
+});
+check('v125 RE-AUDIT: level durations are untouched (drift moves WHERE a block lands, not how long)', () =>
+  fresh.run('(() => { const pinned = { 0:93.7, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
+    '   8:81.8, 9:150.1, 10:206.1 };' +
+    ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
+    '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
+    '   if (d.ideal !== pinned[i]) return false;' +
+    '   if (d.ordinary < d.range[0] || d.ordinary > d.range[1]) return false; }' +
+    ' return true; })()'));
+check('v125 a fresh run starts driftless — resetRun drops the faller and its lateral state', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing"; tier = 5;' +
+    ' wind = { dir:1, str:0.7, dur:200, t:100 };' +
+    ' spawnSlider(); releaseBlock(); state="dropping"; update(1);' +
+    ' const drifting = (faller.vx || 0) !== 0;' +
+    ' resetRun();' +
+    ' if (!drifting) return "test setup failed — nothing was drifting to begin with";' +
+    ' return (faller === null && wind === null) ? true : "reset left drift state behind"; })()') === true;
+});
+check('v125 the frozen-S1 drop and placement literals are still untouched', () =>
+  fresh.run('BALANCE_REGISTRY.drop.gravity === .9 && BALANCE_REGISTRY.drop.initialVelocity === 2.6 && ' +
+    'fallFramesFor() === 5 && BALANCE_REGISTRY.placement.balanceMemory === .5 && ' +
+    'BALANCE_REGISTRY.placement.balanceOffset === .5 && BALANCE_REGISTRY.physics.topple === 28'));
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +

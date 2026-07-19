@@ -1510,6 +1510,7 @@ function resetRun() {
   initModifierRuntime();
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
   balance = 0; swayX = 0; paused = false; dropPending = 0; squashPow = 0; toppleHideTop = 0;
+  faller = null;   // v125: a fresh run must not inherit a stale faller — it now carries lateral drift state (vx/x0)
   timeLeft = activeChallenge()&&activeChallenge().duration?activeChallenge().duration:(m.time || 0);
   PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
   assist = runContext.difficultyProfile.startingAssist;
