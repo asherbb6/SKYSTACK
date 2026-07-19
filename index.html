@@ -1288,9 +1288,11 @@ function levelBalanceReport(levelId, laneId, skillValue) {
   const startAssist=lane.assist.policy === 'fixed' ? lane.assist.max : lane.assist.policy === 'off' ? 0 : startingAssist('level',sk);
   const probe={difficultyProfile:{startingAssist:startAssist,campaignLevel:spec.id,levelSpeedScale:spec.speedCurve.campaignScale,slider:BALANCE_REGISTRY.slider}};
   let curAssist=startAssist, minAssist=curAssist, maxAssist=curAssist, ideal=0, speedSum=0, speedMin=Infinity, speedMax=0, windowSum=0, windSum=0;
-  const mats=[]; const travel=(hCfg.corridorWidth + BALANCE_REGISTRY.physics.baseWidth)/2, impact=(BALANCE_REGISTRY.drop.graceFrames + fallFramesFor())/hCfg.fps;
+  const mats=[]; const travel=(hCfg.corridorWidth + BALANCE_REGISTRY.physics.baseWidth)/2;
   for (let h=spec.startAltitude, step=0; h<spec.goalAltitude; h++,step++) {
     const ti=clamp(TIERS.findIndex(t=>t.n>h),0,TIERS.length-1), d=difficultyAt(probe,h,curAssist,ti), win=BALANCE_REGISTRY.physics.perfectPx*(1+curAssist);
+    // v123: impact is per-BIOME, not global — a low-g biome's longer float has to show up in the budget
+    const impact=(BALANCE_REGISTRY.drop.graceFrames + fallFramesFor(undefined, d.material.grav))/hCfg.fps;
     ideal += travel/(d.sliderSpeed*hCfg.fps) + impact; speedSum += d.sliderSpeed; speedMin=Math.min(speedMin,d.sliderSpeed); speedMax=Math.max(speedMax,d.sliderSpeed); windowSum+=win; windSum+=d.material.wind;
     if (mats.indexOf(d.material.name)<0) mats.push(d.material.name);
     if (lane.assist.policy === 'adaptive') curAssist = step % hCfg.perfectEvery === 0 ? Math.max(assistFloorFor(sk),curAssist-aCfg.perfectStep) : Math.min(aCfg.max,curAssist+aCfg.sloppyStep);

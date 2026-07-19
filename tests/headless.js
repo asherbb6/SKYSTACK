@@ -2123,6 +2123,23 @@ check('v123 the live drop is biome-aware: SPACE launches gentler and accelerates
   return r === true;
 });
 
+check('v123 the duration model is biome-aware: low-g levels are modelled longer, normal-g levels unchanged', () => {
+  const g = makeGame();
+  // measured re-audit numbers. blind model (v122): L8 ideal 80.0, L9 146.7, L0 93.7, L10 206.1.
+  // low-g adds (12-10) impact frames/block: L8 +55*2/60 = +1.8s, L9 +100*2/60 = +3.3s.
+  const r = g.run('(() => { const ideal = i => levelBalanceReport(i,"assisted",.35).durationSeconds.ideal;' +
+    ' if (!(ideal(8) > 81.4 && ideal(8) < 82.2)) return "L8 not lengthened by low-g: " + ideal(8) + " (blind was 80.0)";' +
+    ' if (!(ideal(9) > 149.6 && ideal(9) < 150.4)) return "L9 not lengthened by low-g: " + ideal(9) + " (blind was 146.7)";' +
+    ' if (ideal(0) !== 93.7) return "normal-g L0 drifted: " + ideal(0);' +
+    ' if (ideal(10) !== 206.1) return "normal-g L10 drifted: " + ideal(10);' +
+    ' return true; })()');
+  return r === true;
+});
+check('v123 RE-AUDIT: every level still lands inside its target duration range under biome gravity', () =>
+  fresh.run('LEVEL_REGISTRY.every((l,i) => ["assisted","pure","practice"].every(lane => {' +
+    ' const d = levelBalanceReport(i, lane, .35).durationSeconds;' +
+    ' return d.ordinary >= d.range[0] && d.ordinary <= d.range[1]; }))'));
+
 // ---------- v122: topple tuned to happen more often (deliberate difficulty shift) ----------
 check('v122 topple tolerance is pinned at the tightened 28 (was 34)', () =>
   fresh.run('BALANCE_REGISTRY.physics.topple === 28 && TOPPLE === 28'));
