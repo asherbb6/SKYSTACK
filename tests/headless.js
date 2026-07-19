@@ -2164,6 +2164,43 @@ check('v122 practice still auto-steadies at the tighter tolerance instead of fai
     ' return state === "playing" && Math.abs(balance) < TOPPLE; })()') === true;
 });
 
+// ---------- v124: player-facing difficulty (EASY / MEDIUM / HARD) ----------
+check('v124 MEDIUM is exactly neutral — every multiplier is 1', () =>
+  fresh.run('(() => { const m = DIFFICULTY_TIERS.medium;' +
+    ' return m.sliderSpeed === 1 && m.topple === 1 && m.drift === 1 && m.driftCanMiss === false; })()'));
+check('v124 the tier registry is frozen and carries the agreed EASY/HARD values', () =>
+  fresh.run('(() => { const e = DIFFICULTY_TIERS.easy, h = DIFFICULTY_TIERS.hard;' +
+    ' return Object.isFrozen(DIFFICULTY_TIERS) && DIFFICULTY_ORDER.join(",") === "easy,medium,hard" &&' +
+    ' e.sliderSpeed === 0.85 && e.topple === 1.25 && h.sliderSpeed === 1.30 && h.topple === 0.65 &&' +
+    ' h.driftCanMiss === true && e.driftCanMiss === false; })()'));
+check('v124 the topple registry value is UNTOUCHED at 28; difficulty applies via toppleLimit()', () =>
+  fresh.run('(() => { if (BALANCE_REGISTRY.physics.topple !== 28 || TOPPLE !== 28) return false;' +
+    ' mode = "endless"; runContext = null;' +
+    ' setDifficulty("endless", "easy");   const easy = toppleLimit();' +
+    ' setDifficulty("endless", "medium"); const med  = toppleLimit();' +
+    ' setDifficulty("endless", "hard");   const hard = toppleLimit();' +
+    ' setDifficulty("endless", "medium");' +
+    ' return med === 28 && Math.abs(easy - 35) < 1e-9 && Math.abs(hard - 18.2) < 1e-9; })()'));
+check('v124 the SAME lean topples on HARD but survives on EASY (the tier is really felt)', () => {
+  const g = makeGame();
+  const lean = (id) => g.run('(() => { setDifficulty("endless","' + id + '"); mode="endless"; resetRun();' +
+    ' state="playing"; balance = 60;' +
+    ' const top=blocks[blocks.length-1];' +
+    ' faller={x:top.x,y:towerTopY()-BH,w:top.w,col:blockCol(blocks.length),golden:false};' +
+    ' slider=null; state="dropping"; land(); return state; })()');
+  const hard = lean('hard'), easy = lean('easy');
+  g.run('setDifficulty("endless","medium");');
+  return hard === 'gameover' && easy === 'playing';
+});
+check('v124 slider speed orders EASY < MEDIUM < HARD at the same altitude, MEDIUM unchanged', () =>
+  fresh.run('(() => { const at = (scale) => { const probe = { difficultyProfile:{ startingAssist:.35,' +
+    '     campaignLevel:-1, levelSpeedScale:1, slider:BALANCE_REGISTRY.slider, difficultyScale:scale } };' +
+    '   return difficultyAt(probe, 40, .35).sliderSpeed; };' +
+    ' const bare = { difficultyProfile:{ startingAssist:.35, campaignLevel:-1, levelSpeedScale:1,' +
+    '   slider:BALANCE_REGISTRY.slider } };' +
+    ' const neutral = difficultyAt(bare, 40, .35).sliderSpeed;' +
+    ' return at(0.85) < at(1) && at(1) < at(1.30) && at(1) === neutral; })()'));
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
