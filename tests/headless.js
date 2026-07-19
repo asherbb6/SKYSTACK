@@ -2236,6 +2236,31 @@ check('v124 difficulty is snapshotted into the run and cannot change mid-run', (
     ' setDifficulty("endless","medium"); return true; })()') === true;
 });
 
+check('v124 the difficulty control lays out inside the hero card and clear of the nav at every fixture', () =>
+  fresh.run('(() => { for (const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300]]) {' +
+    ' W=w; H=h; relayout();' +
+    ' if (DIFF_BTN.x < 0 || DIFF_BTN.x + DIFF_BTN.w > W) return false;' +
+    ' if (DIFF_BTN.y + DIFF_BTN.h >= NAV_Y) return false;' +
+    ' if (DIFF_BTN.y < MAP_BTN.y + MAP_BTN.h) return false;' +
+    ' for (const r of DIFF_ROWS) if (r.x < 0 || r.x + r.w > W || r.y + r.h >= NAV_Y) return false; }' +
+    ' return true; })()'));
+check('v124 tapping a difficulty row selects it, stores it for THIS mode, and closes the picker', () => {
+  const g = makeGame();
+  g.run('var __p = {x:0,y:0}; pos = () => __p;');
+  return g.run('(() => { W=320; H=480; relayout(); state="home"; mode="endless";' +
+    ' setDifficulty("endless","medium"); diffPicker = true;' +
+    ' const row = DIFF_ROWS.find(r => r.id === "hard");' +
+    ' __p = { x: row.x + row.w/2, y: row.y + row.h/2 }; pressDown({}); pressUp({});' +
+    ' return storedDifficulty("endless") === "hard" && diffPicker === false; })()') === true;
+});
+check('v124 the picker renders for a pickable mode and is never opened for PRACTICE/DAILY', () => {
+  const g = makeGame();
+  return g.run('(() => { W=320; H=480; relayout(); state="home";' +
+    ' for (const id of ["endless","pure","practice","daily"]) { mode = id; diffPicker = difficultyPickable(id);' +
+    '   renderHome(); if (diffPicker) renderDifficultyPicker(); }' +
+    ' mode = "practice"; return difficultyPickable("practice") === false; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +

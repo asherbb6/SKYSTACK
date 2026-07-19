@@ -738,6 +738,7 @@ if (!MODES.find(m => m.id === mode) || mode === 'level' || mode === 'time' || mo
 const curMode = () => MODES.find(m => m.id === mode) || MODES[0];
 let modePicker = false;
 let challengePicker = false;
+let diffPicker = false;                                                // v124: EASY/MEDIUM/HARD overlay
 let skyMap = false;
 let mapScroll = 0, mapScrollMax = 0, mapDrag = null, mapScrollV = 0;   // sky map list scroll state (+glide velocity)
 let modeBests = store.get('skystack-modebests', {});
@@ -1968,7 +1969,7 @@ function shareScore() {
 // ---------- layout constants ----------
 const PAD = 6;
 const NAV_H = 24;
-let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
+let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, DIFF_BTN, DIFF_ROWS, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, NOTIFY_CHIP_Y, BOOST_CARD_H, ME_PROG, SHOP_TOP, BOOST_TOP;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
@@ -1992,6 +1993,11 @@ function relayout() {
   const halfW = Math.floor((heroW - 6) / 2);
   MAP_BTN  = { x: HERO_CARD.x, y: HERO_CARD.y + HERO_CARD.h + 6, w: halfW, h:18 };
   MODE_BTN = { x: HERO_CARD.x + heroW - halfW, y: MAP_BTN.y, w: halfW, h:18 };
+  // v124: difficulty sits on its own row under MAP/EXTRA MODES so the dense hero block is untouched
+  DIFF_BTN = { x: MAP_BTN.x, y: MAP_BTN.y + MAP_BTN.h + 4, w: heroW, h:16 };
+  const dRowW = Math.min(W - 24, 240), dRowH = 34, dRowGap = 4;
+  const dTop = Math.round((H - (DIFFICULTY_ORDER.length*(dRowH+dRowGap) - dRowGap)) / 2);
+  DIFF_ROWS = DIFFICULTY_ORDER.map((id, i) => ({ x: Math.round((W-dRowW)/2), y: dTop + i*(dRowH+dRowGap), w:dRowW, h:dRowH, id }));
   const pickW = Math.min(W - 24, 240);
   const pickTop = H <= 280 ? 56 : 62, pickGap = 4;
   const pickH = clamp(Math.floor((H - 94 - pickGap*(EXTRAS.length-1)) / EXTRAS.length), 32, 40);
@@ -2155,6 +2161,12 @@ function pressDown(e) {
       for (const rw of CHALLENGE_ROWS) if (inR(p,rw,2)) { challengePicker=false; sfx.tap(); startChallenge(rw.id); return; }
       challengePicker=false; modePicker=true; sfx.tap(); return;
     }
+    if (diffPicker) {                                  // v124: difficulty picker consumes the tap
+      for (const rw of DIFF_ROWS) if (inR(p, rw, 2)) {
+        setDifficulty(difficultyScope(mode, null), rw.id); diffPicker = false; sfx.tap(); return;
+      }
+      diffPicker = false; sfx.tap(); return;           // tap anywhere else closes
+    }
     if (modePicker) {                                  // extras picker: modes launch; Challenges opens its hub
       for (const rw of PICK_ROWS) if (inR(p, rw, 2)) {
         if (rw.id==='challenges') { modePicker=false; challengePicker=true; sfx.tap(); return; }
@@ -2165,6 +2177,7 @@ function pressDown(e) {
     if (navHit(p)) return;
     if (deferredPrompt && inR(p, INSTALL_BTN, 3)) { const dp = deferredPrompt; deferredPrompt = null; try { dp.prompt(); } catch (err) {} return; }
     if (inR(p, MODE_BTN, 4)) { modePicker = true; challengePicker=false; sfx.tap(); return; }
+    if (difficultyPickable(mode) && inR(p, DIFF_BTN, 4)) { diffPicker = true; modePicker = false; challengePicker = false; sfx.tap(); return; }
     if (inR(p, MAP_BTN, 4)) { openSkyMap(); sfx.tap(); return; }
     if (inR(p, MISS_PANEL, 3)) { missionsOpen=true; sfx.tap(); return; }
     if (inR(p, PLAY_BTN, 4) || inR(p, HERO_CARD, 2)) { startLevel(Math.min(prog, TIERS.length - 1)); return; }
@@ -4376,7 +4389,7 @@ function render() {
   if (!menu && regionIntro) renderRegionIntro();   // cinematic region-entry overlay, on top of the world
 
   if (state === 'splash') renderSplash();
-  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (challengePicker) renderChallengePicker(); if (skyMap) renderSkyMap(); if(missionsOpen)renderMissionsOverlay(); }
+  else if (state === 'home') { renderHome(); drawNav(); if (modePicker) renderModePicker(); if (challengePicker) renderChallengePicker(); if (diffPicker) renderDifficultyPicker(); if (skyMap) renderSkyMap(); if(missionsOpen)renderMissionsOverlay(); }
   else if (state === 'shop') { renderShop(); drawNav(); if(shopDetailOpen)renderShopDetail(); }
   else if (state === 'me') { renderMe(); drawNav(); if(meDetailOpen)renderMeDetail(); }
   else if (state === 'gameover') renderGameOver();
@@ -4665,6 +4678,7 @@ function renderHome() {
   // secondary row: SKY MAP + EXTRAS live under the climb, not above it
   pixelButton(MAP_BTN,'SKY MAP',false);
   pixelButton(MODE_BTN,'EXTRA MODES',false);
+  if (difficultyPickable(mode)) pixelButton(DIFF_BTN, 'DIFFICULTY - ' + difficultyFor(mode, null).name, false);   // v124
   // armed boosts indicator (centered icons under the secondary row)
   const armed = LOADOUT.filter(l => loadout[l.id]);
   if (armed.length && mode !== 'daily' && mode !== 'practice') {
@@ -5421,6 +5435,24 @@ function challengeCompactDesc(id){
 }
 function challengeAccent(family){
   return ({timed:'#FFD75E',precision:'#8FB8FF',limitedLives:'#FF8A8A',unstable:'#E0863A',seeded:'#C77EFF',recovery:'#62E8B5',characterTrial:'#FF7AD9',milestone:'#FFD75E'})[family]||UI_HEX();
+}
+// v124: difficulty picker — same overlay pattern as the mode picker (proven against the fixture set)
+function renderDifficultyPicker() {
+  ctx.fillStyle = '#07080F'; ctx.fillRect(0, 0, W, H);
+  txt('DIFFICULTY', W/2+1, 27, 2, 'rgba(0,0,0,0.45)', 'center');
+  txt('DIFFICULTY', W/2, 26, 2, UI_HEX(), 'center');
+  txt('APPLIES TO ' + ((MODES.find(m => m.id === mode) || {}).name || 'THIS MODE'), W/2, 43, 1, 'rgba(255,246,232,0.52)', 'center');
+  const cur = difficultyFor(mode, null).id;
+  for (const rw of DIFF_ROWS) {
+    const T = DIFFICULTY_TIERS[rw.id], active = rw.id === cur;
+    const accent = active ? UI_HEX() : 'rgba(255,246,232,0.24)';
+    pixelFrame(rw.x, rw.y, rw.w, rw.h, active ? uiA(.16) : 'rgba(17,17,25,0.88)', accent, active);
+    ctx.fillStyle = accent; ctx.globalAlpha = active ? 1 : .36; ctx.fillRect(rw.x+4, rw.y+5, 2, rw.h-10); ctx.globalAlpha = 1;
+    txt(T.name, rw.x + 8, rw.y + 7, 1, active ? UI_HEX() : '#FFF6E8', 'left');
+    txt(T.desc, rw.x + 8, rw.y + 20, 1, 'rgba(255,246,232,0.55)', 'left');
+  }
+  const last = DIFF_ROWS[DIFF_ROWS.length-1];
+  txt('TAP OUTSIDE TO CLOSE', W/2, last.y + last.h + 7, 1, 'rgba(255,246,232,0.42)', 'center');
 }
 function renderModePicker() {
   ctx.fillStyle = '#07080F'; ctx.fillRect(0, 0, W, H);
