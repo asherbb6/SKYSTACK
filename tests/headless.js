@@ -2091,6 +2091,30 @@ check('v121 debris renders in the block skin (drawBlock), not a flat hsl fill', 
   !/ctx\.fillStyle='hsl\('\+d\.col\.h\+',65%,48%\)'/.test(src) &&
   /if \(toppleHideTop>0 && i >= blocks\.length - toppleHideTop\)/.test(src));
 
+// ---------- v122: topple tuned to happen more often (deliberate difficulty shift) ----------
+check('v122 topple tolerance is pinned at the tightened 28 (was 34)', () =>
+  fresh.run('BALANCE_REGISTRY.physics.topple === 28 && TOPPLE === 28'));
+check('v122 a lean that used to survive (|balance| ~30) now topples the run', () => {
+  const g = makeGame();
+  const r = g.run('(() => { mode="endless"; resetRun(); state="playing";' +
+    ' balance = 60;' +                                                   // halves to ~30 on a centred land: >28 (new), <34 (old)
+    ' const top=blocks[blocks.length-1];' +
+    ' faller={x:top.x,y:towerTopY()-BH,w:top.w,col:blockCol(blocks.length),golden:false};' +
+    ' slider=null; state="dropping"; land();' +
+    ' if (Math.abs(balance) > 34) return "balance " + balance + " left the 28..34 window this test targets";' +
+    ' return state === "gameover" ? true' +
+    '   : JSON.stringify({state, balance, assist}); })()');
+  return r === true;
+});
+check('v122 practice still auto-steadies at the tighter tolerance instead of failing', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="practice"; resetRun(); state="playing"; balance = TOPPLE*3;' +
+    ' const top=blocks[blocks.length-1];' +
+    ' faller={x:top.x,y:towerTopY()-BH,w:top.w,col:blockCol(blocks.length),golden:false};' +
+    ' slider=null; state="dropping"; land();' +
+    ' return state === "playing" && Math.abs(balance) < TOPPLE; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2116,7 +2140,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v121', () => /const CACHE = 'skystack-v121'/.test(sw));
+check('sw.js cache bumped to v122', () => /const CACHE = 'skystack-v122'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

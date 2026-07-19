@@ -917,7 +917,7 @@ const MATERIALS = [
   { name:'STAR',   spd:0.92, wob:0, wind:0.5 }    // 10 THE STARS
 ];
 const BALANCE_REGISTRY = deepFreeze({
-  physics:{ blockHeight:14, baseWidth:96, metersPerBlock:3, topple:34, perfectPx:2.6 },
+  physics:{ blockHeight:14, baseWidth:96, metersPerBlock:3, topple:28, perfectPx:2.6 },   // v122: 34→28, topples land more often
   slider:{ base:1.1, perBlock:0.020, max:2.8, campaignStep:0.03, campaignMax:3.1, assistSlow:0.30 },
   drop:{ graceFrames:5, spawnGap:24, initialVelocity:2.6, gravity:0.9 },
   assist:{ practice:0.85, startBase:0.5, skillScale:0.55, maxStart:0.5, floorScale:0.4, max:0.85, missStep:0.15, sloppyStep:0.10, perfectStep:0.05, balanceForgiveness:0.4 },
