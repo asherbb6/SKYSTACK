@@ -3828,11 +3828,14 @@ function blitCaveTex(x0, y, w, h, srcRow, tex, cont) {
   const sh = Math.min(h, CAVETEX_H - sy);
   for (let cx = 0; cx < w; cx += CAVE_STAMP_W) {
     const sw = Math.min(CAVE_STAMP_W, w - cx);
-    // v138: `cont` maps screen x straight onto atlas x — the per-column drifting windows that
-    // hid repetition in the old isotropic noise CHOP Asher's directional vein art into visible
-    // rectangles. The back atlas cell (216px) is wider than a portrait canvas, so the backdrop
-    // can be one coherent image; columns past the atlas edge (wide screens) keep the windowed path.
-    const sx = cont && x0 + cx + sw <= CAVETEX_W ? x0 + cx : caveStampSourceX(srcRow, x0 + cx);
+    // v138/v139: `cont` maps screen x straight onto atlas x (as a numeric shift; `true` = 0) —
+    // the per-column drifting windows that hid repetition in the old isotropic noise CHOP
+    // Asher's directional vein art into visible rectangles. Walls pass a per-side shift so both
+    // stay inside the 216px atlas at any screen width; anything out of range falls back.
+    const cx0 = cont === true ? 0 : cont | 0;
+    const wantX = x0 + cx + cx0;
+    const sx = cont != null && cont !== false && wantX >= 0 && wantX + sw <= CAVETEX_W
+      ? wantX : caveStampSourceX(srcRow, x0 + cx);
     ctx.drawImage(tex, sx, sy, sw, sh, x0 + cx, y, sw, sh);
     if (sh < h) ctx.drawImage(tex, sx, 0, sw, h - sh, x0 + cx, y + sh, sw, h - sh);           // vertical wrap; varied source windows hide tile repetition
   }
@@ -3985,11 +3988,17 @@ function drawCaveWalls(top, cy, ph) {
       ctx.globalAlpha = 1;
       let prevMat = -1;
       const HC = CAVE_GEO_W >> 1;                                                              // v137: half-cell sampling — strata boundaries step twice as often
+      // v139: every wall blit maps screen x straight onto atlas x (like the v138 backdrop).
+      // The drifting per-column windows were re-sampling a different patch of Asher's art for
+      // each cell, so veins cut off at every cell edge — those were the "dividers/splits".
+      // Left wall anchors to the atlas left edge, right wall to its right edge; a wall is never
+      // wider than the 216px atlas, so this holds at every screen width.
+      const wcont = side ? CAVETEX_W - W : 0;
       for (let cx = 0; cx < w; cx += HC) {                                                     // warped geology cells turn strata into natural pockets
         const pw = Math.min(HC, w - cx), px = x0 + cx, pmat = caveWallMatAt(row, side, px);
         // v137: srcRow increases down-screen (row*4 = gy - y decreased) so the rock flows
         // continuously across the 4px bands instead of re-chopping the atlas at every boundary
-        blitCaveTex(px, by, pw, bh, -row * 4 + side * 97 + (by - y), caveMatTex(pmat));
+        blitCaveTex(px, by, pw, bh, -row * 4 + side * 97 + (by - y), caveMatTex(pmat), wcont);
         // v137: HORIZONTAL interlock — v102/v136 only dithered side-by-side cells, so a material
         // change between two 4px rows was still a dead-straight cut across the whole cell. Where
         // the stratum above differs, each bites jittered chunks into the other across the seam.
@@ -3997,8 +4006,8 @@ function drawCaveWalls(top, cy, ph) {
           if (um !== pmat) for (let sp = 0; sp < 3; sp++) {
             const bw2 = 3 + Math.round(bhash(row*41 + sp*13 + cx) * 4);
             const bxp = clamp(px + Math.round(bhash(row*23 + cx*11 + sp*37 + side*3) * pw), x0, x0 + w - bw2);
-            if (sp & 1) blitCaveTex(bxp, by, bw2, 1 + (row & 1), -row*4 + side*97 + 23 + sp*7, caveMatTex(um));
-            else if (by - 2 >= top) blitCaveTex(bxp, by - 2, bw2, 2, -(row + 1)*4 + side*97 + 23 + sp*7, caveMatTex(pmat));
+            if (sp & 1) blitCaveTex(bxp, by, bw2, 1 + (row & 1), -row*4 + side*97 + 23 + sp*7, caveMatTex(um), wcont);
+            else if (by - 2 >= top) blitCaveTex(bxp, by - 2, bw2, 2, -(row + 1)*4 + side*97 + 23 + sp*7, caveMatTex(pmat), wcont);
           } }
         // v102: dithered material boundary — where two geologies meet, jittered patches of each
         // bite into the other per band, so dirt and rock interlock instead of meeting in a
@@ -4008,13 +4017,13 @@ function drawCaveWalls(top, cy, ph) {
           const back = 2 + Math.round(j1*7), fwd = 2 + Math.round(j2*6);
           const bx1 = Math.max(x0, px - back), bw1 = Math.min(back + Math.round(j2*4), x0 + w - bx1);
           const fx1 = Math.min(px + Math.round(j1*3), x0 + w - 1), fw1 = Math.min(fwd, x0 + w - fx1);
-          if (bw1 > 0) blitCaveTex(bx1, by, bw1, bh, -row*4 + side*97 + (by - y) + 31, caveMatTex(pmat));
-          if (fw1 > 0) blitCaveTex(fx1, by, fw1, bh, -row*4 + side*97 + (by - y) + 67, caveMatTex(prevMat));
+          if (bw1 > 0) blitCaveTex(bx1, by, bw1, bh, -row*4 + side*97 + (by - y) + 31, caveMatTex(pmat), wcont);
+          if (fw1 > 0) blitCaveTex(fx1, by, fw1, bh, -row*4 + side*97 + (by - y) + 67, caveMatTex(prevMat), wcont);
           // v136: pixel-level interlock — tiny 2px stamps of each material scattered ACROSS the
           // boundary, so the two geologies grow into each other instead of meeting in a cut
           for (let sp = 0; sp < 3; sp++) {
             const sxp = clamp(px + Math.round((bhash(row*19 + cx*7 + sp*29 + side) - .5) * 12), x0, x0 + w - 2);
-            blitCaveTex(sxp, by, 2, bh, -row*4 + side*97 + (by - y) + 83 + sp*11, caveMatTex(sp & 1 ? pmat : prevMat));
+            blitCaveTex(sxp, by, 2, bh, -row*4 + side*97 + (by - y) + 83 + sp*11, caveMatTex(sp & 1 ? pmat : prevMat), wcont);
           }
         }
         // v138: wall tonal patches retired with the backdrop ones — Asher's art carries its own
@@ -4145,12 +4154,12 @@ function drawCaveGround(cy, ph) {
   const gy = worldY(0, cy); if (gy > H + 20) return;
   const y0 = Math.max(0, gy - 2);
   ctx.globalAlpha = 1;
-  blitCaveTex(0, y0, W, H - y0, 60);                                                             // same pebbled rock as the walls
+  blitCaveTex(0, y0, W, H - y0, 60, null, 0);                                                    // v139: continuous — same unbroken art as the walls
   for (let x = 0; x < W; x += 36) {                                                              // embedded gravel/clay pockets, fixed to the natural floor
     const pw = 12 + Math.round(bhash(x*17 + 4) * 22), py = gy + 5 + Math.round(bhash(x*23 + 9) * 18);
     if (py >= H) continue;
     blitCaveTex(x, py, Math.min(pw, W - x), Math.min(5 + Math.round(bhash(x*31)*7), H - py), x*5 + 91,
-      bhash(x*43) > 0.55 ? caveTexGravel : caveTexClay);
+      bhash(x*43) > 0.55 ? caveTexGravel : caveTexClay, 0);
   }
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, Math.min(H, gy + 26), W, Math.max(0, H - gy - 26));   // darker with depth
   ctx.fillStyle = '#4A3622'; for (let x = 0; x < W; x += 6) { const h2 = Math.round(bhash(x*7) * 4); ctx.fillRect(x, gy - h2, 6, h2 + 3); }      // rough top edge

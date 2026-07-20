@@ -625,6 +625,19 @@ check('cave art sheet loads into the atlas canvases with a guarded procedural fa
   /typeof Image !== 'undefined'[\s\S]{0,700}art\/cave-mats\.png/.test(src) &&
   /cavArt, i \* 216, 0, 216, 256, 0, 0, CAVETEX_W, CAVETEX_H/.test(src) &&
   !/caveBgImg|data:image\/jpeg;base64|data:image\/png;base64,iVBOR/.test(src));
+// v139: the art must be sampled CONTINUOUSLY (screen x -> atlas x) on every surface, or the
+// drifting per-column windows chop the directional veins into the "dividers/splits" Asher saw.
+check('wall + ground art blits are continuous, not window-sampled', () =>
+  /const wcont = side \? CAVETEX_W - W : 0/.test(src) &&
+  /caveMatTex\(pmat\), wcont\)/.test(src) &&
+  /blitCaveTex\(0, y0, W, H - y0, 60, null, 0\)/.test(src));
+check('continuous sampling stays inside the atlas at every wall width', () => bio.run(
+  '(() => { const bw = Math.round(W*0.17);' +
+  '  for (let r = -400; r < 400; r++) for (const s of [0,1]) {' +
+  '    const w = caveWallW(r, s, bw), x0 = s ? W - w : 0, cont = s ? CAVETEX_W - W : 0;' +
+  '    if (w > CAVETEX_W) return false;' +                       // a wall must never exceed the atlas
+  '    if (x0 + cont < 0 || x0 + w + cont > CAVETEX_W) return false;' +
+  '  } return true; })()'));
 // ---- foreground occlusion + layout guarantees ----
 check('foreground layer + fade helpers + tuning constants exist', () => bio.run(
   '["drawCaveForeground","fgAlpha","towerScreenBox","caveMouth","mouthShaftW"].every(f => eval("typeof "+f) === "function") ' +
@@ -3123,7 +3136,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v138', () => /const CACHE = 'skystack-v138'/.test(sw));
+check('sw.js cache bumped to v139', () => /const CACHE = 'skystack-v139'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
