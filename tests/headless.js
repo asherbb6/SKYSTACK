@@ -2563,6 +2563,41 @@ check('v125 the frozen-S1 drop and placement literals are still untouched', () =
     'fallFramesFor() === 5 && BALANCE_REGISTRY.placement.balanceMemory === .5 && ' +
     'BALANCE_REGISTRY.placement.balanceOffset === .5 && BALANCE_REGISTRY.physics.topple === 28'));
 
+// ---------- v126: identity-driven star objectives ----------
+check('v126 there is one ★2 and one ★3 objective for every level, and every target is satisfiable', () =>
+  fresh.run('(() => { if (STAR_OBJECTIVES.length !== LEVEL_REGISTRY.length) return false;' +
+    ' for (let i=0;i<STAR_OBJECTIVES.length;i++) { const o = STAR_OBJECTIVES[i], b = LEVEL_REGISTRY[i].blocksRequired;' +
+    '   for (const s of [o.two, o.three]) { if (!s || !s.type) return false;' +
+    '     if (s.n !== undefined && s.n > b) return false; } }' +
+    ' return true; })()'));
+check('v126 wind objectives only appear on levels where wind can actually blow', () =>
+  fresh.run('(() => { const minB = BALANCE_REGISTRY.wind.minStartBlocks;' +
+    ' for (let i=0;i<STAR_OBJECTIVES.length;i++) { const o = STAR_OBJECTIVES[i], L = LEVEL_REGISTRY[i];' +
+    '   for (const s of [o.two, o.three]) if (s.type === "windLands" && L.goalAltitude <= minB) return false; }' +
+    ' return true; })()'));
+check('v126 every objective type evaluates correctly, including its boundary', () =>
+  fresh.run('(() => { const R = { placed:20, perfects:9, bestStreak:6, windPerfects:4, recoveries:3,' +
+    '   doubleCut:false, tail:[true,true,true,true,true,true,true,true] };' +
+    ' const met = (t,n) => objectiveMet({type:t,n:n}, R);' +
+    ' if (!met("perfects",9) || met("perfects",10)) return "perfects boundary";' +
+    ' if (!met("streak",6) || met("streak",7)) return "streak boundary";' +
+    ' if (!met("windLands",4) || met("windLands",5)) return "windLands boundary";' +
+    ' if (!met("recover",3) || met("recover",4)) return "recover boundary";' +
+    ' if (!met("cleanFinish",8) || met("cleanFinish",9)) return "cleanFinish boundary";' +
+    ' if (!met("ratio",45) || met("ratio",46)) return "ratio boundary";' +
+    ' if (!objectiveMet({type:"noDoubleCut"}, R)) return "noDoubleCut should pass when clean";' +
+    ' R.doubleCut = true; if (objectiveMet({type:"noDoubleCut"}, R)) return "noDoubleCut should fail";' +
+    ' return true; })()'));
+check('v126 cleanFinish reads only the FINAL N landings, not the whole run', () =>
+  fresh.run('(() => { const R = { placed:10, perfects:5, bestStreak:3, windPerfects:0, recoveries:0,' +
+    '   doubleCut:true, tail:[false,false,true,true,true] };' +
+    ' return objectiveMet({type:"cleanFinish",n:3}, R) === true &&' +
+    '   objectiveMet({type:"cleanFinish",n:4}, R) === false; })()'));
+check('v126 every objective has readable label text', () =>
+  fresh.run('(() => { for (const o of STAR_OBJECTIVES) for (const s of [o.two, o.three]) {' +
+    ' const t = objectiveLabel(s); if (typeof t !== "string" || t.length < 4 || t.length > 18) return false; }' +
+    ' return true; })()'));
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +

@@ -1031,6 +1031,50 @@ const LEVEL_BLUEPRINTS = deepFreeze([
   { identity:'ORBITAL ENDURANCE',focus:'LONG-FORM CONTROL', duration:{min:150,target:175,max:210},difficulty:10, pace:'LONG',     speedScale:1 },
   { identity:'SUMMIT RUN',      focus:'FINAL PRECISION',    duration:{min:210,target:240,max:270},difficulty:11, pace:'SUMMIT',   speedScale:1.25 }
 ]);
+// v126: each level's stars test that level's own declared identity/focus, instead of all 11 levels
+// asking for the same perfect ratio. ★1 is always "cleared" (so unlocks can never be gated by skill);
+// ★2 is the level's identity; ★3 is mastery of that same identity.
+// Everything counts CUTS, never MISSES — in campaign a miss ENDS the run, so a miss-based objective
+// would be satisfied by every clear and would measure nothing.
+const STAR_OBJECTIVES = deepFreeze([
+  { two:{type:'perfects',n:8},    three:{type:'streak',n:5} },        // 0  FOUNDATION  - steady stone
+  { two:{type:'perfects',n:4},    three:{type:'streak',n:4} },        // 1  FIRST LIGHT - opening wind
+  { two:{type:'streak',n:4},      three:{type:'streak',n:7} },        // 2  CANOPY RHYTHM - wood precision
+  { two:{type:'windLands',n:4},   three:{type:'perfects',n:9} },      // 3  OPEN AIR - readable drift
+  { two:{type:'perfects',n:10},   three:{type:'streak',n:6} },        // 4  SOFT FOOTING - cloud wobble
+  { two:{type:'windLands',n:6},   three:{type:'perfects',n:14} },     // 5  CROSSWIND - fast steel + wind
+  { two:{type:'streak',n:6},      three:{type:'perfects',n:16} },     // 6  THIN AIR - glass control
+  { two:{type:'recover',n:4},     three:{type:'noDoubleCut'} },       // 7  ICE TEMPO - quick recovery
+  { two:{type:'perfects',n:22},   three:{type:'streak',n:8} },        // 8  LOW GRAVITY - cosmic wobble
+  { two:{type:'cleanFinish',n:8}, three:{type:'perfects',n:45} },     // 9  ORBITAL ENDURANCE
+  { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:10} }   // 10 SUMMIT RUN - final precision
+]);
+function objectiveLabel(o) {
+  if (!o) return '';
+  switch (o.type) {
+    case 'perfects':    return o.n + ' PERFECTS';
+    case 'streak':      return o.n + ' IN A ROW';
+    case 'windLands':   return o.n + ' PERFECT IN WIND';
+    case 'recover':     return 'RECOVER ' + o.n + 'X';
+    case 'noDoubleCut': return 'NEVER CUT TWICE';
+    case 'cleanFinish': return 'CLEAN FINAL ' + o.n;
+    case 'ratio':       return o.n + '% PERFECT';
+  }
+  return '';
+}
+function objectiveMet(o, R) {
+  if (!o || !R) return false;
+  switch (o.type) {
+    case 'perfects':    return R.perfects >= o.n;
+    case 'streak':      return R.bestStreak >= o.n;
+    case 'windLands':   return R.windPerfects >= o.n;
+    case 'recover':     return R.recoveries >= o.n;
+    case 'noDoubleCut': return R.placed > 0 && !R.doubleCut;
+    case 'cleanFinish': return R.tail.length >= o.n && R.tail.slice(-o.n).every(p => p);
+    case 'ratio':       return R.placed > 0 && (R.perfects / R.placed) * 100 >= o.n;
+  }
+  return false;
+}
 const LEVEL_REGISTRY = deepFreeze(TIERS.map((t, i) => {
   const b=LEVEL_BLUEPRINTS[i], start=i <= 0 ? 0 : TIERS[i-1].n, mat=MATERIALS[i];
   return { id:i, tier:i, name:t.name, color:t.c, identity:b.identity, focus:b.focus,
