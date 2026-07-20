@@ -3916,7 +3916,7 @@ function drawCaveBackdrop(top, cy, ph) {
   // an elongated multi-lobe void with a toothed rim, a deeper black throat, a rubble spill along
   // its floor, and a pair of amber eyes far inside.
   {
-    const hy2 = gy - Math.round(14.5 * BH), hx2 = Math.round(W * 0.34), hr2 = 26;
+    const hy2 = gy - Math.round(16 * BH), hx2 = Math.round(W * 0.42), hr2 = 26;                 // v143: nudged higher (14.5->16 blocks) and to the right (0.34->0.42W) per Asher
     if (hy2 + hr2 > top && hy2 - hr2 < H) {
       const lobes2 = [];                                                                       // v141: one lobe list drives void, rim teeth, crown and rubble
       for (let l = 0; l < 5; l++) lobes2.push({
@@ -4006,23 +4006,34 @@ function drawCaveWalls(top, cy, ph) {
       const row = Math.round((gy - y) / DP), r2 = bhash(row*9 + side*53), wallRow = Math.round((gy - y) / 4);
       const w = caveWallW(wallRow, side, baseW);
       const my = Math.round(y), mat = caveWallMat(wallRow, side), main = caveMainMixAtRow(wallRow);
-      // v142: the wall carries VINES and nothing else. Mushrooms, timber supports, stalactites and
-      // ledge props are all gone at Asher's call ("only have the torches, bats, and bugs, etc.",
-      // then "keep the vines too"). Vines get the whole former mushroom+root probability band, so
-      // the wall still has life on it without the clutter.
-      const rootCut = .42 + main*.16;
+      // v143: the wall carries VINES — Asher wants MORE of them, greener, with PINK FLOWERS near
+      // the top. `main` (caveMainMix) rises toward the surface, so it doubles as the "near the top"
+      // signal: denser vines, more leafy-green, and flowers that only really appear up high.
+      const rootCut = .60 + main*.22;
       if (my < top - 10 || my > H + 10) continue;
       if (r2 < rootCut && (mat === 0 || mat === 2)) {                                                 // roots/vines emerge from dirt or clay seams
-        const rl = 10 + Math.round(bhash(row*5) * 20);
-        // v141: a root hangs its full length down the rock face — anchored across that span, so it
-        // can no longer dangle in mid-lane ("worms floating up the walls")
+        const rl = 12 + Math.round(bhash(row*5) * 22);
+        // v141: a vine hangs its full length down the rock face — anchored across that span, so it
+        // can no longer dangle in mid-lane
         const redge = caveWallEdgeSpan(side, my, my + rl, gy, baseW);
         const rx = side ? redge + 1 : redge - 1, sway = reduceMotion ? 0 : Math.sin(ph*0.03 + row) * 2;
-        const leafy = bhash(row*41 + side*13) > 0.5;                                                   // half grow into green vines like the reference
+        const leafy = bhash(row*41 + side*13) < 0.45 + main*0.4;                                       // greener toward the surface, browner deep
         ctx.globalAlpha = leafy ? 1 : 0.9; ctx.fillStyle = leafy ? '#2C5C22' : '#3A2814';
         for (let t = 0; t < rl; t++) { const vx = Math.round(rx + sway * t / rl); ctx.fillRect(vx, my + t, 1, 1);
-          if (leafy && (t % 5) === 2) { ctx.fillStyle = '#3E8A32'; ctx.fillRect(vx - 1, my + t, 1, 1); ctx.fillRect(vx + 1, my + t, 1, 1); ctx.fillStyle = '#2C5C22'; } }   // paired leaves
+          if (leafy && (t % 4) === 2) { ctx.fillStyle = '#3E8A32'; ctx.fillRect(vx - 1, my + t, 1, 1); ctx.fillRect(vx + 1, my + t, 1, 1); ctx.fillStyle = '#2C5C22'; } }   // paired leaves, denser
         if (leafy) { ctx.fillStyle = '#6ECB54'; ctx.fillRect(Math.round(rx + sway), my + rl, 1, 1); } // bright tip
+        // pink blossoms — a 4-petal bloom with a warm pistil, more likely high up, seated on a leaf node
+        if (leafy && bhash(row*29 + side*17) < 0.16 + main*0.5) {
+          const fN = 1 + (bhash(row*61) < 0.4 + main*0.3 ? 1 : 0);                                     // one or two blooms up top
+          for (let fI = 0; fI < fN; fI++) {
+            const ft = Math.round((0.4 + fI*0.35 + bhash(row*13 + fI*7)*0.15) * rl);
+            const fx = Math.round(rx + sway * ft / rl), fy = my + ft;
+            const pink = bhash(row*47 + fI*5) > 0.5 ? '#E86A9E' : '#D2568A';
+            ctx.fillStyle = pink; ctx.fillRect(fx - 1, fy, 3, 1); ctx.fillRect(fx, fy - 1, 1, 3);      // 4 petals around the centre
+            ctx.fillStyle = '#F7C948'; ctx.fillRect(fx, fy, 1, 1);                                     // pistil
+            ctx.fillStyle = '#FBD9E8'; ctx.fillRect(fx - 1, fy - 1, 1, 1);                             // highlight petal
+          }
+        }
         ctx.fillStyle = leafy ? '#24421A' : '#2A1C0E'; ctx.fillRect(rx, my, 1, 3);                     // anchor at the wall
       }
       // v141/v142: the cobweb, stalactite, mushroom, timber-support and ledge-prop slots are all
@@ -4040,9 +4051,10 @@ function drawCaveGround(cy, ph) {
   // v140: the embedded gravel/clay floor pockets are retired with the wall material cells —
   // they were patches of two OTHER images dropped onto the floor picture.
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, Math.min(H, gy + 26), W, Math.max(0, H - gy - 26));   // darker with depth
-  ctx.fillStyle = '#4A3622'; for (let x = 0; x < W; x += 6) { const h2 = Math.round(bhash(x*7) * 4); ctx.fillRect(x, gy - h2, 6, h2 + 3); }      // rough top edge
-  ctx.fillStyle = 'rgba(122,96,62,0.8)'; for (let x = 2; x < W; x += 9) ctx.fillRect(x, gy, 2, 1);                                               // lit lip
-  ctx.fillStyle = '#3A2C1C'; for (let x = 5; x < W; x += 23) { const st = 2 + Math.round(bhash(x*13) * 4); ctx.fillRect(x, gy - st, 3, st); }     // stone teeth
+  // v143: the ground's rough top edge, dashed "lit lip" and stone teeth are gone — they read as a
+  // lighter plank strip laid across the floor that didn't match the rock art. A single soft AO line
+  // seats the floor into the lane instead, the same way the walls meet it.
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(0, gy - 1, W, 2);
   ctx.globalAlpha = 1;
 }
 // wall-mounted torches: flickering pixel flame + a warm local light pool (radial)
@@ -4060,6 +4072,11 @@ function drawCaveTorchLight(top, cy, ph) {
     const tedge = caveWallEdgeSpan(side, ty - 6, ty + 9, gy, Math.round(W * 0.17));
     const tx = side ? tedge + 2 : tedge - 2;                                                    // bracket is physically attached to the current wall edge
     if (ty < top + 6 || ty > H + 20) continue;                                                 // torches only below the ceiling
+    // v143: no torch inside the surface FUNNEL — up there the walls bend inward to meet the offset
+    // escape hole, so a torch anchored to that edge got crammed half off the screen ("fix this
+    // lantern at the very top"). Same funnel test as caveWallW; skip the whole band.
+    { const surfRow = SURF_A * BH / 4, dRows = surfRow - wallRow, band = 7 * BH / 4;
+      if (dRows > -4 && dRows < band + 4) continue; }
     const fl = reduceMotion ? 0.85 : (0.72 + 0.28 * Math.sin(ph*0.31 + row*2) * Math.sin(ph*0.17 + row));
     const lightR = Math.round(50 + main*16), lightGain = .42 + main*.16;
     const rg = ctx.createRadialGradient(tx, ty - 4, 2, tx, ty - 4, lightR);                    // Main Cave grows warmer and more legible
@@ -4917,15 +4934,9 @@ function renderWorld(cy, shX) {
     const y = Math.round(slider.y-cy);
     const scol = slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length);
     const SR = slideRange();
-    // v132: in a cramped biome the corridor gets visible walls, so the tight lane reads as CAVES
-    // closing in rather than as the block merely travelling less. Pure render — no gameplay effect.
-    if (matAt(tier).lane < 1) {
-      ctx.globalAlpha = 0.5; ctx.fillStyle = '#5A6172';
-      for (const wx of [SR.l - 3, SR.r + 1]) {
-        for (let wy = y - BH; wy < y + BH * 2; wy += 4) ctx.fillRect(wx, wy, 2, 2);   // chiselled rock edge
-      }
-      ctx.globalAlpha = 1;
-    }
+    // v143: the v132 cramped-lane "chiselled rock edge" markers are gone — a column of 2x2 squares
+    // running up both sides of the slider that tracked the block as it climbed. The real art walls
+    // already show the lane narrowing; the dotted guide just read as clutter following the tower.
     let sa = 1;
     if (SR.wrap) {   // pixel-fade near the corridor ends
       const scx = slider.x + slider.w/2;
