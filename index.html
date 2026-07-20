@@ -1190,6 +1190,30 @@ let dropPending = 0;   // tiny grace window between tap and release (people pre-
 let combo = 0, maxCombo = 0, hueBase = Math.random() * 360;
 let squash = 0, squashPow = 0, toppleHideTop = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
 let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, runSkybreaks = 0, coinPop = 0, tick = 0;
+// v126: per-run star-objective accumulator. Pure bookkeeping — it never feeds back into physics.
+// tail keeps the last 16 landings (longest cleanFinish target is 10) as perfect/not flags.
+let starRun = { placed:0, perfects:0, streak:0, bestStreak:0, windPerfects:0, recoveries:0, doubleCut:false, lastCut:false, tail:[] };
+function resetStarRun() {
+  starRun = { placed:0, perfects:0, streak:0, bestStreak:0, windPerfects:0, recoveries:0, doubleCut:false, lastCut:false, tail:[] };
+}
+function trackStarOutcome(outcome) {
+  if (!outcome || outcome.miss) return;            // a campaign miss ends the run; it is never scored
+  const perfect = !!outcome.perfect;
+  starRun.placed++;
+  if (perfect) {
+    starRun.perfects++;
+    starRun.streak++;
+    if (starRun.streak > starRun.bestStreak) starRun.bestStreak = starRun.streak;
+    if (starRun.lastCut) starRun.recoveries++;     // a perfect straight after a trim = a recovery
+    if (wind) starRun.windPerfects++;              // landing WELL in wind is the skill being tested
+  } else {
+    starRun.streak = 0;
+    if (starRun.lastCut) starRun.doubleCut = true;
+  }
+  starRun.lastCut = !perfect;
+  starRun.tail.push(perfect);
+  if (starRun.tail.length > 16) starRun.tail.shift();
+}
 let score = 0;
 let notes = [], curNote = null;   // one-at-a-time top-middle notification queue (v105)
 let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
@@ -1553,7 +1577,7 @@ function resetRun() {
   initChallengeRuntime();
   initModifierRuntime();
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
-  balance = 0; swayX = 0; paused = false; dropPending = 0; squashPow = 0; toppleHideTop = 0;
+  balance = 0; swayX = 0; paused = false; dropPending = 0; squashPow = 0; toppleHideTop = 0; resetStarRun();
   faller = null;   // v125: a fresh run must not inherit a stale faller — it now carries lateral drift state (vx/x0)
   timeLeft = activeChallenge()&&activeChallenge().duration?activeChallenge().duration:(m.time || 0);
   PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
@@ -1867,6 +1891,7 @@ function land() {
 
 function afterPlace(f, updateBalance, placedCenter, outcome) {
   const m = activeMode();
+  trackStarOutcome(outcome);                        // v126: star objectives ride the existing hook
   if (canEarnRewards(runContext)) stats.blocks++;
   if (updateBalance) { const p=BALANCE_REGISTRY.placement; balance = balance * p.balanceMemory + (placedCenter - W/2) * p.balanceOffset * (1 - assist * BALANCE_REGISTRY.assist.balanceForgiveness) * passiveEffect(runContext,'balance',1) * challengeRule(runContext,'balanceScale',1); }   // assist/passive forgive lean
   const r = blocks.length - 1, b = blocks[r];

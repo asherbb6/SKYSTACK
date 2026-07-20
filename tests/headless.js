@@ -2598,6 +2598,56 @@ check('v126 every objective has readable label text', () =>
     ' const t = objectiveLabel(s); if (typeof t !== "string" || t.length < 4 || t.length > 18) return false; }' +
     ' return true; })()'));
 
+check('v126 the tracker counts perfects, streaks, recoveries and double-cuts from real placements', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing"; wind = null;' +
+    ' const seq = [1,1,0,1,0,0,1];' +
+    ' for (const p of seq) trackStarOutcome({ perfect:!!p, cut:!p, miss:false });' +
+    ' const R = starRun;' +
+    ' if (R.placed !== 7) return "placed " + R.placed;' +
+    ' if (R.perfects !== 4) return "perfects " + R.perfects;' +
+    ' if (R.bestStreak !== 2) return "bestStreak " + R.bestStreak;' +
+    ' if (R.recoveries !== 2) return "recoveries " + R.recoveries;' +
+    ' if (R.doubleCut !== true) return "doubleCut " + R.doubleCut;' +
+    ' if (R.tail.join(",") !== "true,true,false,true,false,false,true") return "tail " + R.tail.join(",");' +
+    ' return true; })()') === true;
+});
+check('v126 windLands counts only PERFECT landings made while a gust is blowing', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing";' +
+    ' wind = null;  trackStarOutcome({perfect:true, cut:false, miss:false});' +
+    ' wind = { dir:1, str:0.5, dur:200, t:100 };' +
+    ' trackStarOutcome({perfect:true, cut:false, miss:false});' +
+    ' trackStarOutcome({perfect:false, cut:true, miss:false});' +
+    ' trackStarOutcome({perfect:true, cut:false, miss:false});' +
+    ' return starRun.windPerfects === 2 ? true : "windPerfects " + starRun.windPerfects; })()') === true;
+});
+check('v126 a miss never touches the tracker (a campaign miss ends the run anyway)', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing"; wind=null;' +
+    ' trackStarOutcome({perfect:false, cut:false, miss:true});' +
+    ' return starRun.placed === 0 && starRun.doubleCut === false; })()') === true;
+});
+check('v126 resetRun clears the star tracker', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing"; wind=null;' +
+    ' for (let i=0;i<5;i++) trackStarOutcome({perfect:true, cut:false, miss:false});' +
+    ' if (starRun.perfects !== 5) return "setup failed";' +
+    ' resetRun();' +
+    ' return (starRun.placed === 0 && starRun.perfects === 0 && starRun.bestStreak === 0 &&' +
+    '   starRun.tail.length === 0) ? true : "tracker survived reset"; })()') === true;
+});
+check('v126 real placements feed the tracker through afterPlace', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing"; wind=null;' +
+    ' const before = starRun.placed;' +
+    ' const top = blocks[blocks.length-1];' +
+    ' faller = { x:top.x, x0:top.x, y:towerTopY()-BH, w:top.w, vx:0,' +
+    '   vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false };' +
+    ' slider = null; state = "dropping"; land();' +
+    ' return starRun.placed === before + 1 ? true : "afterPlace did not feed the tracker"; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
