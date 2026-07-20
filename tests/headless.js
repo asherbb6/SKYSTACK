@@ -625,12 +625,14 @@ check('cave art sheet loads into the atlas canvases with a guarded procedural fa
   /typeof Image !== 'undefined'[\s\S]{0,700}art\/cave-mats\.png/.test(src) &&
   /cavArt, i \* 216, 0, 216, 256, 0, 0, CAVETEX_W, CAVETEX_H/.test(src) &&
   !/caveBgImg|data:image\/jpeg;base64|data:image\/png;base64,iVBOR/.test(src));
-// v139: the art must be sampled CONTINUOUSLY (screen x -> atlas x) on every surface, or the
-// drifting per-column windows chop the directional veins into the "dividers/splits" Asher saw.
-check('wall + ground art blits are continuous, not window-sampled', () =>
-  /const wcont = side \? CAVETEX_W - W : 0/.test(src) &&
-  /caveMatTex\(pmat\), wcont\)/.test(src) &&
-  /blitCaveTex\(0, y0, W, H - y0, 60, null, 0\)/.test(src));
+// v139/v140: the art must be sampled CONTINUOUSLY (screen x -> atlas x) AND each surface must be
+// ONE picture. Window-sampling, or mixing atlases within a surface, produces the "multiple
+// pictures in one wall" splits Asher reported. Pin: continuous mapping + a single full-width
+// wall blit from one atlas + no per-cell material texture switching left in the wall loop.
+check('each wall is one continuous picture, not a collage', () =>
+  /const wcont = side \? CAVETEX_W - W : 0;\s*\n\s*blitCaveTex\(x0, by, w, bh, -row \* 4 \+ side \* 97 \+ \(by - y\), caveTex, wcont\)/.test(src) &&
+  /blitCaveTex\(0, y0, W, H - y0, 60, null, 0\)/.test(src) &&
+  !/caveMatTex\(/.test(src.slice(src.indexOf('function drawCaveWalls'), src.indexOf('function drawCaveGround'))));
 check('continuous sampling stays inside the atlas at every wall width', () => bio.run(
   '(() => { const bw = Math.round(W*0.17);' +
   '  for (let r = -400; r < 400; r++) for (const s of [0,1]) {' +
@@ -1481,8 +1483,12 @@ check('v102 texture stamp windows drift with depth at per-column phases', () =>
     'const stable = caveStampSourceX(500, 30) === caveStampSourceX(500, 30);' +
     'const inRange = [...xs].every(v => v >= 0 && v <= CAVETEX_W - CAVE_STAMP_W);' +
     'return stable && inRange && xs.size > 1; })()'));
-check('v102 wall material boundaries dither instead of meeting in straight edges', () =>
-  /v102: dithered material boundary/.test(src));
+// v140 re-baseline: the v102 material-boundary dither (and the v136/v137 interlock stamps) are
+// GONE by design — they blended four procedural materials, but under Decision #80 art skins each
+// wall is one picture, so those blends were themselves the visible seams. This guard now pins
+// their intentional removal so nobody reinstates the collage.
+check('wall material collage stays retired under the art skins', () =>
+  /v140: ONE PICTURE PER WALL/.test(src) && !/v102: dithered material boundary/.test(src));
 check('v102 lane-edge rim and AO are de-regularized (broken runs, wobbling depth)', () =>
   /no longer traced by continuous perfect lines/.test(src));
 check('v102 bolder accents: foliage crown doubled, taller companion blades, denser bark', () =>
@@ -3136,7 +3142,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v139', () => /const CACHE = 'skystack-v139'/.test(sw));
+check('sw.js cache bumped to v140', () => /const CACHE = 'skystack-v140'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
