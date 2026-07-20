@@ -1060,12 +1060,14 @@ const STAR_OBJECTIVES = deepFreeze([
   { two:{type:'perfects',n:40},   three:{type:'streak',n:10} },       // 9  ORBITAL ENDURANCE
   { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:4} }    // 10 SUMMIT RUN - final precision
 ]);
-function objectiveLabel(o) {
+// v129: `short` gives a compact form for tight cards — txtFit bottoms out at scale 1, so a long
+// label still spills a narrow sky-map row no matter how it is scaled.
+function objectiveLabel(o, short) {
   if (!o) return '';
   switch (o.type) {
     case 'perfects':    return o.n + ' PERFECTS';
     case 'streak':      return o.n + ' IN A ROW';
-    case 'windLands':   return o.n + ' PERFECT IN WIND';
+    case 'windLands':   return short ? o.n + ' IN WIND' : o.n + ' PERFECT IN WIND';
     case 'recover':     return 'RECOVER ' + o.n + 'X';
     case 'noDoubleCut': return 'NEVER CUT TWICE';
     case 'cleanFinish': return 'CLEAN FINAL ' + o.n;
@@ -1196,6 +1198,10 @@ let blocks = [], slider = null, faller = null;
 let debris = [], particles = [], floaters = [], trails = [], coinFx = [], pickups = [];
 let balloon = null, lastBalloonRow = 0;
 let cameraY = 0, cameraTarget = 0, camVel = 0, shake = 0, fadeT = 0;
+// v129: a tap should be acknowledged. pressFx remembers the last pressed rect so pixelButton can
+// draw it depressed for a few frames. Purely visual — the tap has already been handled by then.
+let pressFx = { r:null, t:0 };
+function notePress(r) { if (r) { pressFx.r = r; pressFx.t = reduceMotion ? 0 : 1; } }
 let paused = false;
 let dropPending = 0;   // tiny grace window between tap and release (people pre-tap expecting delay)
 let combo = 0, maxCombo = 0, hueBase = Math.random() * 360;
@@ -2291,7 +2297,7 @@ function startRun(retrySeed) { if(Number.isInteger(retrySeed))pendingRunSeed=ret
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
-    if (state !== t.id) { state = t.id; missionsOpen=false; shopDetailOpen=false; meDetailOpen=false; sfx.tap(); if (t.id === 'shop') { shopView='character'; previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); basePreviewIdx=Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
+    if (state !== t.id) { state = t.id; fadeT = reduceMotion ? 0 : 1; notePress(t); missionsOpen=false; shopDetailOpen=false; meDetailOpen=false; sfx.tap(); if (t.id === 'shop') { shopView='character'; previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); basePreviewIdx=Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
     return true;
   }
   return true;
@@ -2509,6 +2515,7 @@ function update(dt) {
   if (regionIntro) { regionIntro.t += dt; if (regionIntro.t >= regionIntro.dur) regionIntro = null; }
   if (coinPop > 0) coinPop = Math.max(0, coinPop - .05*dt);
   if (fadeT > 0) fadeT = Math.max(0, fadeT - .06*dt);
+  if (pressFx.t > 0) pressFx.t = Math.max(0, pressFx.t - .18*dt);   // v129
   if (overLock > 0) overLock -= dt;
   if (state === 'levelwin') winT += dt;
   if (state === 'levelfail') failT += dt;
@@ -2909,6 +2916,9 @@ function pixelFrame(x,y,w,h,fill,accent,strong) {
 }
 function pixelButton(r,label,primary) {
   const accent=primary?PLAY_HEX():UI_HEX(),pulse=primary?beatPulse():0,F=VISUAL_SYSTEM.frame.fine,cut=VISUAL_SYSTEM.frame.cut;
+  // v129: the pressed control sinks a pixel while its tap is fresh
+  const down = (pressFx.r === r && pressFx.t > 0) ? 1 : 0;
+  if (down) { ctx.save(); ctx.translate(0, 1); }
   pixelFrame(r.x,r.y,r.w,r.h,primary?playA(.68+pulse*.22):'rgba(11,14,26,0.62)',accent,primary);
   // fine bevel: pressed-metal ramp under the keyline (light crest, shaded base) so the
   // control reads as a machined plate instead of a flat tinted rectangle
@@ -2919,6 +2929,7 @@ function pixelButton(r,label,primary) {
   const sc=1;
   // v92: exact vertical centering — half-pixel label offsets are crisp on the fine grid
   txt(label,r.x+r.w/2,r.y+(r.h-7*sc)/2,sc,primary?'#08301F':VISUAL_SYSTEM.palette.paper,'center');
+  if (down) ctx.restore();                                    // v129
 }
 function drawNavGlyph(id,cx,y,col) {
   // v91: same 11x8 bounding boxes, redrawn on the half-pixel fine grid (v98 detail pass)
@@ -5579,7 +5590,9 @@ function renderSkyMap() {
         // v126: show the NEXT star this level wants, so picking a replay has a visible goal
         const so = LEVEL_REGISTRY[k] && LEVEL_REGISTRY[k].starObjectives, got = shownStars()[k] || 0;
         if (so && unlocked && got < 3)
-          txt(objectiveLabel(got < 2 ? so.two : so.three), tx0 + 26, cy2 + 27, 1, 'rgba(255,246,232,0.5)', 'left');
+          // v129: fit it into the gap between the stars and the CLEARED/NEXT/LOCKED label
+          txtFit(objectiveLabel(got < 2 ? so.two : so.three, true), tx0 + 26, cy2 + 27, 1,
+                 'rgba(255,246,232,0.5)', 'left', Math.max(18, txR - (tx0 + 26) - ('CLEARED'.length*6) - 4));
       }
     }
     // mascot perches ON TOP of the card holding your best height, in the gap above it

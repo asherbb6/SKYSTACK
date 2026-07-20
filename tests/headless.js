@@ -2831,6 +2831,47 @@ check('v128 RE-AUDIT: level durations are untouched (landing changes cannot alte
     '   if (d.ordinary < d.range[0] || d.ordinary > d.range[1]) return false; }' +
     ' return true; })()'));
 
+// ---------- v129: UI feel — screens fade, controls acknowledge the press, nothing spills ----------
+check('v129 changing nav tab cross-fades instead of hard-cutting', () =>
+  fresh.run('(() => { W=320;H=480;relayout(); state="home"; fadeT=0;' +
+    ' const tab = NAV_TABS.find(t => t.id === "shop");' +
+    ' navHit({x:tab.x+tab.w/2, y:NAV_Y+4});' +
+    ' return state === "shop" && fadeT > 0; })()'));
+check('v129 a press is recorded and decays away without blocking input', () =>
+  fresh.run('(() => { W=320;H=480;relayout(); state="home"; pressFx.t = 0;' +
+    ' notePress(MAP_BTN);' +
+    ' if (!(pressFx.t > 0)) return false;' +
+    ' for (let i=0;i<30;i++) update(1);' +
+    ' return pressFx.t === 0; })()'));
+check('v129 reduceMotion changes how a tap LOOKS, never what it does', () => {
+  const go = (reduced) => { const g = makeGame(undefined, reduced);
+    return g.run('(() => { W=320;H=480;relayout(); state="home";' +
+      ' const tab = NAV_TABS.find(t => t.id === "me"); navHit({x:tab.x+tab.w/2, y:NAV_Y+4});' +
+      ' return state; })()'); };
+  return go(false) === go(true);
+});
+check('v129 no text spills the canvas on ANY screen across a swept viewport range', () => {
+  const g = makeGame();
+  const bad = g.run('(() => { const bad=[]; const t0=txt; var SC="";' +
+    ' txt = function(text,x,y,sc,color,align){ const s=String(text).toUpperCase(), wpx=s.length*6*sc-sc;' +
+    '   let left=x; if (align==="center") left=x-wpx/2; else if (align==="right") left=x-wpx;' +
+    '   if (left < -1 || left+wpx > W+1) bad.push(SC+" "+W+"x"+H+" "+s);' +
+    '   return t0(text,x,y,sc,color,align); };' +
+    ' for (let w=170; w<=520; w+=30) for (const h of [280,390,500]) {' +
+    '   W=w; H=h; relayout(); prog=5; mode="endless";' +
+    '   SC="home"; state="home"; skyMap=false; modePicker=false; diffPicker=false; challengePicker=false; renderHome();' +
+    '   SC="shop"; state="shop"; renderShop();' +
+    '   SC="me"; state="me"; renderMe();' +
+    '   SC="skymap"; openSkyMap(); renderSkyMap(); skyMap=false;' +
+    '   SC="modes"; renderModePicker(); SC="diff"; renderDifficultyPicker(); SC="chal"; renderChallengePicker();' +
+    '   SC="win"; mode="level"; pendingLevel=6; resetRun(); state="levelwin"; winT=90; winStars=2;' +
+    '     winStarMet=[true,true,false]; renderLevelWin();' +
+    '   SC="over"; mode="endless"; resetRun(); state="playing"; gameOver("topple"); goT=90; renderGameOver(); }' +
+    ' txt=t0; W=320; H=480; relayout();' +
+    ' return [...new Set(bad)].slice(0,6).join(" | "); })()');
+  return bad === '' ? true : bad;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2856,7 +2897,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v128', () => /const CACHE = 'skystack-v128'/.test(sw));
+check('sw.js cache bumped to v129', () => /const CACHE = 'skystack-v129'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
