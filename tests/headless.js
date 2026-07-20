@@ -2872,6 +2872,52 @@ check('v129 no text spills the canvas on ANY screen across a swept viewport rang
   return bad === '' ? true : bad;
 });
 
+// ---------- v130: game feel — the world reacts, the death beat breathes ----------
+check('v130 a heavy landing startles the birds more than a light one, and it settles back', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing";' +
+    ' for (const b of birds) b.startle = 0; combo = 0; landFx(20);' +
+    ' const light = Math.max(...birds.map(b => b.startle));' +
+    ' for (const b of birds) b.startle = 0; combo = 10; landFx(BASE_W);' +
+    ' const heavy = Math.max(...birds.map(b => b.startle));' +
+    ' if (!(heavy > light)) return "heavy " + heavy + " vs light " + light;' +
+    ' for (let i=0;i<80;i++) update(1);' +
+    ' return Math.max(...birds.map(b => b.startle)) === 0 ? true : "startle never settled"; })()') === true;
+});
+check('v130 a SKYBREAK shoves the clouds outward from centre', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing";' +
+    ' const before = clouds.map(c => c.x);' +
+    ' for (const c of clouds) c.x = c.x < W/2 ? 20 : W-20;' +
+    ' const mid = clouds.map(c => c.x);' +
+    ' if (!reduceMotion) for (const c of clouds) c.x += (c.x < W/2 ? -1 : 1) * 12;' +
+    ' for (let i=0;i<clouds.length;i++) { const out = Math.abs(clouds[i].x - W/2) > Math.abs(mid[i] - W/2);' +
+    '   if (!out) return "cloud " + i + " did not move outward"; }' +
+    ' return true; })()') === true;
+});
+check('v130 the death beat runs slow, then resumes, and never changes the outcome', () => {
+  const g = makeGame();
+  const setup = ' mode="endless"; resetRun(); state="playing";' +
+    ' for(let i=0;i<20;i++) blocks.push({x:W/2-48,w:96,col:{h:0,s:0,l:50}});' +
+    ' balance = toppleLimit()+5; gameOver("topple");';
+  const slowed = g.run('(() => {' + setup + ' goT = 0; return beatScale(); })()');
+  const resumed = g.run('(() => {' + setup + ' goT = 30; return beatScale(); })()');
+  if (!(slowed < 1 && resumed === 1)) return 'slowed=' + slowed + ' resumed=' + resumed;
+  const res = (gt) => g.run('(() => {' + setup + ' goT=' + gt + ';' +
+    ' for (let i=0;i<60;i++) update(1*beatScale());' +
+    ' return state+"/"+overCause+"/"+blocks.length; })()');
+  return res(0) === res(99) ? true : 'slow ' + res(0) + ' vs normal ' + res(99);
+});
+check('v130 reduceMotion gets neither the startle nor the slow motion', () => {
+  const g = makeGame(undefined, true);
+  return g.run('(() => { mode="endless"; resetRun(); state="playing";' +
+    ' for (const b of birds) b.startle = 0; combo = 10; landFx(BASE_W);' +
+    ' if (Math.max(...birds.map(b => b.startle)) !== 0) return "startled under reduceMotion";' +
+    ' for(let i=0;i<20;i++) blocks.push({x:W/2-48,w:96,col:{h:0,s:0,l:50}});' +
+    ' balance = toppleLimit()+5; gameOver("topple"); goT = 0;' +
+    ' return beatScale() === 1 ? true : "slow motion under reduceMotion"; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2897,7 +2943,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v129', () => /const CACHE = 'skystack-v129'/.test(sw));
+check('sw.js cache bumped to v130', () => /const CACHE = 'skystack-v130'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
