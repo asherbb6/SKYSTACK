@@ -927,8 +927,11 @@ check('S0 level registry is index-aligned with every v75 tier boundary', () => f
   'LEVEL_REGISTRY.length === TIERS.length && LEVEL_REGISTRY.every((l,i) => l.id === i && l.goalAltitude === TIERS[i].n && l.startAltitude === (i ? TIERS[i-1].n : 0) && l.name === TIERS[i].name && l.color === TIERS[i].c)'));
 check('S0 balance registry aliases the live v75 physics constants', () => fresh.run(
   'BALANCE_REGISTRY.physics.blockHeight === BH && BALANCE_REGISTRY.physics.baseWidth === BASE_W && BALANCE_REGISTRY.physics.metersPerBlock === METERS_PER && BALANCE_REGISTRY.physics.topple === TOPPLE && BALANCE_REGISTRY.physics.perfectPx === PERFECT_PX'));
-check('S0 feature flags remain centralized; shipped Characters, Bases, Collections, Modifiers, and Challenges are active', () => fresh.run(
-  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && FEATURE_FLAGS.characters === true && FEATURE_FLAGS.bases === true && FEATURE_FLAGS.modifiers === true && FEATURE_FLAGS.collections === true && FEATURE_FLAGS.challenges === true'));
+// v133: Bases are switched OFF (kept for a later project), so this asserts the flag SET is still
+// centralized and complete — not that every flag is on. The bases:false value is pinned here on
+// purpose: if something flips it back on, the shop tab and BASE GALLERY return with it.
+check('S0 feature flags remain centralized; Bases are deliberately off, the rest active', () => fresh.run(
+  'Object.isFrozen(FEATURE_FLAGS) && Object.keys(FEATURE_FLAGS).length === 5 && FEATURE_FLAGS.characters === true && FEATURE_FLAGS.bases === false && FEATURE_FLAGS.modifiers === true && FEATURE_FLAGS.collections === true && FEATURE_FLAGS.challenges === true'));
 
 const s0ctx = makeGame();
 s0ctx.run('mode="endless"; loadout={shield:true,aura:false,slow:true}; resetRun(); globalThis.__ctx=runContext; globalThis.__seed=runContext.seed; globalThis.__speed=difficultyAt(runContext,40,assist,2).sliderSpeed;');
@@ -1067,8 +1070,11 @@ check('S3 selected Base is immutable within a run and remains cosmetic in Pure a
   '(() => { baseId="rootbound";mode="pure";resetRun();const snap=runContext.baseSnapshot,before=JSON.stringify(snap);baseId="natural";try{snap.id="starforge"}catch(e){}const pure=runContext,daily=createRunContext({mode:"daily",campaignLevel:-1,startingAltitude:0,checkpointId:"ground",baseId:"starforge",seed:1,skill:.35,loadout:{shield:true},characterId:"neon",characterMastery:{},modifiers:[]});return snap.id==="rootbound"&&JSON.stringify(snap)===before&&pure.basePermissions.cosmetic&&!pure.basePermissions.effects&&!daily.basePermissions.effects&&adjustedRunScore(pure,100)===100&&adjustedRunScore(daily,100)===100&&!canUseLoadout(pure)&&!canUseLoadout(daily); })()'));
 check('S3 every cosmetic Base and every checkpoint structure render without changing collision state', () => fresh.run(
   '(() => { const before=JSON.stringify(blocks); BASE_REGISTRY.forEach(b=>drawBaseCosmetic(W/2,100,BASE_W,b.id)); CHECKPOINT_REGISTRY.slice(1).forEach(c=>drawLandmarkPlatform(W/2,100,BASE_W,c.region)); return JSON.stringify(blocks)===before; })()'));
-check('S3 Base Select renders with tabs and controls above navigation at 242x300', () => fresh.run(
-  '(() => { W=242;H=300;relayout();state="shop";shopView="base";basePreviewIdx=3;renderShop();return SHOP_TABS.length===2&&SHOP_TABS.every(t=>t.x>=0&&t.x+t.w<=W&&t.y+t.h<NAV_Y)&&EQUIP_BTN.y+EQUIP_BTN.h<NAV_Y; })()'));
+// v133: Bases are switched off, so there is no Base Select to render. The layout intent this test
+// existed to protect — shop tabs and controls stay on-screen and clear of the nav at 242x300 — is
+// kept, now measured on the character shop that players actually reach.
+check('S3 the shop renders with its tabs and controls above navigation at 242x300', () => fresh.run(
+  '(() => { W=242;H=300;relayout();state="shop";shopView="character";previewIdx=3;renderShop();return SHOP_TABS.length>=1&&SHOP_TABS.every(t=>t.x>=0&&t.x+t.w<=W&&t.y+t.h<NAV_Y)&&EQUIP_BTN.y+EQUIP_BTN.h<NAV_Y; })()'));
 
 // ---------- S4 biome gameplay identities + fair run modifiers ----------
 check('S4 defines frozen, explicit modifier contracts for all eight macro-biomes and six families', () => fresh.run(
@@ -1125,15 +1131,20 @@ check('S5 achievement settlement grants its exact reward only once per finalized
   const g=makeGame();
   return g.run('(() => { mode="endless";resetRun();coins=0;stats={games:0,blocks:0,coins:0,maxCombo:0,skybreaks:0,balloons:0,streakBest:0};achDone=[];missions=[{key:"height",target:9999,reward:1},{key:"score",target:9999,reward:1},{key:"combo",target:99,reward:1}];gameOver("quit");const once=coins,done=achDone.slice();finalizeRun();return once===ECONOMY_RULES.achievementRewards.bronze&&coins===once&&done.length===1&&done[0]==="first"; })()');
 });
-check('S5 defines six frozen cosmetic/progression collection sets with one-time coin rewards', () => fresh.run(
-  'COLLECTION_REGISTRY.length===6&&Object.isFrozen(COLLECTION_REGISTRY)&&COLLECTION_REGISTRY.every(c=>Object.isFrozen(c)&&c.id&&c.name&&c.reward>0&&typeof c.progress==="function")'));
+// v133: five sets, not six — BASE GALLERY is withdrawn while the Base system is switched off, so it
+// cannot sit in the list permanently unachievable. The shape contract below is unchanged.
+check('S5 defines five frozen cosmetic/progression collection sets with one-time coin rewards', () => fresh.run(
+  'COLLECTION_REGISTRY.length===5&&Object.isFrozen(COLLECTION_REGISTRY)&&COLLECTION_REGISTRY.every(c=>Object.isFrozen(c)&&c.id&&c.name&&c.reward>0&&typeof c.progress==="function")'));
 check('S5 Collection normalization preserves unknown future ids and removes duplicates and bad values', () => {
   const g=makeGame({'skystack-save':JSON.stringify({version:2,data:{'skystack-collections':{unlocked:['future-set','future-set',7],completed:['future-done','future-done',null]}}})});
   const c=saved(g,'skystack-collections');
   return c.unlocked.includes('future-set')&&c.unlocked.filter(x=>x==='future-set').length===1&&c.completed.includes('future-done')&&c.completed.filter(x=>x==='future-done').length===1;
 });
-check('S5 completing a cosmetic Base collection pays once without changing Base behavior', () => fresh.run(
-  '(() => { coins=500;ownedBases=["natural","runestone","rootbound"];collectionState={unlocked:[],completed:[]};persistCollections();const b=BASE_REGISTRY.find(x=>x.id==="starforge"),buy=purchaseUnlock(b,ownedBases),first=reconcileCollections(true),after=coins,second=reconcileCollections(true);return buy.charged===260&&first.length===1&&first[0].id==="base-gallery"&&first[0].reward===100&&after===340&&coins===after&&!second.length&&baseById("starforge").identity&&BASE_REGISTRY.every(x=>!x.effect&&!x.effects); })()'));
+// v133: BASE GALLERY is withdrawn, so owning every Base no longer pays a collection reward. The rest
+// of the guarantee still matters and is still checked: the purchase path works (the system is only
+// switched off, not broken), and Bases remain purely cosmetic with no gameplay effect.
+check('S5 owning every Base pays no withdrawn collection, and Bases stay cosmetic', () => fresh.run(
+  '(() => { coins=500;ownedBases=["natural","runestone","rootbound"];collectionState={unlocked:[],completed:[]};persistCollections();const b=BASE_REGISTRY.find(x=>x.id==="starforge"),buy=purchaseUnlock(b,ownedBases),paid=reconcileCollections(true);return buy.charged===260&&coins===240&&paid.every(c=>c.id!=="base-gallery")&&baseById("starforge").identity&&BASE_REGISTRY.every(x=>!x.effect&&!x.effects); })()'));
 check('S5 star-chart completion survives reboot and cannot pay twice', () => {
   const g=makeGame({'skystack-levelstars':JSON.stringify([3,3,3,3,3,3,3,1])});
   const first=saved(g,'skystack-coins'),save=g.mem.get('skystack-save'),c=saved(g,'skystack-collections');
@@ -1145,7 +1156,7 @@ check('S5 Practice cannot settle missions, achievements, mastery, collections, o
 check('S5 Pure and Daily retain neutral passives, boosts, modifiers, scoring, and cosmetic-only Bases', () => fresh.run(
   '["pure","daily"].every(mode=>{const c=createRunContext({mode,campaignLevel:-1,startingAltitude:0,checkpointId:"ground",baseId:"starforge",seed:5,skill:.8,loadout:{shield:true},characterId:"neon",characterMastery:{xp:999}});return !c.characterSnapshot.passiveEnabled&&!c.boostPermissions.allowed&&!c.modifierPermissions.enabled&&c.modifiers.length===0&&c.basePermissions.cosmetic&&!c.basePermissions.effects&&adjustedRunScore(c,100)===100&&adjustedRunCoins(c,10)===10;})'));
 check('S5 Player screen presents achievement and Collection progress without overflowing phone navigation', () => fresh.run(
-  '(() => { W=242;H=300;relayout();state="me";renderMe();return ACH.length===24&&COLLECTION_REGISTRY.length===6&&TOGGLES.every(t=>t.x>=0&&t.x+t.w<=W&&t.y+t.h<NAV_Y)&&MIX_ROWS.every(r=>r.plus.y+r.plus.h<NAV_Y); })()'));
+  '(() => { W=242;H=300;relayout();state="me";renderMe();return ACH.length===24&&COLLECTION_REGISTRY.length===5&&TOGGLES.every(t=>t.x>=0&&t.x+t.w<=W&&t.y+t.h<NAV_Y)&&MIX_ROWS.every(r=>r.plus.y+r.plus.h<NAV_Y); })()'));
 
 // ---------- S6 challenge hub + fair run templates ----------
 check('S6 defines eight frozen local templates covering every planned challenge family', () => fresh.run(
@@ -1203,7 +1214,7 @@ check('S7 freezes explicit first-release catalog, economy, side-grade, session, 
 check('S7 mechanics-lock report is pure, deeply frozen, deterministic, and ready', () => fresh.run(
   '(() => { const a=mechanicsLockReport(),b=mechanicsLockReport();return a.ready&&Object.isFrozen(a)&&Object.isFrozen(a.checks)&&Object.isFrozen(a.challengeReports)&&a.challengeReports.every(Object.isFrozen)&&JSON.stringify(a)===JSON.stringify(b)&&Object.values(a.checks).every(Boolean); })()'));
 check('S7 content catalogs meet launch counts with unique ids and complete rule data', () => fresh.run(
-  '(() => { const r=mechanicsLockReport(),groups=[CHARACTER_REGISTRY,BASE_REGISTRY,MODIFIER_REGISTRY,CHALLENGE_REGISTRY,COLLECTION_REGISTRY,ACH];return r.counts.characters>=12&&r.counts.bases===4&&r.counts.modifiers===12&&r.counts.challenges===8&&r.counts.missions===12&&r.counts.achievements===24&&r.counts.collections===6&&groups.every(g=>new Set(g.map(x=>x.id)).size===g.length)&&CHARACTER_REGISTRY.every(c=>c.role&&c.passiveId&&c.unlock)&&BASE_REGISTRY.every(b=>b.identity&&b.unlock)&&CHALLENGE_REGISTRY.every(c=>c.objective&&c.family); })()'));
+  '(() => { const r=mechanicsLockReport(),groups=[CHARACTER_REGISTRY,BASE_REGISTRY,MODIFIER_REGISTRY,CHALLENGE_REGISTRY,COLLECTION_REGISTRY,ACH];return r.counts.characters>=12&&r.counts.bases===4&&r.counts.modifiers===12&&r.counts.challenges===8&&r.counts.missions===12&&r.counts.achievements===24&&r.counts.collections===5&&groups.every(g=>new Set(g.map(x=>x.id)).size===g.length)&&CHARACTER_REGISTRY.every(c=>c.role&&c.passiveId&&c.unlock)&&BASE_REGISTRY.every(b=>b.identity&&b.unlock)&&CHALLENGE_REGISTRY.every(c=>c.objective&&c.family); })()'));
 check('S7 economy keeps first visible purchases in 2–6 progress grants and all passives inside the side-grade envelope', () => fresh.run(
   '(() => { const r=mechanicsLockReport(),t=MECHANICS_LOCK_TARGETS;return r.economy.firstBaseRuns===3&&r.economy.firstCharacterRuns===4&&r.economy.maxCharacterRuns===30&&r.economy.firstBaseRuns>=t.economy.firstPurchaseRuns.min&&r.economy.firstCharacterRuns<=t.economy.firstPurchaseRuns.max&&r.maxSidegradeDelta<=t.sidegrades.maxMultiplierDelta; })()'));
 check('S7 Challenge estimates stay inside the locked short-session range and Time remains exactly 60 seconds', () => fresh.run(
@@ -1265,8 +1276,9 @@ check('Home-linked map, mode, and Challenge surfaces stay clipped, concise, and 
   '(() => { if(MAP_HEAD!==38||modeCompactDesc("challenges")!=="8 FOCUSED RUNS"||challengeCompactDesc("precision10")!=="10 PERFECTS - ONE MISS")return false;for(const [w,h] of [[180,390],[242,300],[480,270]]){W=w;H=h;relayout();state="home";modePicker=true;renderModePicker();challengePicker=true;renderChallengePicker();skyMap=true;renderSkyMap();if(PICK_ROWS.some(r=>r.x<0||r.x+r.w>W||r.y+r.h>=NAV_Y)||CHALLENGE_ROWS.some(r=>r.x<0||r.x+r.w>W||r.y+r.h>=NAV_Y))return false;}return true; })()') && /ctx\.rect\(0,L\.viewTop,W,L\.viewBot-L\.viewTop\);ctx\.clip\(\)/.test(src));
 check('production UI keeps presentation ownership separate from locked mechanics', () =>
   /function pixelFrame\(/.test(src) && /function drawJourneyProgress\(/.test(src) && /function drawNavGlyph\(/.test(src) && fresh.run('mechanicsLockReport().ready&&MECHANICS_LOCK_TARGETS.weeklySeeded===false'));
-check('Home, Shop, Bases, and Me share centered dark frames without entering navigation', () => fresh.run(
-  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";renderHome();state="shop";shopView="character";renderShop();shopView="base";renderShop();state="me";renderMe();const lastMix=MIX_ROWS[MIX_ROWS.length-1],meW=Math.min(W-PAD*2-16,200),meX=Math.round((W-meW)/2)-8;if(HERO_CARD.x!==Math.round((W-HERO_CARD.w)/2)||SHOP_TABS[0].x+SHOP_TABS[0].w+6!==SHOP_TABS[1].x||EQUIP_BTN.y+EQUIP_BTN.h>=BOOST_TOP||LOAD_CHIPS.some(c=>c.y+c.h>=NAV_Y)||lastMix.plus.y+lastMix.plus.h>=NAV_Y||meX<0||meX+meW+16>W)return false;}return true; })()'));
+// v133: the Bases tab is gone, so the tab-pair gap assertion is replaced by "the lone tab is centred".
+check('Home, Shop, and Me share centered dark frames without entering navigation', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();state="home";renderHome();state="shop";shopView="character";renderShop();state="me";renderMe();const lastMix=MIX_ROWS[MIX_ROWS.length-1],meW=Math.min(W-PAD*2-16,200),meX=Math.round((W-meW)/2)-8;const tabsOk=SHOP_TABS.length===1?Math.abs(SHOP_TABS[0].x+SHOP_TABS[0].w/2-W/2)<=1:SHOP_TABS[0].x+SHOP_TABS[0].w+6===SHOP_TABS[1].x;if(HERO_CARD.x!==Math.round((W-HERO_CARD.w)/2)||!tabsOk||EQUIP_BTN.y+EQUIP_BTN.h>=BOOST_TOP||LOAD_CHIPS.some(c=>c.y+c.h>=NAV_Y)||lastMix.plus.y+lastMix.plus.h>=NAV_Y||meX<0||meX+meW+16>W)return false;}return true; })()'));
 
 // ---------- v91 UI fine grid ----------
 check('v91 fine grid: supersample snaps even so half-pixel UI detail stays crisp', () =>
@@ -1481,9 +1493,13 @@ check('v97 boost chips sit inside the Run Boosts card with breathing gaps', () =
   'for(let i2=1;i2<3;i2++) if(LOAD_CHIPS[i2].x - (LOAD_CHIPS[i2-1].x+LOAD_CHIPS[i2-1].w) < 3) return false;' +
   '} return true; })()'));
 
-check('v97 shop tabs split around center with a visible gap and equal widths', () => fresh.run(
+// v133: with Bases switched off there is one tab, so the pair rule (6px gap, equal widths, centred
+// as a unit) reduces to "the single tab is centred". Both branches are kept so that re-enabling the
+// Base system restores the original assertion rather than silently losing this layout guard.
+check('v97 shop tabs stay centred at every viewport', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
   'const a=SHOP_TABS[0], b=SHOP_TABS[1];' +
+  'if(!b){ if(Math.abs((a.x + a.w/2) - W/2) > 1) return false; continue; }' +
   'if(b.x-(a.x+a.w)!==6 || a.w!==b.w) return false;' +   // v99: 6px gap
   'if(Math.abs((a.x + b.x+b.w)/2 - W/2) > 1) return false; } return true; })()'));
 
@@ -3017,6 +3033,66 @@ check('v132 LOWER SKY meets wind far more often, and JET STREAM stays the strong
   return g.run('MATERIALS[5].wind > MATERIALS[3].wind') ? true : 'lower sky out-blows the jet stream';
 });
 
+// ---------- v133: the level start shows the real tower; the Base system is switched OFF ----------
+// Every campaign level pre-stacks the blocks you climbed, but the renderer hid them so a floating
+// LANDMARK platform could stand in. At TREETOPS that landmark is a bare bough, which read as a plank
+// hanging in mid-air at 180M. Asher: "its unprofessional, and looks cheap/terrible."
+const v133render = (lvl) => '(() => { prog = 99; startLevel(' + lvl + ');' +
+  ' let blocksDrawn = 0, landmark = 0, cosmetic = 0;' +
+  ' const rb = drawBlock, rl = drawLandmarkPlatform, rc = drawBaseCosmetic;' +
+  ' drawBlock = function(){ blocksDrawn++; return rb.apply(this, arguments); };' +
+  ' drawLandmarkPlatform = function(){ landmark++; return rl.apply(this, arguments); };' +
+  ' drawBaseCosmetic = function(){ cosmetic++; return rc.apply(this, arguments); };' +
+  ' try { render(); } finally { drawBlock = rb; drawLandmarkPlatform = rl; drawBaseCosmetic = rc; }' +
+  ' return JSON.stringify({blocksDrawn, landmark, cosmetic, total: blocks.length}); })()';
+check('v133 a checkpoint start draws the real tower, not a floating platform', () => {
+  const r = JSON.parse(makeGame().run(v133render(4)));
+  if (r.landmark !== 0) return 'landmark platform still drawn';
+  if (r.cosmetic !== 0) return 'base cosmetic still drawn';
+  return r.blocksDrawn >= 5 ? true : 'only ' + r.blocksDrawn + ' blocks drawn of ' + r.total;
+});
+check('v133 drawing the tower stays bounded by the screen, not by tower depth', () => {
+  const shallow = JSON.parse(makeGame().run(v133render(2)));
+  const deep = JSON.parse(makeGame().run(v133render(9)));
+  return deep.blocksDrawn <= shallow.blocksDrawn + 3
+    ? true : 'deep level drew ' + deep.blocksDrawn + ' vs shallow ' + shallow.blocksDrawn;
+});
+// Asher asked for the Base system to be DISABLED rather than deleted, so it can be reused in a later
+// project. This check is what stops a future cleanup pass from quietly breaking that promise.
+check('v133 the Base system is switched off but left completely intact', () => fresh.run(
+  '(() => { if (FEATURE_FLAGS.bases !== false) return "flag is not false";' +
+  ' if (typeof BASE_REGISTRY === "undefined" || BASE_REGISTRY.length !== 4) return "registry gone";' +
+  ' if (typeof drawBaseCosmetic !== "function") return "drawBaseCosmetic gone";' +
+  ' if (typeof drawBaseBlock !== "function" || BASE_THEMES.length !== TIERS.length) return "themes gone";' +
+  ' if (!FUTURE_SAVE_CONTRACTS.bases) return "save contract gone";' +
+  ' return true; })()') === true);
+check('v133 the BASES shop tab is unreachable and leaves no empty tab behind', () => fresh.run(
+  '(() => { const W0=W,H0=H; W=320;H=480; relayout();' +
+  ' const ids = SHOP_TABS.map(t=>t.id), n = SHOP_TABS.length, t = SHOP_TABS[0];' +
+  ' const centred = Math.abs((t.x + t.w/2) - W/2) <= 1;' +
+  ' W=W0;H=H0; relayout();' +
+  ' if (ids.indexOf("base") >= 0) return "base tab still present";' +
+  ' if (n !== 1) return "unexpected tab count " + n;' +
+  ' return centred ? true : "lone tab not centred"; })()') === true);
+check('v133 BASE GALLERY is not left in the collection list unachievable', () =>
+  fresh.run('COLLECTION_REGISTRY.every(c => c.id !== "base-gallery")'));
+check('v133 disabling bases does not touch the saved base data', () => {
+  const seed = JSON.stringify({ owned:['natural','runestone'], selected:'runestone' });
+  const g = makeGame({ 'skystack-bases': seed });
+  return g.mem.get('skystack-bases') === seed ? true : 'save was rewritten: ' + g.mem.get('skystack-bases');
+});
+// The letter D was two pixels from O with both right corners open, so it READ as O at every size:
+// shipped live as "OROP: TAP WHEN CENTERED", "< WINO", and a difficulty button reading "MEO".
+const glyphPx = ' const px = (a,b) => { let n=0; for (let i=0;i<7;i++){ let x=(a[i]^b[i])&31;' +
+  ' while(x){ n+=x&1; x>>=1; } } return n; };';
+check('v133 the letter D is clearly distinct from O', () =>
+  fresh.run('(() => {' + glyphPx + ' return px(FONT.D, FONT.O) >= 6; })()'));
+check('v133 no two glyphs in the font are within 2 pixels of each other', () => fresh.run(
+  '(() => {' + glyphPx + ' const k = Object.keys(FONT);' +
+  ' for (let i=0;i<k.length;i++) for (let j=i+1;j<k.length;j++)' +
+  '   if (px(FONT[k[i]], FONT[k[j]]) < 3) return k[i] + "/" + k[j] + " are indistinguishable";' +
+  ' return true; })()') === true);
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -3042,7 +3118,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v132', () => /const CACHE = 'skystack-v132'/.test(sw));
+check('sw.js cache bumped to v133', () => /const CACHE = 'skystack-v133'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

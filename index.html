@@ -165,7 +165,10 @@ function dayStr(off) { const d = new Date(); if (off) d.setDate(d.getDate() + of
 
 // ---------- 5x7 pixel font ----------
 const FONT = {
-  A:[14,17,17,31,17,17,17],B:[30,17,17,30,17,17,30],C:[14,17,16,16,16,17,14],D:[30,17,17,17,17,17,30],
+  // v133: D was [30,17,17,17,17,17,30] — only TWO pixels different from O, with both right corners
+  // open, so it read as an O at every size. It shipped as "OROP: TAP WHEN CENTERED", "< WINO" and a
+  // difficulty button reading "MEO". The bowl now tapers into the bars, which closes the corners.
+  A:[14,17,17,31,17,17,17],B:[30,17,17,30,17,17,30],C:[14,17,16,16,16,17,14],D:[28,18,17,17,17,18,28],
   E:[31,16,16,30,16,16,31],F:[31,16,16,30,16,16,16],G:[14,17,16,23,17,17,15],H:[17,17,17,31,17,17,17],
   I:[14,4,4,4,4,4,14],J:[7,2,2,2,2,18,12],K:[17,18,20,24,20,18,17],L:[16,16,16,16,16,16,31],
   M:[17,27,21,21,17,17,17],N:[17,25,21,19,17,17,17],O:[14,17,17,17,17,17,14],P:[30,17,17,30,16,16,16],
@@ -719,7 +722,11 @@ const MODE_REGISTRY = deepFreeze({
 });
 const MODES = Object.freeze(['level','practice','endless','time','challenge','pure','daily'].map(id => MODE_REGISTRY[id]));
 const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
-const FEATURE_FLAGS = deepFreeze({ characters:true, bases:true, collections:true, modifiers:true, challenges:true });
+// v133: `bases` is OFF. The cosmetic Base system (BASE_REGISTRY, drawBaseCosmetic, the shop tab, the
+// BASE GALLERY collection) is left fully intact and reusable — it is switched off, not deleted, so a
+// later project can turn it back on with this one flag. The save key `skystack-bases` is deliberately
+// left untouched for the same reason: re-enabling must restore what a player already owned.
+const FEATURE_FLAGS = deepFreeze({ characters:true, bases:false, collections:true, modifiers:true, challenges:true });
 const CHALLENGE_REGISTRY = deepFreeze([
   { id:'time60', name:'TIME 60', family:'timed', desc:'MAX HEIGHT IN 60 SECONDS', mode:'time', duration:3600, objective:{type:'height',target:0}, reward:0, modifiers:true },
   { id:'precision10', name:'PERFECT TEN', family:'precision', desc:'LAND 10 PERFECTS - ONE MISS ENDS IT', mode:'challenge', objective:{type:'perfects',target:10}, reward:30, modifiers:false, failOnImperfect:true },
@@ -955,12 +962,14 @@ function toppleLimit() { return TOPPLE * activeDifficulty().topple; }
 // Collections recognize existing direct-purchase cosmetics and campaign stars. Completion pays
 // coins once; it never grants run power, changes a Base, or modifies Pure/Daily rules.
 const collectionSet = (id,name,items,reward,progress) => deepFreeze({id,name,items,reward,progress});
+// v133: BASE GALLERY only exists while the Base system is switched on. A collection nobody can make
+// progress on is worse than no collection at all — it sits in the list permanently unachievable.
 const COLLECTION_REGISTRY = deepFreeze([
   collectionSet('first-crew','FIRST CREW',['aurora','candy','lava','mint'],50,()=>[owned.filter(id=>['aurora','candy','lava','mint'].includes(id)).length,4]),
   collectionSet('rare-crew','RARE CREW',['lava','mint','ocean'],75,()=>[owned.filter(id=>['lava','mint','ocean'].includes(id)).length,3]),
   collectionSet('epic-crew','EPIC CREW',['neon','mono','sakura','void'],100,()=>[owned.filter(id=>['neon','mono','sakura','void'].includes(id)).length,4]),
   collectionSet('legend-crew','LEGEND CREW',['gold','royal','prism'],150,()=>[owned.filter(id=>['gold','royal','prism'].includes(id)).length,3]),
-  collectionSet('base-gallery','BASE GALLERY',BASE_REGISTRY.map(b=>b.id),100,()=>[BASE_REGISTRY.filter(b=>ownedBases.includes(b.id)).length,BASE_REGISTRY.length]),
+  ...(FEATURE_FLAGS.bases ? [collectionSet('base-gallery','BASE GALLERY',BASE_REGISTRY.map(b=>b.id),100,()=>[BASE_REGISTRY.filter(b=>ownedBases.includes(b.id)).length,BASE_REGISTRY.length])] : []),
   collectionSet('star-chart','STAR CHART',[],125,()=>[bestStarsAcross().reduce((n,x)=>n+coinAmount(x),0),22])
 ]);
 function normalizeCollectionState(v) {
@@ -1340,7 +1349,9 @@ const UNLOCK_CATALOG = deepFreeze({
 // makes catalog coverage, economy pace, side-grade bounds, session lengths, and launch gates visible
 // so a later edit cannot silently move the first-release contract.
 const MECHANICS_LOCK_TARGETS = deepFreeze({
-  catalogs:{ characters:12, bases:4, modifiers:12, challenges:8, missions:12, achievements:24, collections:6 },
+  // v133: collections 6 → 5. BASE GALLERY is withdrawn while the Base system is switched off, so it
+  // cannot sit permanently unachievable. `bases:4` stays: the catalog is intact and reusable, just off.
+  catalogs:{ characters:12, bases:4, modifiers:12, challenges:8, missions:12, achievements:24, collections:5 },
   economy:{ visibleProgressCoins:30, firstPurchaseRuns:{min:2,max:6}, challengeReward:{min:30,max:40}, repeatChallengeRewards:false },
   sidegrades:{ maxMultiplierDelta:.25 },
   sessions:{ challengeSeconds:{min:10,max:90}, timedSeconds:60 },
@@ -2244,7 +2255,11 @@ function relayout() {
   // the tab pair splits around center with a 6px gap (still aligned with the cards' inner edges
   // at the phone width), and every button keeps 4-5px clearance from its card frame
   const shopTabW=Math.min(80,Math.floor((W-24)/2));
-  SHOP_TABS=['character','base'].map((id,i)=>({id,x:Math.round(W/2)+(i?3:-shopTabW-3),y:22,w:shopTabW,h:14}));
+  // v133: with Bases switched off there is only one tab, so it centres instead of sitting in a pair.
+  const shopTabIds=FEATURE_FLAGS.bases?['character','base']:['character'];
+  SHOP_TABS=shopTabIds.map((id,i)=>({id,
+    x:shopTabIds.length===1?Math.round((W-shopTabW)/2):Math.round(W/2)+(i?3:-shopTabW-3),
+    y:22,w:shopTabW,h:14}));
   // v94 grow rule kept; min 78→84 so the stacked chip column always fits when it engages
   BOOST_CARD_H = Math.min(clamp(Math.round((NAV_Y-198)*.55),84,160), NAV_Y-198);
   const SHOP_OFF = Math.max(0, Math.floor((NAV_Y - 40 - (150 + BOOST_CARD_H) - 4) / 2));
@@ -4769,15 +4784,12 @@ function renderWorld(cy, shX) {
       bh=Math.round(BH*(1 - s*0.42)); bw=Math.round(b.w*(1 + s*0.28)); bx=b.x-(bw-b.w)/2; y+=BH-bh;
     }
     if (isTop) { topScreenX = b.x + b.w/2; topScreenY = Math.round(GROUND_Y-(i+1)*BH-cy); }
-    // checkpoint structure and selected cosmetic Base are independent immutable run-start fields
-    const structure=runContext?runContext.startingStructureSnapshot:{kind:'ground',region:0};
-    const startIdx = runLevel >= 0 ? Math.max(runLaunch - 1, 0) : 0;
-    if (runLevel >= 0 && i < startIdx) continue;
+    // v133: the tower under you is REAL — draw it. Every campaign level pre-stacks the blocks you
+    // climbed to get here, but they were hidden so a floating LANDMARK platform could stand in for
+    // them. At TREETOPS that landmark is a bare bough, which reads as a plank hanging in mid-air at
+    // 180M. Showing the actual tower needs no new art and nothing to explain. The screen-space cull
+    // below keeps the cost bounded by viewport height, not by how deep the tower goes.
     if (y>H || y+bh<0) continue;
-    if (i === startIdx) {
-      if (structure.kind==='landmark') drawLandmarkPlatform(Math.round(bx+bw/2),y+bh,Math.round(bw),structure.region);
-      drawBaseCosmetic(Math.round(bx+bw/2),y+bh,Math.round(bw),runContext?runContext.baseSnapshot.id:baseId);
-    }
     drawBlock(Math.round(bx),y,Math.round(bw),bh,b.col,isTop, isTop?comboGlow:0, sstyle);
   }
   if (slider) {
