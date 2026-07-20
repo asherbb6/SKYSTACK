@@ -1037,17 +1037,17 @@ const LEVEL_BLUEPRINTS = deepFreeze([
 // Everything counts CUTS, never MISSES — in campaign a miss ENDS the run, so a miss-based objective
 // would be satisfied by every clear and would measure nothing.
 const STAR_OBJECTIVES = deepFreeze([
-  { two:{type:'perfects',n:8},    three:{type:'streak',n:5} },        // 0  FOUNDATION  - steady stone
+  { two:{type:'perfects',n:14},   three:{type:'streak',n:5} },        // 0  FOUNDATION  - steady stone
   { two:{type:'perfects',n:4},    three:{type:'streak',n:4} },        // 1  FIRST LIGHT - opening wind
-  { two:{type:'streak',n:4},      three:{type:'streak',n:7} },        // 2  CANOPY RHYTHM - wood precision
-  { two:{type:'windLands',n:4},   three:{type:'perfects',n:9} },      // 3  OPEN AIR - readable drift
+  { two:{type:'streak',n:3},      three:{type:'streak',n:6} },        // 2  CANOPY RHYTHM - wood precision
+  { two:{type:'windLands',n:1},   three:{type:'streak',n:5} },        // 3  OPEN AIR - readable drift
   { two:{type:'perfects',n:10},   three:{type:'streak',n:6} },        // 4  SOFT FOOTING - cloud wobble
-  { two:{type:'windLands',n:6},   three:{type:'perfects',n:14} },     // 5  CROSSWIND - fast steel + wind
-  { two:{type:'streak',n:6},      three:{type:'perfects',n:16} },     // 6  THIN AIR - glass control
-  { two:{type:'recover',n:4},     three:{type:'noDoubleCut'} },       // 7  ICE TEMPO - quick recovery
+  { two:{type:'windLands',n:2},   three:{type:'streak',n:6} },        // 5  CROSSWIND - fast steel + wind
+  { two:{type:'perfects',n:13},   three:{type:'streak',n:6} },        // 6  THIN AIR - glass control
+  { two:{type:'recover',n:5},     three:{type:'streak',n:7} },        // 7  ICE TEMPO - quick recovery
   { two:{type:'perfects',n:22},   three:{type:'streak',n:8} },        // 8  LOW GRAVITY - cosmic wobble
-  { two:{type:'cleanFinish',n:8}, three:{type:'perfects',n:45} },     // 9  ORBITAL ENDURANCE
-  { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:10} }   // 10 SUMMIT RUN - final precision
+  { two:{type:'perfects',n:40},   three:{type:'streak',n:10} },       // 9  ORBITAL ENDURANCE
+  { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:4} }    // 10 SUMMIT RUN - final precision
 ]);
 function objectiveLabel(o) {
   if (!o) return '';
@@ -5982,16 +5982,6 @@ function renderLevelWin() {
     const pop = on && winT < at + 6;
     drawStarPix(W/2 + (k-1)*30, starY, pop ? 4 : 3, on);
   }
-  // v126: name each star's objective so the next attempt has a target the moment this one ends
-  const OBJ = LEVEL_REGISTRY[runLevel] ? LEVEL_REGISTRY[runLevel].starObjectives : null;
-  if (OBJ && winT > 60) {
-    const rows = [['CLEARED', winStarMet[0]], [objectiveLabel(OBJ.two), winStarMet[1]], [objectiveLabel(OBJ.three), winStarMet[2]]];
-    let oy = starY + 16;                            // anchored to the star row (starY = round(H*.36))
-    for (const [label, got] of rows) {
-      txt((got ? '* ' : '- ') + label, W/2, oy, 1, got ? UI_HEX() : 'rgba(255,246,232,0.45)', 'center');
-      oy += 10;
-    }
-  }
   // a 3-star clear earns blinking glitter around the row
   if (winStars === 3 && winT > 62 && !reduceMotion && Math.floor(winT/9) % 2 === 0) {
     ctx.fillStyle = '#FFD75E';
@@ -6001,6 +5991,17 @@ function renderLevelWin() {
   const placed = Math.max(1, blocks.length - runLaunch);
   let sy = starY + 18;
   txt('PERFECTS '+runPerfects+'/'+placed, W/2, sy, 1, 'rgba(255,246,232,0.55)', 'center'); sy += 11;
+  // v126: name each star's objective so the next attempt has a target the moment this one ends.
+  // Rides the running `sy` flow — a fixed offset here collided with this very stats block.
+  const OBJ = LEVEL_REGISTRY[runLevel] ? LEVEL_REGISTRY[runLevel].starObjectives : null;
+  if (OBJ && winT > 60) {
+    const rows = [['CLEARED', winStarMet[0]], [objectiveLabel(OBJ.two), winStarMet[1]], [objectiveLabel(OBJ.three), winStarMet[2]]];
+    for (const [label, got] of rows) {
+      txt((got ? '* ' : '- ') + label, W/2, sy, 1, got ? UI_HEX() : 'rgba(255,246,232,0.45)', 'center');
+      sy += 10;
+    }
+    sy += 2;
+  }
   if (modifierResults.length) {   // optional bonus challenge result — plain wording, own row
     const allWon = modifierWins === modifierResults.length;
     const bt = (allWon ? 'BONUS DONE' : modifierWins+' OF '+modifierResults.length+' BONUS') + (modifierBonusCoins > 0 ? ' +'+modifierBonusCoins : '');

@@ -147,6 +147,9 @@ const lv = makeGame();
 lv.run('startLevel(0)');
 check('level 1 starts on the ground', () => lv.run('state === "playing" && runLevel === 0 && runLaunch === 0 && blocks.length === 1'));
 lv.run('score = 500; runPerfects = TIERS[0].n; while (blocks.length < TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"});');
+// v126: stars now come from tracked placements, not a faked perfect ratio — drive level 0's
+// objectives for real (★2 = 14 PERFECTS, ★3 = 5 IN A ROW).
+lv.run('for (let i=0;i<20;i++) trackStarOutcome({perfect:true, cut:false, miss:false});');
 lv.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
 check('reaching the goal wins the level', () => lv.run('state === "levelwin"'));
 check('level win: stage unlocked (prog=1)', () => lv.run('prog === 1 && winFirst === true'));
@@ -971,7 +974,7 @@ check('S1 RunContext owns the selected lane, assist envelope, and campaign speed
 check('S1 balance harness is pure and deterministic for identical inputs', () => fresh.run(
   'JSON.stringify(levelBalanceReport(10,"assisted",.35))===JSON.stringify(levelBalanceReport(10,"assisted",.35))'));
 check('S1 harness reports duration, speed, precision, assist, wind, material, topple, recovery, and stars', () => fresh.run(
-  '(() => { const r=levelBalanceReport(4,"assisted",.35); return r.blocks===26 && r.durationSeconds.ideal>0 && r.durationSeconds.ordinary>r.durationSeconds.ideal && r.sliderSpeed.min>0 && r.sliderSpeed.max>=r.sliderSpeed.average && r.perfectWindowPx>PERFECT_PX && r.assist.start>0 && r.assist.max<=.85 && r.windExposure===MATERIALS[4].wind && r.materials.join(",")===MATERIALS[4].name && r.toppleTolerance===TOPPLE && r.recovery===DIFFICULTY_LANES.assisted.recovery && r.starObjectives.complete===true && r.starObjectives.two.type==="streak" && r.starObjectives.three.n===7; })()'));
+  '(() => { const r=levelBalanceReport(4,"assisted",.35); return r.blocks===26 && r.durationSeconds.ideal>0 && r.durationSeconds.ordinary>r.durationSeconds.ideal && r.sliderSpeed.min>0 && r.sliderSpeed.max>=r.sliderSpeed.average && r.perfectWindowPx>PERFECT_PX && r.assist.start>0 && r.assist.max<=.85 && r.windExposure===MATERIALS[4].wind && r.materials.join(",")===MATERIALS[4].name && r.toppleTolerance===TOPPLE && r.recovery===DIFFICULTY_LANES.assisted.recovery && r.starObjectives.complete===true && r.starObjectives.two.type==="perfects" && r.starObjectives.two.n===10 && r.starObjectives.three.type==="streak" && r.starObjectives.three.n===6; })()'));
 check('S1 modeled ordinary completion times stay inside every specified target range', () => fresh.run(
   'LEVEL_REGISTRY.every((l,i)=>{ const r=levelBalanceReport(i,"assisted",.35), d=r.durationSeconds; return d.ordinary>=d.range[0] && d.ordinary<=d.range[1]; })'));
 check('S1 lanes expose fixed Practice, adaptive Assisted, and zero Unassisted help', () => fresh.run(
@@ -2682,7 +2685,7 @@ check('v126 an already-earned star count is never reduced by a worse later run',
 check('v126 the level report exposes the new per-level objectives', () =>
   fresh.run('(() => { const r = levelBalanceReport(2,"assisted",.35);' +
     ' return r.starObjectives.complete === true && r.starObjectives.two.type === "streak" &&' +
-    '   r.starObjectives.three.type === "streak" && r.starObjectives.two.n === 4; })()'));
+    '   r.starObjectives.three.type === "streak" && r.starObjectives.two.n === 3; })()'));
 
 check('v126 the win screen names each star objective and marks which were taken', () => {
   const g = makeGame();
@@ -2727,7 +2730,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v125', () => /const CACHE = 'skystack-v125'/.test(sw));
+check('sw.js cache bumped to v126', () => /const CACHE = 'skystack-v126'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
