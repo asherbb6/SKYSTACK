@@ -2798,6 +2798,39 @@ check('v128 on EASY/MEDIUM ice never slides a held block into a miss', () => {
     ' setDifficulty("endless","medium"); return true; })()') === true;
 });
 
+check('v128 the slide animates: the drawn block eases to rest while its logical x stays put', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="endless"; resetRun(); state="playing"; tier=7; wind=null;' +
+    ' const top=blocks[blocks.length-1];' +
+    ' faller={x:top.x+14, x0:top.x+14, y:towerTopY()-BH, w:top.w, vx:0,' +
+    '   vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+    ' slider=null; state="dropping"; land();' +
+    ' const b=blocks[blocks.length-1];' +
+    ' if (!((b.slideT||0) > 0)) return "no animation state";' +
+    ' const restX = b.x;' +
+    ' for (let i=0;i<40;i++) update(1);' +
+    ' if (b.x !== restX) return "the LOGICAL x moved during the animation";' +
+    ' return (b.slideT||0) === 0 ? true : "animation never finished"; })()') === true;
+});
+check('v128 reduceMotion may shorten the slide animation but not move the resting place', () => {
+  const rest = (reduced) => { const g = makeGame(undefined, reduced);
+    return g.run('(() => { mode="endless"; resetRun(); state="playing"; tier=7; wind=null;' +
+      ' const top=blocks[blocks.length-1];' +
+      ' faller={x:top.x+14, x0:top.x+14, y:towerTopY()-BH, w:top.w, vx:0,' +
+      '   vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+      ' slider=null; state="dropping"; land();' +
+      ' return Math.round(blocks[blocks.length-1].x * 1000); })()'); };
+  return rest(false) === rest(true);
+});
+check('v128 RE-AUDIT: level durations are untouched (landing changes cannot alter fall time)', () =>
+  fresh.run('(() => { const pinned = { 0:93.7, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
+    '   8:81.8, 9:150.1, 10:206.1 };' +
+    ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
+    '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
+    '   if (d.ideal !== pinned[i]) return false;' +
+    '   if (d.ordinary < d.range[0] || d.ordinary > d.range[1]) return false; }' +
+    ' return true; })()'));
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2823,7 +2856,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v127', () => /const CACHE = 'skystack-v127'/.test(sw));
+check('sw.js cache bumped to v128', () => /const CACHE = 'skystack-v128'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

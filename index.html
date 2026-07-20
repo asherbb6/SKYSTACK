@@ -1055,7 +1055,7 @@ const STAR_OBJECTIVES = deepFreeze([
   { two:{type:'perfects',n:10},   three:{type:'streak',n:6} },        // 4  SOFT FOOTING - cloud wobble
   { two:{type:'windLands',n:2},   three:{type:'streak',n:6} },        // 5  CROSSWIND - fast steel + wind
   { two:{type:'perfects',n:13},   three:{type:'streak',n:6} },        // 6  THIN AIR - glass control
-  { two:{type:'recover',n:5},     three:{type:'streak',n:7} },        // 7  ICE TEMPO - quick recovery
+  { two:{type:'recover',n:8},     three:{type:'streak',n:7} },        // 7  ICE TEMPO - quick recovery (v128: 5->8, ice slide made 5 automatic)
   { two:{type:'perfects',n:22},   three:{type:'streak',n:8} },        // 8  LOW GRAVITY - cosmic wobble
   { two:{type:'perfects',n:40},   three:{type:'streak',n:10} },       // 9  ORBITAL ENDURANCE
   { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:4} }    // 10 SUMMIT RUN - final precision
@@ -1896,7 +1896,7 @@ function land() {
   // locks. Severity reuses the v124 difficulty drift multiplier; the EASY/MEDIUM no-miss guarantee is
   // the same rule v125 established for wind drift. The logical resting x is final immediately; only
   // the DRAWN position animates (see slideT).
-  const SLIDE_PX = 6;
+  const SLIDE_PX = 12;                                    // v128: 6px was too subtle to feel on 96px blocks
   let slid = 0;
   if (!isPerfect && matAt(tier).slide) {
     const lean = offset > 0 ? 1 : -1;                       // the side it overhangs
@@ -2601,6 +2601,7 @@ function update(dt) {
   }
   if (fever && !reduceMotion && tick % 3 < dt) particles.push({ x: Math.random()*W, y: cameraY - 4, vx:(Math.random()-.5), vy: Math.random()*1.5+.5, life:1, color:'hsl('+((tick*10)%360)+',100%,70%)' });
 
+  for (const bs of blocks) if (bs.slideT > 0) bs.slideT = Math.max(0, bs.slideT - (reduceMotion ? .34 : .12) * dt);   // v128: ease the ice slide to rest
   for (let i = trails.length-1; i>=0; i--) { trails[i].life -= .06*dt; if (trails[i].life<=0) trails.splice(i,1); }
   for (let i = debris.length-1; i>=0; i--) { const d=debris[i]; d.vy+=.4*dt; d.x+=d.vx*dt; d.y+=d.vy*dt; d.rot+=d.vr*dt; if (d.y-cameraY>H+60) debris.splice(i,1); }
   for (let i = particles.length-1; i>=0; i--) { const pt=particles[i]; pt.vy+=.1*dt; pt.x+=pt.vx*dt; pt.y+=pt.vy*dt; pt.life-=.03*dt; if (pt.life<=0) particles.splice(i,1); }
@@ -4702,7 +4703,7 @@ function renderWorld(cy, shX) {
   let topScreenX = W/2, topScreenY = 0;
   for (let i=0;i<blocks.length;i++) {
     if (toppleHideTop>0 && i >= blocks.length - toppleHideTop) continue;   // v121: these tumbled off as debris
-    const b = blocks[i]; let y = Math.round(GROUND_Y-(i+1)*BH-cy), bh=BH, bw=b.w, bx=b.x;
+    const b = blocks[i]; let y = Math.round(GROUND_Y-(i+1)*BH-cy), bh=BH, bw=b.w, bx=b.x - (b.slid || 0) * (b.slideT || 0);   // v128: eases from the landing spot to rest
     const isTop = i === blocks.length-1;
     if (isTop && squash>0 && !reduceMotion) {                 // v121: compress -> overshoot -> settle, depth = squashPow
       const t = 1 - squash;
