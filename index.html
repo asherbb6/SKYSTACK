@@ -822,7 +822,7 @@ let runLevel = -1;       // active level for the current run (-1 = free modes)
 let runLaunch = 0;       // blocks pre-stacked for the current run (0 = full ground-up run)
 let runContext = null;   // deeply immutable rules/seed snapshot owned by the active run
 let selLevel = 0;        // map selection (session only)
-let winT = 0, failT = 0, winStars = 0, winReward = 0, winFirst = false;
+let winT = 0, failT = 0, winStars = 0, winStarMet = [false,false,false], winReward = 0, winFirst = false;
 let goT = 0;   // v115: game-over reveal clock — counts up from the death so results reveal in sequence
 // revive: one paid second chance per run. XP/missions/games settle only when the run
 // truly ends (finalizeRun), so a revived run settles once — post-revive progress included.
@@ -1084,7 +1084,7 @@ const LEVEL_REGISTRY = deepFreeze(TIERS.map((t, i) => {
     speedCurve:{ campaignScale:b.speedScale, base:BALANCE_REGISTRY.slider.base, perBlock:BALANCE_REGISTRY.slider.perBlock, max:BALANCE_REGISTRY.slider.campaignMax },
     windCurve:{ exposure:mat.wind, firstEligibleAltitude:Math.max(start, BALANCE_REGISTRY.wind.minStartBlocks + 1) },
     material:{ name:mat.name, speed:mat.spd, wobble:mat.wob, wind:mat.wind },
-    starObjectives:{ complete:true, silverPerfectRatio:BALANCE_REGISTRY.placement.silverPerfectRatio, goldPerfectRatio:BALANCE_REGISTRY.placement.goldPerfectRatio },
+    starObjectives:{ complete:true, two:STAR_OBJECTIVES[i].two, three:STAR_OBJECTIVES[i].three },   // v126: per-level identity objectives
     unlock:{ requiresLevel:i > 0 ? i-1 : null }
   };
 }));
@@ -1971,10 +1971,9 @@ function levelComplete() {
   const i = runLevel;
   state = 'levelwin'; winT = 0;
   faller = null; slider = null; combo = 0; fever = false; feverT = 0; nova = false; novaT = 0; paused = false; dropPending = 0;
-  const placed = Math.max(1, blocks.length - runLaunch);
-  const ratio = runPerfects / placed;                       // stars reward precision, not luck
-  const stars=LEVEL_REGISTRY[i].starObjectives;
-  winStars = 1 + (ratio >= stars.silverPerfectRatio ? 1 : 0) + (ratio >= stars.goldPerfectRatio ? 1 : 0);
+  const O = LEVEL_REGISTRY[i].starObjectives;               // v126: identity objectives, not one ratio
+  winStarMet = [true, objectiveMet(O.two, starRun), objectiveMet(O.three, starRun)];
+  winStars = winStarMet.reduce((n, m) => n + (m ? 1 : 0), 0);
   winFirst = i + 1 > prog;
   if (winFirst) { prog = i + 1; store.set('skystack-tiers', prog); }
   const starDiff = activeDifficulty().id, SR = recordsFor(starDiff);     // v124: stars are per-difficulty

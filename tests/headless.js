@@ -971,7 +971,7 @@ check('S1 RunContext owns the selected lane, assist envelope, and campaign speed
 check('S1 balance harness is pure and deterministic for identical inputs', () => fresh.run(
   'JSON.stringify(levelBalanceReport(10,"assisted",.35))===JSON.stringify(levelBalanceReport(10,"assisted",.35))'));
 check('S1 harness reports duration, speed, precision, assist, wind, material, topple, recovery, and stars', () => fresh.run(
-  '(() => { const r=levelBalanceReport(4,"assisted",.35); return r.blocks===26 && r.durationSeconds.ideal>0 && r.durationSeconds.ordinary>r.durationSeconds.ideal && r.sliderSpeed.min>0 && r.sliderSpeed.max>=r.sliderSpeed.average && r.perfectWindowPx>PERFECT_PX && r.assist.start>0 && r.assist.max<=.85 && r.windExposure===MATERIALS[4].wind && r.materials.join(",")===MATERIALS[4].name && r.toppleTolerance===TOPPLE && r.recovery===DIFFICULTY_LANES.assisted.recovery && r.starObjectives.silverPerfectRatio===.20 && r.starObjectives.goldPerfectRatio===.45; })()'));
+  '(() => { const r=levelBalanceReport(4,"assisted",.35); return r.blocks===26 && r.durationSeconds.ideal>0 && r.durationSeconds.ordinary>r.durationSeconds.ideal && r.sliderSpeed.min>0 && r.sliderSpeed.max>=r.sliderSpeed.average && r.perfectWindowPx>PERFECT_PX && r.assist.start>0 && r.assist.max<=.85 && r.windExposure===MATERIALS[4].wind && r.materials.join(",")===MATERIALS[4].name && r.toppleTolerance===TOPPLE && r.recovery===DIFFICULTY_LANES.assisted.recovery && r.starObjectives.complete===true && r.starObjectives.two.type==="streak" && r.starObjectives.three.n===7; })()'));
 check('S1 modeled ordinary completion times stay inside every specified target range', () => fresh.run(
   'LEVEL_REGISTRY.every((l,i)=>{ const r=levelBalanceReport(i,"assisted",.35), d=r.durationSeconds; return d.ordinary>=d.range[0] && d.ordinary<=d.range[1]; })'));
 check('S1 lanes expose fixed Practice, adaptive Assisted, and zero Unassisted help', () => fresh.run(
@@ -979,7 +979,7 @@ check('S1 lanes expose fixed Practice, adaptive Assisted, and zero Unassisted he
 check('S1 final pace scale is campaign-only and leaves all free modes at v76 speed', () => fresh.run(
   '(() => { const mk=(m,l,a)=>createRunContext({mode:m,campaignLevel:l,startingAltitude:a,seed:1,skill:.35,loadout:{},modifiers:[]}), summit=mk("level",10,360), legacy={difficultyProfile:{startingAssist:summit.difficultyProfile.startingAssist,campaignLevel:10,levelSpeedScale:1,slider:BALANCE_REGISTRY.slider}}; return LEVEL_REGISTRY.slice(0,10).every(l=>l.speedCurve.campaignScale===1) && LEVEL_REGISTRY[10].speedCurve.campaignScale===1.25 && difficultyAt(summit,400,.2,10).sliderSpeed>difficultyAt(legacy,400,.2,10).sliderSpeed && ["endless","time","pure","daily","practice"].every(m=>mk(m,-1,0).difficultyProfile.levelSpeedScale===1); })()'));
 check('S1 physics registry preserves the live drop, balance, wind, and star constants', () => fresh.run(
-  'BALANCE_REGISTRY.drop.graceFrames===5 && BALANCE_REGISTRY.drop.spawnGap===24 && BALANCE_REGISTRY.drop.initialVelocity===2.6 && BALANCE_REGISTRY.drop.gravity===.9 && fallFramesFor()===5 && BALANCE_REGISTRY.placement.balanceMemory===.5 && BALANCE_REGISTRY.placement.balanceOffset===.5 && BALANCE_REGISTRY.wind.firstDelayFrames===260 && BALANCE_REGISTRY.wind.minStartBlocks===25 && LEVEL_REGISTRY.every(l=>l.starObjectives.silverPerfectRatio===.20 && l.starObjectives.goldPerfectRatio===.45)'));
+  'BALANCE_REGISTRY.drop.graceFrames===5 && BALANCE_REGISTRY.drop.spawnGap===24 && BALANCE_REGISTRY.drop.initialVelocity===2.6 && BALANCE_REGISTRY.drop.gravity===.9 && fallFramesFor()===5 && BALANCE_REGISTRY.placement.balanceMemory===.5 && BALANCE_REGISTRY.placement.balanceOffset===.5 && BALANCE_REGISTRY.wind.firstDelayFrames===260 && BALANCE_REGISTRY.wind.minStartBlocks===25 && LEVEL_REGISTRY.every((l,i)=>l.starObjectives.complete===true && l.starObjectives.two===STAR_OBJECTIVES[i].two && l.starObjectives.three===STAR_OBJECTIVES[i].three)'));
 
 // ---------- S2 characters + one-slot passives ----------
 check('S2 promotes every persistent skin into an immutable Character with matching visual and unlock data', () => fresh.run(
@@ -2647,6 +2647,42 @@ check('v126 real placements feed the tracker through afterPlace', () => {
     ' slider = null; state = "dropping"; land();' +
     ' return starRun.placed === before + 1 ? true : "afterPlace did not feed the tracker"; })()') === true;
 });
+
+check('v126 stars are awarded from the level objectives, and ★1 is always just clearing', () => {
+  const g = makeGame();
+  const stars = (levelIdx, seq) => g.run('(() => { mode="level"; pendingLevel=' + levelIdx + '; resetRun();' +
+    ' state="playing"; wind=null;' +
+    ' for (const p of ' + JSON.stringify(seq) + ') trackStarOutcome({perfect:!!p, cut:!p, miss:false});' +
+    ' levelComplete(); return winStars; })()');
+  const none = stars(2, [1,0,1,0,1,0]);
+  const two  = stars(2, [1,1,1,1,0,1]);
+  const three= stars(2, [1,1,1,1,1,1,1]);
+  if (none !== 1) return 'clear-only should be 1 star, got ' + none;
+  if (two !== 2) return 'streak 4 should be 2 stars, got ' + two;
+  if (three !== 3) return 'streak 7 should be 3 stars, got ' + three;
+  return true;
+});
+check('v126 winStarMet reports which stars were taken, for the result screen', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="level"; pendingLevel=2; resetRun(); state="playing"; wind=null;' +
+    ' for (const p of [1,1,1,1,0]) trackStarOutcome({perfect:!!p, cut:!p, miss:false});' +
+    ' levelComplete();' +
+    ' return winStarMet.join(",") === "true,true,false" ? true : "winStarMet " + winStarMet.join(","); })()') === true;
+});
+check('v126 an already-earned star count is never reduced by a worse later run', () => {
+  const g = makeGame();
+  return g.run('(() => { mode="level"; pendingLevel=2; setDifficulty("level","medium");' +
+    ' saveRecords("medium", { best:0, height:0, modes:{}, stars:[0,0,3] });' +
+    ' resetRun(); state="playing"; wind=null;' +
+    ' trackStarOutcome({perfect:false, cut:true, miss:false});' +
+    ' levelComplete();' +
+    ' return recordsFor("medium").stars[2] === 3 ? true : "stars were reduced to " +' +
+    '   recordsFor("medium").stars[2]; })()') === true;
+});
+check('v126 the level report exposes the new per-level objectives', () =>
+  fresh.run('(() => { const r = levelBalanceReport(2,"assisted",.35);' +
+    ' return r.starObjectives.complete === true && r.starObjectives.two.type === "streak" &&' +
+    '   r.starObjectives.three.type === "streak" && r.starObjectives.two.n === 4; })()'));
 
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
