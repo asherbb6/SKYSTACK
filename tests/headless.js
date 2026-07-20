@@ -570,10 +570,21 @@ check('cave material atlas contains four cached original procedural textures', (
   'CAVE_MAT_TEX.length === 4 && CAVE_MAT_TEX.every(t => t && t.width === CAVETEX_W && t.height === CAVETEX_H)'));
 check('cave detail atlases include a cached continuous fine-grain rear wall', () => bio.run(
   'caveTexBack && caveTexBack.width===CAVETEX_W && caveTexBack.height===CAVETEX_H && CAVE_GEO_W>=36'));
-check('cave detail placement is deterministic and bounded', () => bio.run(
-  '(() => { for (let r=-20;r<180;r++) for (const s of [0,1]) { const a=caveDetailKind(r,s), b=caveDetailKind(r,s); if (a!==b || a<0 || a>5) return false; } return true; })()'));
-check('Deep/Main ledge identities are deterministic and remain surface-valid prop kinds', () => bio.run(
-  '(() => { for(let r=-20;r<180;r++)for(const s of [0,1]){const a=caveDetailKindForZone(r,s),b=caveDetailKindForZone(r,s);if(a!==b||a<0||a>5)return false;}return true;})()'));
+// v142 re-baseline: the ledge-prop system (pebbles/ferns/pots/bones/mushrooms/moss) and its
+// caveDetailKind* selectors are DELETED, along with mushrooms, timber supports, stalactites,
+// cobwebs and every dripstone. Asher: "only have the torches, bats, and bugs, etc." + "keep the
+// vines too". These two determinism guards pinned code that no longer exists; this one pins the
+// decor set that replaced it, so nothing creeps back onto the wall.
+check('cave wall decor is torches, vines and creatures only', () => {
+  // plain index checks, NOT one big regex — two bounded [\s\S] wildcards over a 6600-line file
+  // backtrack for minutes (learned the hard way in v142)
+  if (/drawCaveLedgeProp|caveDetailKind|corner cobweb|dripstone tooth|stalactites only attach|supports become common|mushrooms become a Main Cave/.test(src)) return false;
+  if (!src.includes('roots/vines emerge from dirt or clay seams')) return false;
+  if (!src.includes('function drawCaveTorchLight')) return false;
+  return src.includes('beetles pace up/down the inner wall edge')                 // beetles drawn
+    && src.includes('worms peek from the bottom dirt')                            // worms drawn
+    && src.includes('bats swoop in arcs across the cavern');                      // bats drawn
+});
 check('cave texture stamping uses varied deterministic source windows', () => bio.run(
   '(() => { const a=[], b=[]; for(let x=0;x<CAVE_STAMP_W*6;x+=CAVE_STAMP_W){a.push(caveStampSourceX(123,x));b.push(caveStampSourceX(123,x));} return a.join(",")===b.join(",") && new Set(a).size>2 && a.every(x=>x>=0&&x<=CAVETEX_W-CAVE_STAMP_W); })()'));
 // v102 contract: windows are stable across long runs of depth (no per-band re-roll) but DO
@@ -587,8 +598,9 @@ check('two-dimensional cave geology pockets are deterministic and non-flat', () 
   '(() => { const a=[],b=[];for(let r=0;r<120;r+=3)for(let x=0;x<W;x+=CAVE_GEO_W){a.push(caveWallMatAt(r,0,x));b.push(caveWallMatAt(r,0,x));}return a.join(",")===b.join(",")&&new Set(a).size===4;})()'));
 check('cave texture stamping explicitly disables image smoothing', () =>
   /function blitCaveTex[\s\S]{0,320}ctx\.imageSmoothingEnabled = false/.test(src));
-check('ledge props are emitted only from detected upward-facing wall ledges', () =>
-  /if \(prevW >= 0 && w > prevW \+ 3\)[\s\S]{0,700}drawCaveLedgeProp\(/.test(src));
+// v142: props are gone; an upward-facing ledge now gets only its chipped lit lip.
+check('ledge tops render a chipped lip and carry nothing standing on them', () =>
+  /if \(prevW >= 0 && w > prevW \+ 3\)[\s\S]{0,400}chipped lip — broken runs/.test(src));
 // v141: same intent, stronger — the torch anchors to the wall edge across its whole bracket span
 // (caveWallEdgeSpan), so it cannot hang off a wall that has already receded below the mount row.
 check('torches derive their x position from the anchored wall edge across their span', () =>
@@ -3161,7 +3173,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v141', () => /const CACHE = 'skystack-v141'/.test(sw));
+check('sw.js cache bumped to v142', () => /const CACHE = 'skystack-v142'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
