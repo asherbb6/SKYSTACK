@@ -1892,7 +1892,23 @@ function land() {
     spawnSlider(); return;
   }
 
-  blocks.push({ x:nx, w:nw, col:f.col });
+  // v128: ICE does not grip — a sloppy landing keeps travelling in the direction it overhung, then
+  // locks. Severity reuses the v124 difficulty drift multiplier; the EASY/MEDIUM no-miss guarantee is
+  // the same rule v125 established for wind drift. The logical resting x is final immediately; only
+  // the DRAWN position animates (see slideT).
+  const SLIDE_PX = 6;
+  let slid = 0;
+  if (!isPerfect && matAt(tier).slide) {
+    const lean = offset > 0 ? 1 : -1;                       // the side it overhangs
+    const sloppy = Math.min(1, Math.abs(offset) / Math.max(1, top.w * 0.5));
+    let want = nx + lean * SLIDE_PX * sloppy * matAt(tier).slide * activeDifficulty().drift;
+    if (!activeDifficulty().driftCanMiss) {                 // may cost overlap, never the block
+      want = clamp(want, top.x - nw + 2, top.x + top.w - 2);
+    }
+    want = clamp(want, 0, W - nw);
+    slid = want - nx; nx = want;
+  }
+  blocks.push({ x:nx, w:nw, col:f.col, slid:slid, slideT:slid ? 1 : 0 });
   faller = null; landFx(nw); cameraTarget = towerTopY() - (H - 100); state = 'playing';
   afterPlace(f, true, nx + nw/2, {perfect:isPerfect,cut:!isPerfect,miss:false,center:nx+nw/2});
   if (Math.abs(balance) > toppleLimit()) {                                          // v124: per-difficulty tolerance

@@ -2757,6 +2757,47 @@ check('v128 the soft catch never REDUCES what you keep', () => {
     ' return true; })()') === true;
 });
 
+const v128drop = (off, ti, diff) => '(() => { ' + (diff ? 'setDifficulty("endless","' + diff + '");' : '') +
+  ' mode="endless"; resetRun(); state="playing"; tier=' + ti + '; wind=null;' +
+  ' const top=blocks[blocks.length-1];' +
+  ' faller={x:top.x+(' + off + '), x0:top.x+(' + off + '), y:towerTopY()-BH, w:top.w, vx:0,' +
+  '   vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+  ' slider=null; state="dropping"; land();' +
+  ' return blocks[blocks.length-1].slid || 0; })()';
+check('v128 a perfect landing on ice does NOT slide', () => {
+  const v = makeGame().run(v128drop(0, 7));
+  return v === 0 ? true : 'a perfect slid by ' + v;
+});
+check('v128 an off-centre landing on ice slides in the overhang direction', () => {
+  const g = makeGame(), right = g.run(v128drop(14, 7)), left = g.run(v128drop(-14, 7));
+  if (!(right > 0)) return 'overhang right did not slide right: ' + right;
+  if (!(left < 0)) return 'overhang left did not slide left: ' + left;
+  return true;
+});
+check('v128 slide magnitude orders EASY < MEDIUM < HARD', () => {
+  const g = makeGame();
+  const e = g.run(v128drop(14,7,'easy')), m = g.run(v128drop(14,7,'medium')), h = g.run(v128drop(14,7,'hard'));
+  g.run('setDifficulty("endless","medium");');
+  return (e < m && m < h && e > 0) ? true : 'e=' + e + ' m=' + m + ' h=' + h;
+});
+check('v128 no other biome slides at all', () => {
+  const g = makeGame();
+  for (const ti of [0,1,2,3,4,5,6,8,9,10]) { const v = g.run(v128drop(14, ti));
+    if (v !== 0) return 'tier ' + ti + ' slid ' + v; }
+  return true;
+});
+check('v128 on EASY/MEDIUM ice never slides a held block into a miss', () => {
+  const g = makeGame();
+  return g.run('(() => { for (const id of ["easy","medium"]) {' +
+    ' setDifficulty("endless", id); mode="endless"; resetRun(); state="playing"; tier=7; wind=null;' +
+    ' const top=blocks[blocks.length-1];' +
+    ' faller={x:top.x+top.w-3, x0:top.x+top.w-3, y:towerTopY()-BH, w:top.w, vx:0,' +
+    '   vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+    ' slider=null; state="dropping"; land();' +
+    ' if (state !== "playing") return id + " lost a held block to the slide"; }' +
+    ' setDifficulty("endless","medium"); return true; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
