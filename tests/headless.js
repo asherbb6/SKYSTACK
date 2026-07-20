@@ -946,7 +946,7 @@ check('Daily seed keeps the exact v75 date XOR and deterministic sequence', () =
   '(() => { const seed=seedForRun("daily",0,20260714), old=(20260714 ^ 0x9E3779B9)>>>0, a=mulberry32(seed), b=mulberry32(seed); return seed===old && [a(),a(),a()].join(",") === [b(),b(),b()].join(","); })()'));
 const dailyDet = makeGame();
 check('Daily reset owns and replays hue, pickups, and gameplay wind RNG', () => dailyDet.run(
-  '(() => { const play=()=>{ resetRun(); while(blocks.length<26) blocks.push({x:0,w:96,col:"#fff"}); tier=0; windTimer=0; state="playing"; update(1); return {seed:runContext.seed,hue:hueBase,pick:JSON.stringify(pickups),wind:JSON.stringify(wind)}; }; mode="daily"; return JSON.stringify(play())===JSON.stringify(play()); })()'));
+  '(() => { const play=()=>{ resetRun(); while(blocks.length<26) blocks.push({x:0,w:96,col:"#fff"}); tier=0; windTimer=0; state="playing"; update(1); return {seed:runContext.seed,hue:blocks[0].col.h,pick:JSON.stringify(pickups),wind:JSON.stringify(wind)}; }; mode="daily"; return JSON.stringify(play())===JSON.stringify(play()); })()'));
 check('owned non-Daily seeds reproduce the same run RNG stream', () => fresh.run(
   '(() => { const seed=seedForRun("endless",0x12345678), a=mulberry32(seed), b=mulberry32(seed); return seed===0x12345678 && [a(),a(),a(),a()].join(",") === [b(),b(),b(),b()].join(","); })()'));
 
@@ -1176,7 +1176,7 @@ check('S6 challenge-record normalization repairs corruption and preserves unknow
   return JSON.stringify(r.time60)===JSON.stringify({bestBlocks:8,bestScore:0,clears:3,attempts:0})&&r['future-local'].bestBlocks===4&&r['future-local'].clears===1;
 });
 check('S6 seeded climb owns one fixed seed and identical retry schedule', () => fresh.run(
-  '(() => { startChallenge("seeded30");const a={seed:runContext.seed,hue:hueBase,mods:JSON.stringify(runContext.modifiers)};startChallenge("seeded30");const b={seed:runContext.seed,hue:hueBase,mods:JSON.stringify(runContext.modifiers)};startChallenge("seeded30",123);return a.seed===0x534B5936&&JSON.stringify(a)===JSON.stringify(b)&&runContext.seed===123&&challengeSeed(challengeById("seeded30"),null,77)===0x534B5936; })()'));
+  '(() => { startChallenge("seeded30");const a={seed:runContext.seed,hue:blocks[0].col.h,mods:JSON.stringify(runContext.modifiers)};startChallenge("seeded30");const b={seed:runContext.seed,hue:blocks[0].col.h,mods:JSON.stringify(runContext.modifiers)};startChallenge("seeded30",123);return a.seed===0x534B5936&&JSON.stringify(a)===JSON.stringify(b)&&runContext.seed===123&&challengeSeed(challengeById("seeded30"),null,77)===0x534B5936; })()'));
 check('S6 precision clear pays its configured reward and records exactly once', () => {
   const g=makeGame();
   return g.run('(() => { achDone=ACH.map(a=>a.id);missions=MKEYS.slice(0,3).map(k=>({key:k,target:99999,reward:1}));startChallenge("precision10");coins=0;runCoins=0;stats.coins=0;for(let i=0;i<10;i++){runPerfects++;updateChallengeForPlacement({perfect:true,cut:false,miss:false});}const paid=coins,rec=challengeRecord("precision10");updateChallengeForPlacement({perfect:true});recordChallengeOutcome();return state==="gameover"&&challengeCleared&&challengeReward===30&&paid===30&&rec.clears===1&&rec.attempts===1&&coins===paid&&runCoins===0&&challengeRecord("precision10").attempts===1; })()');
@@ -1192,7 +1192,7 @@ check('S6 unstable tower scales only its configured balance contribution', () =>
 check('S6 recovery challenge counts only cut-then-perfect pairs', () => fresh.run(
   '(() => { startChallenge("recovery3");const u=o=>updateChallengeForPlacement(o);u({perfect:true});u({cut:true});u({cut:true});u({perfect:true});u({perfect:true});u({cut:true});u({miss:true});u({perfect:true});u({cut:true});u({perfect:true});u({cut:true});u({perfect:true});const r=challengeRecord("recovery3");return challengeCleared&&challengeRuntime.recoveries===3&&r.clears===1&&r.attempts===1; })()'));
 check('S6 Neon trial snapshots Neon and its passive without changing the selected Character', () => fresh.run(
-  '(() => { skinId="aurora";startChallenge("neon-trial");const c=runContext;skinId="candy";return c.characterSnapshot.id==="neon"&&c.characterSnapshot.passiveId===characterById("neon").passiveId&&c.characterSnapshot.passiveEnabled&&JSON.stringify(blockCol(1))===JSON.stringify(characterById("neon").base(1,hueBase)); })()'));
+  '(() => { skinId="aurora";startChallenge("neon-trial");const c=runContext;skinId="candy";return c.characterSnapshot.id==="neon"&&c.characterSnapshot.passiveId===characterById("neon").passiveId&&c.characterSnapshot.passiveEnabled&&JSON.stringify(blockCol(1))===JSON.stringify(characterById("neon").base(1,tierHueAt(1))); })()'));
 check('S6 Cave Gate uses the 99M placed-block milestone with deterministic modifiers', () => fresh.run(
   '(() => { startChallenge("cave-gate");const c=activeChallenge();while(blocks.length-1<c.objective.target)blocks.push({x:0,w:96,col:"#fff"});updateChallengeForPlacement({perfect:true});return c.objective.type==="height"&&c.objective.target===32&&blocks.length*METERS_PER===99&&runContext.modifierPermissions.enabled&&runContext.modifiers.length===MODIFIER_REGISTRY.length&&challengeCleared; })()'));
 check('S6 non-Time challenges write only their local records, not global or legacy mode bests', () => fresh.run(
@@ -3118,7 +3118,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v133', () => /const CACHE = 'skystack-v133'/.test(sw));
+check('sw.js cache bumped to v134', () => /const CACHE = 'skystack-v134'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

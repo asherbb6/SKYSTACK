@@ -434,7 +434,7 @@ function musicStep() {
 
 // ---------- skins ----------
 const SKINS = [
-  { id:'aurora', name:'AURORA', rare:'COMMON',    cost:0,   style:'gloss',   base:(i,hb)=>({h:(hb+i*14)%360,s:82,l:60}) },
+  { id:'aurora', name:'AURORA', rare:'COMMON',    cost:0,   style:'gloss',   base:(i,hb)=>({h:(hb+(i%3)*8)%360,s:78,l:56+(i%2)*7}) },   // v134: biome-locked hue, gentle in-biome variation (was a full-wheel i*14 spin)
   { id:'candy',  name:'CANDY',  rare:'COMMON',    cost:0,   style:'stripe',  base:(i)=>({h:i%2?330:186,s:86,l:68}) },
   { id:'lava',   name:'LAVA',   rare:'RARE',      cost:120, style:'ember',   base:(i)=>({h:6+(i*5)%40,s:92,l:52}) },
   { id:'mint',   name:'JADE',   rare:'RARE',      cost:180, style:'facet',   base:(i)=>({h:156+(i%3)*10,s:70,l:54}) },
@@ -922,6 +922,11 @@ const TIERS = [
   { n:360, name:'ORBIT',        c:'#FFD75E' },
   { n:540, name:'THE STARS',    c:'#FFF6E8' }
 ];
+// v134: the place palette is LOCKED. One designed hue per tier (taken from the tier colours
+// above), never Math.random() — colour identifies place (ART_BIBLE), and no deliberate game
+// rolls its palette on load. Blocks, previews and the splash tower all draw from this table.
+const TIER_HUES = [216, 99, 157, 24, 202, 197, 274, 157, 227, 45, 37];
+function tierHueAt(a) { for (let i = 0; i < TIERS.length; i++) if (a < TIERS[i].n) return TIER_HUES[i]; return TIER_HUES[TIER_HUES.length - 1]; }
 
 // v124: the PLAYER-facing difficulty. A pure multiplier layer over the raw knobs — the adaptive
 // assist system underneath is deliberately untouched. MEDIUM is exactly 1 everywhere, so it is
@@ -1217,7 +1222,7 @@ let pressFx = { r:null, t:0 };
 function notePress(r) { if (r) { pressFx.r = r; pressFx.t = reduceMotion ? 0 : 1; } }
 let paused = false;
 let dropPending = 0;   // tiny grace window between tap and release (people pre-tap expecting delay)
-let combo = 0, maxCombo = 0, hueBase = Math.random() * 360;
+let combo = 0, maxCombo = 0;   // v134: the palette is locked per biome (TIER_HUES) — the old random hueBase is gone
 let squash = 0, squashPow = 0, toppleHideTop = 0, flashT = 0, overLock = 0, newBest = false, newHeight = false;
 let tier = 0, runCoins = 0, runPerfects = 0, runPowerups = 0, runFevers = 0, runBalloons = 0, runSkybreaks = 0, coinPop = 0, tick = 0;
 // v126: per-run star-objective accumulator. Pure bookkeeping — it never feeds back into physics.
@@ -1578,7 +1583,7 @@ let shooter = null, shooterTimer = 240;
 let demo = { n: 1, t: 0 };
 
 function towerTopY() { return GROUND_Y - blocks.length * BH; }
-function blockCol(i) { const s = runContext&&runContext.characterSnapshot?characterById(runContext.characterSnapshot.id):skin(); return s.base(i, hueBase); }
+function blockCol(i) { const s = runContext&&runContext.characterSnapshot?characterById(runContext.characterSnapshot.id):skin(); return s.base(i, tierHueAt(i)); }   // v134: hue follows the biome the block sits in
 function setExpr(e, t) { mascot.expr = e; mascot.exprT = t; }
 function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assist) * passiveEffect(runContext,'perfect',1); }
 
@@ -1596,7 +1601,7 @@ function resetRun() {
   const seed = m.daily ? seedForRun(m.id,0) : challengeSeed(challenge,retrySeed,seedForRun(m.id,Math.floor(Math.random()*4294967296)));
   const runCharacter=challenge&&challenge.characterId?challenge.characterId:skinId;
   runContext = createRunContext({ mode:m.id, challengeId:challenge&&challenge.id, campaignLevel:runLevel, startingAltitude:runLaunch, checkpointId:checkpoint.id, baseId, seed, skill, loadout, characterId:runCharacter, characterMastery:masteryFor(runCharacter) });
-  rnd = mulberry32(runContext.seed); hueBase = rnd() * 360;
+  rnd = mulberry32(runContext.seed);   // v134: no hueBase re-roll — palette is locked per biome
   blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
   for (let i = 1; i < runLaunch; i++) blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col: blockCol(i) });
   debris = []; particles = []; floaters = []; trails = []; coinFx = []; pickups = [];
@@ -4549,7 +4554,7 @@ function drawNotifyStrip(text, alpha, accent, yOff) {
 function render() {
   const h = blocks.length;
   const menu = state === 'home' || state === 'shop' || state === 'me' || state === 'splash';
-  const virtualH = menu ? tick * 0.05 : h;
+  const virtualH = menu ? levelStartN(prog) : h;   // v134: menus wear the sky of the chapter you're climbing next (levelStartN self-clamps), not a slow rainbow cycle
   const sky = skyColor(virtualH);
   ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')'; ctx.fillRect(0,0,W,H);
 
@@ -4990,7 +4995,7 @@ function renderSplash() {
     const cyc = Math.floor((t-44)/16) % 9, baseY = Math.round(H*.58);
     for (let i = 0; i < cyc; i++) {
       const w2 = 46 - i*4;
-      drawBlock(Math.round(W/2 - w2/2), baseY - i*8, w2, 7, { h:(tick*.5 + i*26)%360, s:74, l:58 }, i === cyc-1, i === cyc-1 ? .3 : 0, 'gloss');
+      drawBlock(Math.round(W/2 - w2/2), baseY - i*8, w2, 7, { h:TIER_HUES[Math.min(i,TIER_HUES.length-1)], s:74, l:58 }, i === cyc-1, i === cyc-1 ? .3 : 0, 'gloss');   // v134: the demo tower previews the climb, tier by tier — no rainbow cycling
     }
     if (cyc > 0) drawMascot(W/2, baseY - (cyc-1)*8);
     ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(Math.round(W/2-28), baseY+8, 56, 2);   // ground shadow
@@ -5767,7 +5772,7 @@ function renderShop() {
   const dotsW = CHARACTER_REGISTRY.length*6-2, ddx = Math.round(W/2 - dotsW/2);
   for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, SHOP_TOP+5, 4, 3); }   // v97: clear of the card's top frame
   for (let i = 0; i < Math.min(demo.n, 4); i++) {
-    const col = sk.base(i, hueBase);
+    const col = sk.base(i, tierHueAt(i));   // v134: previews use the locked place palette too
     const w2 = 50 - i*6;
     drawBlock(Math.round(W/2-w2/2), SHOP_TOP+52 - i*10, w2, 9, col, false, 0, sk.style);
   }
