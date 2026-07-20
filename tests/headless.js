@@ -1,4 +1,4 @@
-// SKYSTACK headless check suite — stubs browser APIs, evals the game script in a vm
+﻿// SKYSTACK headless check suite — stubs browser APIs, evals the game script in a vm
 // context, then drives internal functions to verify the campaign level system + SKY MAP.
 'use strict';
 const fs = require('fs');
@@ -2148,7 +2148,9 @@ check('v123 the duration model is biome-aware: low-g levels are modelled longer,
   const r = g.run('(() => { const ideal = i => levelBalanceReport(i,"assisted",.35).durationSeconds.ideal;' +
     ' if (!(ideal(8) > 81.4 && ideal(8) < 82.2)) return "L8 not lengthened by low-g: " + ideal(8) + " (blind was 80.0)";' +
     ' if (!(ideal(9) > 149.6 && ideal(9) < 150.4)) return "L9 not lengthened by low-g: " + ideal(9) + " (blind was 146.7)";' +
-    ' if (ideal(0) !== 93.7) return "normal-g L0 drifted: " + ideal(0);' +
+    // v132: L0 was 93.7 until CAVES got its cramped lane. That is a REAL pacing change (a narrower
+    // corridor is genuinely quicker to cross), not model drift, so the baseline moves once, here.
+    ' if (ideal(0) !== 81.4) return "normal-g L0 drifted: " + ideal(0);' +
     ' if (ideal(10) !== 206.1) return "normal-g L10 drifted: " + ideal(10);' +
     ' return true; })()');
   return r === true;
@@ -2365,7 +2367,9 @@ check('v124 shownStars() is cached for the render loop but never goes stale afte
 });
 
 check('v124 RE-AUDIT: MEDIUM reports are byte-identical to v123 and every level stays in range', () =>
-  fresh.run('(() => { const v123 = { 0:93.7, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
+  // v132: L0 moved 93.7 → 81.4 when CAVES got its cramped lane. Every other level is untouched,
+  // which is exactly what this guard is for — it caught the one intended change and nothing else.
+  fresh.run('(() => { const v123 = { 0:81.4, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
     '   8:81.8, 9:150.1, 10:206.1 };' +
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
@@ -2544,8 +2548,8 @@ check('v125 reduceMotion does NOT change where a block lands (drift is simulatio
   return land(false) === land(true);
 });
 check('v125 RE-AUDIT: level durations are untouched (drift moves WHERE a block lands, not how long)', () =>
-  fresh.run('(() => { const pinned = { 0:93.7, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
-    '   8:81.8, 9:150.1, 10:206.1 };' +
+  fresh.run('(() => { const pinned = { 0:81.4, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
+    '   8:81.8, 9:150.1, 10:206.1 };' +      // v132: L0 81.4 — CAVES' cramped lane, see the v123 guard
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
     '   if (d.ideal !== pinned[i]) return false;' +
@@ -2823,8 +2827,8 @@ check('v128 reduceMotion may shorten the slide animation but not move the restin
   return rest(false) === rest(true);
 });
 check('v128 RE-AUDIT: level durations are untouched (landing changes cannot alter fall time)', () =>
-  fresh.run('(() => { const pinned = { 0:93.7, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
-    '   8:81.8, 9:150.1, 10:206.1 };' +
+  fresh.run('(() => { const pinned = { 0:81.4, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
+    '   8:81.8, 9:150.1, 10:206.1 };' +      // v132: L0 81.4 — CAVES' cramped lane, see the v123 guard
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
     '   if (d.ideal !== pinned[i]) return false;' +
@@ -2954,11 +2958,64 @@ check('v131 the cloud catch grows INWARD so it cannot increase lean', () => {
   if (!(cloud[1] <= stone[1] + 0.001)) return 'cloud extended further out: ' + cloud[1] + ' vs ' + stone[1];
   return (cloud[1] - cloud[0]) > (stone[1] - stone[0]) ? true : 'cloud did not keep more block';
 });
-check('v131 only the biomes with a mechanic announce a rule on arrival', () =>
+check('v132 only the biomes with a mechanic announce a rule on arrival', () =>
   fresh.run('(() => { if (BIOME_RULES.length !== TIERS.length) return false;' +
-    ' for (const i of [4,5,7,8,9]) if (!BIOME_RULES[i]) return false;' +
-    ' for (const i of [0,1,2,3,6,10]) if (BIOME_RULES[i]) return false;' +
+    // v132 gave CAVES(0), TREETOPS(2) and LOWER SKY(3) their own mechanics, so they now speak too.
+    ' for (const i of [0,2,3,4,5,7,8,9]) if (!BIOME_RULES[i]) return false;' +
+    ' for (const i of [1,6,10]) if (BIOME_RULES[i]) return false;' +
     ' return true; })()'));
+
+// ---------- v132: the EARLY levels finally have a signature of their own ----------
+// Asher twice reported no felt biome identity. He plays the early campaign, and levels 0-3 had NO
+// mechanic at all — this is that gap closed. SURFACE stays deliberately plain as the teaching ground.
+check('v132 CAVES runs a cramped lane and every open biome keeps the full corridor', () => {
+  const g = makeGame();
+  return g.run('(() => { tier = 0; const caves = slideRange();' +
+    ' const cw = caves.r - caves.l, full = Math.min(W, 220);' +
+    ' if (!(cw < full * 0.9)) return "caves lane not cramped: " + cw + " of " + full;' +
+    ' if (Math.abs((caves.l + caves.r) / 2 - W / 2) > 1) return "caves lane off centre";' +
+    ' for (const t of [1,2,3,4,5,6,7,8,9,10]) { tier = t; const r = slideRange();' +
+    '   if (r.r - r.l !== full) return "biome " + t + " lane changed: " + (r.r - r.l); }' +
+    ' return true; })()') === true;
+});
+check('v132 the duration model prices the cramped lane instead of a fixed corridor', () => {
+  const g = makeGame();
+  // every early level must still land inside its own published duration band on MEDIUM
+  return g.run('(() => { for (const l of [0,1,2,3]) {' +
+    ' const d = levelBalanceReport(l, "assisted", 0.35, "medium").durationSeconds;' +
+    ' if (!(d.ordinary >= d.range[0] && d.ordinary <= d.range[1]))' +
+    '   return "level " + l + " out of band: " + d.ordinary + " vs " + JSON.stringify(d.range); }' +
+    ' return true; })()') === true;
+});
+check('v132 a PERFECT on TREETOPS springs the block wider and says SPRING!', () => {
+  const tree = JSON.parse(makeGame().run(v131drop(2, 0)));
+  const surf = JSON.parse(makeGame().run(v131drop(1, 0)));
+  if (!(tree.w > surf.w)) return 'no spring: treetops ' + tree.w + ' vs surface ' + surf.w;
+  return tree.texts.indexOf('SPRING!') >= 0 ? true : 'no SPRING! floater: ' + tree.texts.join(',');
+});
+check('v132 a sloppy landing on TREETOPS does not spring', () => {
+  const tree = JSON.parse(makeGame().run(v131drop(2, 20)));
+  const surf = JSON.parse(makeGame().run(v131drop(1, 20)));
+  if (tree.texts.indexOf('SPRING!') >= 0) return 'sprung on a cut: ' + tree.texts.join(',');
+  return tree.w === surf.w ? true : 'width changed on a cut: ' + tree.w + ' vs ' + surf.w;
+});
+check('v132 the spring is an outcome, so reduceMotion still gets it', () => {
+  const plain = JSON.parse(makeGame(undefined, false).run(v131drop(2, 0)));
+  const rm = JSON.parse(makeGame(undefined, true).run(v131drop(2, 0)));
+  return rm.w === plain.w ? true : 'reduceMotion changed the landing: ' + rm.w + ' vs ' + plain.w;
+});
+check('v132 LOWER SKY meets wind far more often, and JET STREAM stays the strongest', () => {
+  const load = (ti) => makeGame().run('(() => { mode="endless"; resetRun(); state="playing"; tier=' + ti + ';' +
+    ' for(let i=0;i<40;i++) blocks.push({x:W/2-48,w:96,col:{h:0,s:0,l:50}});' +
+    ' wind=null; windTimer=0; let gusts=0, was=false;' +
+    ' for(let i=0;i<3000;i++){ update(1); const on=!!wind; if(on&&!was) gusts++; was=on; }' +
+    ' return gusts; })()');
+  const sky = load(3), surf = load(1), caves = load(0);
+  if (!(sky >= surf * 1.8)) return 'lower sky ' + sky + ' gusts vs surface ' + surf;
+  if (caves > surf) return 'sheltered caves became windy: ' + caves + ' vs ' + surf;
+  const g = makeGame();
+  return g.run('MATERIALS[5].wind > MATERIALS[3].wind') ? true : 'lower sky out-blows the jet stream';
+});
 
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
@@ -2985,7 +3042,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v131', () => /const CACHE = 'skystack-v131'/.test(sw));
+check('sw.js cache bumped to v132', () => /const CACHE = 'skystack-v132'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

@@ -1,4 +1,4 @@
-<title>SKYSTACK</title>
+﻿<title>SKYSTACK</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0B0E1A">
 <meta name="mobile-web-app-capable" content="yes">
@@ -995,18 +995,22 @@ prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed un
 // v123 (physics phase 2): grav = how hard this world pulls the dropped block down, 1 = normal.
 // SPACE/ORBIT finally deliver the low gravity level 8's identity has always promised. THE STARS
 // stays at 1 on purpose — the summit run is the skill climax with the tightest duration budget.
+// v132 (early-level identity): lane = how wide this biome's slider corridor is, 1 = the full 220px.
+// spring = a PERFECT rebounds the branch and springs the block wider. gust = how much more often this
+// biome's wind fires. Levels 0-3 had NO signature mechanic at all, which is the leading explanation
+// for Asher reporting no felt biome identity twice — he plays the EARLY campaign.
 const MATERIALS = [
-  { name:'STONE',  spd:0.90, wob:0, wind:0.3, grav:1,    slide:0, soft:0 },   // 0 CAVES        — heavy, steady, sheltered
-  { name:'WOOD',   spd:1.00, wob:0, wind:0.8, grav:1,    slide:0, soft:0 },   // 1 SURFACE
-  { name:'WOOD',   spd:1.00, wob:0, wind:0.9, grav:1,    slide:0, soft:0 },   // 2 TREETOPS
-  { name:'BREEZE', spd:1.02, wob:0, wind:1.0, grav:1,    slide:0, soft:0 },   // 3 LOWER SKY    — open air above the canopy
-  { name:'CLOUD',  spd:1.00, wob:0, wind:1.1, grav:1,    slide:0, soft:1 },   // 4 CLOUD NINE
-  { name:'STEEL',  spd:1.06, wob:0, wind:1.6, grav:1,    slide:0, soft:0 },   // 5 JET STREAM   — fast, windy corridor
-  { name:'GLASS',  spd:1.05, wob:0, wind:1.3, grav:1,    slide:0, soft:0 },   // 6 STRATOSPHERE
-  { name:'ICE',    spd:1.10, wob:0, wind:1.0, grav:1,    slide:1, soft:0 },   // 7 AURORA       — quick, slick
-  { name:'COSMIC', spd:0.86, wob:0, wind:0.4, grav:0.45, slide:0, soft:0 },   // 8 SPACE        — floaty, slow drift, low gravity
-  { name:'COSMIC', spd:0.86, wob:0, wind:0.4, grav:0.45, slide:0, soft:0 },   // 9 ORBIT        — low gravity
-  { name:'STAR',   spd:0.92, wob:0, wind:0.5, grav:1,    slide:0, soft:0 }    // 10 THE STARS
+  { name:'STONE',  spd:0.90, wob:0, wind:0.3, grav:1,    slide:0, soft:0, lane:0.80, spring:0, gusty:1 },   // 0 CAVES        — heavy, steady, sheltered, CRAMPED (0.66 dropped lvl-0 medium out of its duration band; 0.80 = 176px, still 20% tighter)
+  { name:'WOOD',   spd:1.00, wob:0, wind:0.8, grav:1,    slide:0, soft:0, lane:1,    spring:0, gusty:1 },   // 1 SURFACE      — the plain teaching ground, deliberately silent
+  { name:'WOOD',   spd:1.00, wob:0, wind:0.9, grav:1,    slide:0, soft:0, lane:1,    spring:1, gusty:1 },   // 2 TREETOPS     — springy branches
+  { name:'BREEZE', spd:1.02, wob:0, wind:1.2, grav:1,    slide:0, soft:0, lane:1,    spring:0, gusty:2.4 }, // 3 LOWER SKY    — open air: your first real crosswind
+  { name:'CLOUD',  spd:1.00, wob:0, wind:1.1, grav:1,    slide:0, soft:1, lane:1,    spring:0, gusty:1 },   // 4 CLOUD NINE
+  { name:'STEEL',  spd:1.06, wob:0, wind:1.6, grav:1,    slide:0, soft:0, lane:1,    spring:0, gusty:1 },   // 5 JET STREAM   — fast, windy corridor
+  { name:'GLASS',  spd:1.05, wob:0, wind:1.3, grav:1,    slide:0, soft:0, lane:1,    spring:0, gusty:1 },   // 6 STRATOSPHERE
+  { name:'ICE',    spd:1.10, wob:0, wind:1.0, grav:1,    slide:1, soft:0, lane:1,    spring:0, gusty:1 },   // 7 AURORA       — quick, slick
+  { name:'COSMIC', spd:0.86, wob:0, wind:0.4, grav:0.45, slide:0, soft:0, lane:1,    spring:0, gusty:1 },   // 8 SPACE        — floaty, slow drift, low gravity
+  { name:'COSMIC', spd:0.86, wob:0, wind:0.4, grav:0.45, slide:0, soft:0, lane:1,    spring:0, gusty:1 },   // 9 ORBIT        — low gravity
+  { name:'STAR',   spd:0.92, wob:0, wind:0.5, grav:1,    slide:0, soft:0, lane:1,    spring:0, gusty:1 }    // 10 THE STARS
 ];
 const BALANCE_REGISTRY = deepFreeze({
   physics:{ blockHeight:14, baseWidth:96, metersPerBlock:3, topple:28, perfectPx:2.6 },   // v122: 34→28, topples land more often
@@ -1455,11 +1459,14 @@ function levelBalanceReport(levelId, laneId, skillValue, difficultyId) {
   const startAssist=lane.assist.policy === 'fixed' ? lane.assist.max : lane.assist.policy === 'off' ? 0 : startingAssist('level',sk);
   const probe={difficultyProfile:{startingAssist:startAssist,campaignLevel:spec.id,levelSpeedScale:spec.speedCurve.campaignScale,slider:BALANCE_REGISTRY.slider,difficultyScale:diff.sliderSpeed}};
   let curAssist=startAssist, minAssist=curAssist, maxAssist=curAssist, ideal=0, speedSum=0, speedMin=Infinity, speedMax=0, windowSum=0, windSum=0;
-  const mats=[]; const travel=(hCfg.corridorWidth + BALANCE_REGISTRY.physics.baseWidth)/2;
+  const mats=[];
   for (let h=spec.startAltitude, step=0; h<spec.goalAltitude; h++,step++) {
     const ti=clamp(TIERS.findIndex(t=>t.n>h),0,TIERS.length-1), d=difficultyAt(probe,h,curAssist,ti), win=BALANCE_REGISTRY.physics.perfectPx*(1+curAssist);
     // v123: impact is per-BIOME, not global — a low-g biome's longer float has to show up in the budget
     const impact=(BALANCE_REGISTRY.drop.graceFrames + fallFramesFor(undefined, d.material.grav))/hCfg.fps;
+    // v132: travel is per-BIOME now, not a fixed corridor — CAVES' cramped lane genuinely shortens
+    // the slider's run, and a model that ignored that would over-predict every level-0 estimate.
+    const travel=(hCfg.corridorWidth*d.material.lane + BALANCE_REGISTRY.physics.baseWidth)/2;
     ideal += travel/(d.sliderSpeed*hCfg.fps) + impact; speedSum += d.sliderSpeed; speedMin=Math.min(speedMin,d.sliderSpeed); speedMax=Math.max(speedMax,d.sliderSpeed); windowSum+=win; windSum+=d.material.wind;
     if (mats.indexOf(d.material.name)<0) mats.push(d.material.name);
     if (lane.assist.policy === 'adaptive') curAssist = step % hCfg.perfectEvery === 0 ? Math.max(assistFloorFor(sk),curAssist-aCfg.perfectStep) : Math.min(aCfg.max,curAssist+aCfg.sloppyStep);
@@ -1615,7 +1622,9 @@ function resetRun() {
 // wide screens: blocks travel a centered corridor (phone-width feel) instead of the
 // whole screen, wrapping through a pixel-fade so there's no long empty commute
 function slideRange() {
-  const cw = Math.min(W, 220);
+  // v132: CAVES is a cramped corridor — the slider gets less room to run. Centred, so the lane reads
+  // as walls closing in rather than as an offset. Logical only; the drawn walls are in the render.
+  const cw = Math.min(W, 220) * matAt(tier).lane;
   return { l: Math.round((W - cw)/2), r: Math.round((W + cw)/2), wrap: cw < W };
 }
 function sliderWrapFx(x) {
@@ -1840,9 +1849,18 @@ function land() {
     combo++; runPerfects++; maxCombo = Math.max(maxCombo, combo);
     if (dda) assist = Math.max(assistFloor(), assist - BALANCE_REGISTRY.assist.perfectStep);   // you've got this: ease the help back down
     const grow = combo >= 8 ? 8 : combo >= 5 ? 5 : combo >= 3 ? 3 : 1;
-    const cap = combo >= 5 ? W : BASE_W;
-    nw = Math.min(nw + grow, cap);
+    // v132: TREETOPS branches flex. A PERFECT springs the block wider than the biome cap would
+    // normally allow — the reward for precision here is reach, so the level's identity is "be exact
+    // and the forest gives you room". It is an OUTCOME, so reduceMotion must not suppress it; it also
+    // stays centred on the support below, so springing can never add lean.
+    const SPRING_PX = 5;
+    const spr = matAt(tier).spring ? SPRING_PX : 0;
+    const cap = combo >= 5 ? W : BASE_W + spr;
+    const preSpring = nw;
+    nw = Math.min(nw + grow + spr, cap);
     nx = top.x + (top.w - nw) / 2;
+    if (spr && nw > preSpring + grow)   // only when the spring actually bought width
+      floaters.push({ text:'SPRING!', x:nx+nw/2, y:towerTopY()-BH-18, vy:-.48, life:1.1, color:'#62E8B5' });
     flashT = 1; sfx.perfect(combo);
     // streak ladder now pays SCORE *and* COINS: x7 BLAZING (2 coins) -> x10 FEVER (x2) -> x15 SUPERNOVA (x3)
     const streakMult = nova ? 3 : fever ? 2 : 1;
@@ -2563,8 +2581,14 @@ function update(dt) {
     } else {
       if (wind&&wind.modifierId) wind=null;
       windTimer -= dt;
-      if (!wind && windTimer <= 0 && blocks.length > wCfg.minStartBlocks && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(wCfg.minStrength+rnd()*wCfg.strengthRange)*wf*passiveEffect(runContext,'wind',1), dur:wCfg.minDurationFrames+rnd()*wCfg.durationRangeFrames, t:0 }; sfx.wind(); }
-      if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (wCfg.minCooldownFrames + rnd()*wCfg.cooldownRangeFrames) / Math.max(0.5, wf); } }
+      // v132: LOWER SKY is the level where you are supposed to MEET wind. Exposure alone only made
+      // each gust slightly stronger; what makes wind legible is meeting it OFTEN, so a gusty biome
+      // shortens the gap between gusts and names the first one. No new randomness — the same rnd()
+      // stream in the same order, so DAILY stays bit-identical for its seed.
+      const gustRate = matAt(tier).gusty;
+      if (!wind && windTimer <= 0 && blocks.length > wCfg.minStartBlocks && wf > 0) { wind = { dir:rnd()<.5?-1:1, str:(wCfg.minStrength+rnd()*wCfg.strengthRange)*wf*passiveEffect(runContext,'wind',1), dur:wCfg.minDurationFrames+rnd()*wCfg.durationRangeFrames, t:0 }; sfx.wind();
+        if (gustRate > 1) floaters.push({ text:'GUST!', x:W/2, y:towerTopY()-BH-26, vy:-.42, life:1.1, color:'#BFE8FF' }); }
+      if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (wCfg.minCooldownFrames + rnd()*wCfg.cooldownRangeFrames) / Math.max(0.5, wf * gustRate); } }
     }
   } else wind = null;
 
@@ -4426,7 +4450,8 @@ function startRegionIntro(ti) {
 }
 // v131: a mechanic nobody is told about cannot be noticed — each biome with a signature rule states
 // it on arrival. Biomes without one stay silent, so silence keeps meaning "nothing special here".
-const BIOME_RULES = ['', '', '', '', 'CLOUD: SOFT LANDINGS STICK', 'JET STREAM: WIND PUSHES YOUR DROP',
+const BIOME_RULES = ['CAVES: A CRAMPED LANE', '', 'TREETOPS: PERFECT LANDINGS SPRING WIDER',
+  'LOWER SKY: GUSTS PUSH YOUR DROP', 'CLOUD: SOFT LANDINGS STICK', 'JET STREAM: WIND PUSHES YOUR DROP',
   '', 'ICE: SLOPPY LANDINGS SLIP', 'LOW GRAVITY: BLOCKS FALL SLOWLY', 'LOW GRAVITY: BLOCKS FALL SLOWLY', ''];
 const INTRO_TAGS = ['ESCAPE THE DEEP','INTO THE LIGHT','OVER THE CANOPY','INTO OPEN AIR','INTO THE CLOUDS','RIDE THE WIND','GOLDEN HOUR','POLAR LIGHTS','LEAVE THE SKY','ABOVE THE WORLD','THE SUMMIT'];
 // the per-region signature flourish (screen-space, procedural — no persistent particle arrays)
@@ -4759,6 +4784,15 @@ function renderWorld(cy, shX) {
     const y = Math.round(slider.y-cy);
     const scol = slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length);
     const SR = slideRange();
+    // v132: in a cramped biome the corridor gets visible walls, so the tight lane reads as CAVES
+    // closing in rather than as the block merely travelling less. Pure render — no gameplay effect.
+    if (matAt(tier).lane < 1) {
+      ctx.globalAlpha = 0.5; ctx.fillStyle = '#5A6172';
+      for (const wx of [SR.l - 3, SR.r + 1]) {
+        for (let wy = y - BH; wy < y + BH * 2; wy += 4) ctx.fillRect(wx, wy, 2, 2);   // chiselled rock edge
+      }
+      ctx.globalAlpha = 1;
+    }
     let sa = 1;
     if (SR.wrap) {   // pixel-fade near the corridor ends
       const scx = slider.x + slider.w/2;
