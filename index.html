@@ -5543,6 +5543,10 @@ function renderSkyMap() {
         for (let s2 = 0; s2 < 3; s2++) drawStarPix(tx0 + s2*8, cy2 + 27, 1, unlocked && s2 < (shownStars()[k] || 0));
         txt(cleared ? 'CLEARED' : isNext ? 'NEXT' : 'LOCKED', txR, cy2+27, 1,
             cleared ? '#62E8B5' : isNext ? t.c : dimTxt, 'right');
+        // v126: show the NEXT star this level wants, so picking a replay has a visible goal
+        const so = LEVEL_REGISTRY[k] && LEVEL_REGISTRY[k].starObjectives, got = shownStars()[k] || 0;
+        if (so && unlocked && got < 3)
+          txt(objectiveLabel(got < 2 ? so.two : so.three), tx0 + 26, cy2 + 27, 1, 'rgba(255,246,232,0.5)', 'left');
       }
     }
     // mascot perches ON TOP of the card holding your best height, in the gap above it
@@ -5977,6 +5981,16 @@ function renderLevelWin() {
     const at = 24 + k*12, on = k < winStars && winT > at;
     const pop = on && winT < at + 6;
     drawStarPix(W/2 + (k-1)*30, starY, pop ? 4 : 3, on);
+  }
+  // v126: name each star's objective so the next attempt has a target the moment this one ends
+  const OBJ = LEVEL_REGISTRY[runLevel] ? LEVEL_REGISTRY[runLevel].starObjectives : null;
+  if (OBJ && winT > 60) {
+    const rows = [['CLEARED', winStarMet[0]], [objectiveLabel(OBJ.two), winStarMet[1]], [objectiveLabel(OBJ.three), winStarMet[2]]];
+    let oy = starY + 16;                            // anchored to the star row (starY = round(H*.36))
+    for (const [label, got] of rows) {
+      txt((got ? '* ' : '- ') + label, W/2, oy, 1, got ? UI_HEX() : 'rgba(255,246,232,0.45)', 'center');
+      oy += 10;
+    }
   }
   // a 3-star clear earns blinking glitter around the row
   if (winStars === 3 && winT > 62 && !reduceMotion && Math.floor(winT/9) % 2 === 0) {

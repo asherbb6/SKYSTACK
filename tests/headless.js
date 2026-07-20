@@ -2684,6 +2684,24 @@ check('v126 the level report exposes the new per-level objectives', () =>
     ' return r.starObjectives.complete === true && r.starObjectives.two.type === "streak" &&' +
     '   r.starObjectives.three.type === "streak" && r.starObjectives.two.n === 4; })()'));
 
+check('v126 the win screen names each star objective and marks which were taken', () => {
+  const g = makeGame();
+  g.run('(() => { mode="level"; pendingLevel=2; resetRun(); state="playing"; wind=null;' +
+    ' for (const p of [1,1,1,1,0]) trackStarOutcome({perfect:!!p, cut:!p, miss:false});' +
+    ' levelComplete(); state="levelwin"; winT = 90; return true; })()');
+  g.run('var __texts = []; var __txt0 = txt; txt = function(t,...a){ __texts.push(String(t)); return __txt0(t,...a); };');
+  g.run('renderLevelWin();');
+  return g.run('(() => { const two = objectiveLabel(LEVEL_REGISTRY[2].starObjectives.two);' +
+    ' const three = objectiveLabel(LEVEL_REGISTRY[2].starObjectives.three);' +
+    ' const hit = t => __texts.some(x => x.indexOf(t) >= 0);' +
+    ' return hit(two) && hit(three) && hit("CLEARED"); })()') === true;
+});
+check('v126 objective text fits its card across a swept viewport range', () =>
+  fresh.run('(() => { for (let w=170; w<=520; w+=10) { W=w; H=480; relayout();' +
+    ' for (const L of LEVEL_REGISTRY) for (const s of [L.starObjectives.two, L.starObjectives.three]) {' +
+    '   if (objectiveLabel(s).length*6 > Math.min(W-24,240) - 16) return false; } }' +
+    ' W=320; H=480; relayout(); return true; })()'));
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
