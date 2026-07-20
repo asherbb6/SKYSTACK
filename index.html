@@ -3649,9 +3649,20 @@ function makeRockTex(seedOff, pal) {
     const g = c.getContext('2d'); if (!g) return null;
     const disc = (x, y, r, col) => {                                                         // small multi-step clod: detail without giant square pixels
       const rr = Math.max(1, Math.round(r)), px = Math.round(x), py = Math.round(y); g.fillStyle = col;
-      g.fillRect(px - rr, py - Math.max(1, rr >> 1), rr*2 + 1, Math.max(1, rr));
-      g.fillRect(px - Math.max(1, rr - 1), py - rr, Math.max(2, rr*2 - 1), Math.max(1, Math.ceil(rr*.55)));
-      g.fillRect(px - Math.max(1, rr - 1), py + Math.max(0, rr >> 1), Math.max(2, rr*2 - 1), Math.max(1, Math.ceil(rr*.45))); };
+      if (rr < 3) {
+        g.fillRect(px - rr, py - Math.max(1, rr >> 1), rr*2 + 1, Math.max(1, rr));
+        g.fillRect(px - Math.max(1, rr - 1), py - rr, Math.max(2, rr*2 - 1), Math.max(1, Math.ceil(rr*.55)));
+        g.fillRect(px - Math.max(1, rr - 1), py + Math.max(0, rr >> 1), Math.max(2, rr*2 - 1), Math.max(1, Math.ceil(rr*.45)));
+        return;
+      }
+      // v137: every LARGE mass follows the true circle row by row with ±1 edge jitter — the old
+      // 3-rect approximation gave each boulder a dead-straight 15-20px cap, and those caps were
+      // most of the "perfectly straight lines" still cutting through the rock at v136
+      for (let dy = -rr; dy <= rr; dy++) {
+        const hw = Math.sqrt(rr*rr - dy*dy);
+        const wRow = Math.max(1, Math.round(hw*2 + (bhash(px*13 + py*29 + dy*7) - .5) * 1.6));
+        g.fillRect(px - (wRow >> 1), py + dy, wRow, 1);
+      } };
     g.fillStyle = pal.base; g.fillRect(0, 0, CAVETEX_W, CAVETEX_H);
     // v102: every mark near the top/bottom edge is drawn AGAIN wrapped by ±CAVETEX_H, so the
     // texture tiles vertically — the old hard-clipped edges put a fixed horizontal seam in the
@@ -3849,16 +3860,25 @@ function drawCaveBackdrop(top, cy, ph) {
     for (let y = top + off - 12; y < H; y += 12) {
       const by = Math.max(y, top), bh = Math.min(y + 12, H) - by; if (bh <= 0) continue;
       const brow = Math.round((gy - y) / 4), main = caveMainMixAtRow(brow);
-      blitCaveTex(0, by, W, bh, Math.round(gy - y) + (by - y), caveTexBack);                    // one continuous rear geology: no horizontal material swap seams
+      // v137: srcRow must INCREASE down-screen — gy - y decreases, so every band boundary jumped
+      // the atlas backwards 24 rows, guillotining each rock blob along a straight line every 12px
+      blitCaveTex(0, by, W, bh, Math.round(y - gy) + (by - y), caveTexBack);                    // one continuous rear geology: no horizontal material swap seams
       ctx.globalAlpha = 0.10 + main*0.10; ctx.fillStyle = '#8A5732'; ctx.fillRect(0, by, W, bh); // warmer earth gradually enters Main Cave
       ctx.globalAlpha = (1-main)*0.16; ctx.fillStyle = '#090708'; ctx.fillRect(0, by, W, bh);     // Deep Cave retains charcoal depth without losing material detail
-      for (let cx = 0; cx < W; cx += 64) {                                                       // v135 tonal patches; v136: wandering sample + alpha jitter = no straight patch edges
-        const bwnd = Math.round((bhash(Math.floor(brow/2)*53 + 9) - .5) * 22);
-        const sh = bhash(Math.floor(brow/8)*37 + Math.floor((cx + bwnd)/64)*71 + 13) - .5;
+      for (let cx = 0; cx < W; cx += 64) {                                                       // v135 tonal patches; v137: v136 jittered the SAMPLE but drew fixed-grid rects, and every
+        // column ticked its tint on the same floor(brow/8) band = full-width straight lines.
+        // Now each column carries its own row phase and each band's drawn edges wander.
+        const bwnd = Math.round((bhash(Math.floor(brow/2)*53 + cx*3 + 9) - .5) * 22);
+        const bcol = Math.floor((cx + bwnd)/64), bph = Math.floor(bhash(bcol*17 + 291) * 8);
+        const sh = bhash(Math.floor((brow + bph)/8)*37 + bcol*71 + 13) - .5;
         if (Math.abs(sh) > .14) {
-          ctx.globalAlpha = (Math.min(.09, (Math.abs(sh) - .14) * .25)) * (0.7 + 0.6 * bhash(brow*11 + cx));
-          ctx.fillStyle = sh > 0 ? '#A8825C' : '#000';
-          ctx.fillRect(cx, by, Math.min(64, W - cx), bh);
+          const il = Math.round(bhash(brow*13 + cx*5 + 5) * 9), ir = Math.round(bhash(brow*17 + cx*11 + 8) * 9);
+          const tx0 = Math.max(0, cx + il - 4), tx1 = Math.min(W, cx + 68 - ir);
+          if (tx1 > tx0) {
+            ctx.globalAlpha = (Math.min(.09, (Math.abs(sh) - .14) * .25)) * (0.7 + 0.6 * bhash(brow*11 + cx));
+            ctx.fillStyle = sh > 0 ? '#A8825C' : '#000';
+            ctx.fillRect(tx0, by, tx1 - tx0, bh);
+          }
         }
       }
       ctx.globalAlpha = 0.82;
@@ -3963,9 +3983,22 @@ function drawCaveWalls(top, cy, ph) {
       const mat = caveWallMatAt(row, side, side ? inner - 1 : inner);
       ctx.globalAlpha = 1;
       let prevMat = -1;
-      for (let cx = 0; cx < w; cx += CAVE_GEO_W) {                                             // warped geology cells turn strata into natural pockets
-        const pw = Math.min(CAVE_GEO_W, w - cx), px = x0 + cx, pmat = caveWallMatAt(row, side, px);
-        blitCaveTex(px, by, pw, bh, row * 4 + side * 97 + (by - y), caveMatTex(pmat));
+      const HC = CAVE_GEO_W >> 1;                                                              // v137: half-cell sampling — strata boundaries step twice as often
+      for (let cx = 0; cx < w; cx += HC) {                                                     // warped geology cells turn strata into natural pockets
+        const pw = Math.min(HC, w - cx), px = x0 + cx, pmat = caveWallMatAt(row, side, px);
+        // v137: srcRow increases down-screen (row*4 = gy - y decreased) so the rock flows
+        // continuously across the 4px bands instead of re-chopping the atlas at every boundary
+        blitCaveTex(px, by, pw, bh, -row * 4 + side * 97 + (by - y), caveMatTex(pmat));
+        // v137: HORIZONTAL interlock — v102/v136 only dithered side-by-side cells, so a material
+        // change between two 4px rows was still a dead-straight cut across the whole cell. Where
+        // the stratum above differs, each bites jittered chunks into the other across the seam.
+        if (bh === 4) { const um = caveWallMatAt(row + 1, side, px);
+          if (um !== pmat) for (let sp = 0; sp < 3; sp++) {
+            const bw2 = 3 + Math.round(bhash(row*41 + sp*13 + cx) * 4);
+            const bxp = clamp(px + Math.round(bhash(row*23 + cx*11 + sp*37 + side*3) * pw), x0, x0 + w - bw2);
+            if (sp & 1) blitCaveTex(bxp, by, bw2, 1 + (row & 1), -row*4 + side*97 + 23 + sp*7, caveMatTex(um));
+            else if (by - 2 >= top) blitCaveTex(bxp, by - 2, bw2, 2, -(row + 1)*4 + side*97 + 23 + sp*7, caveMatTex(pmat));
+          } }
         // v102: dithered material boundary — where two geologies meet, jittered patches of each
         // bite into the other per band, so dirt and rock interlock instead of meeting in a
         // straight vertical edge
@@ -3974,23 +4007,29 @@ function drawCaveWalls(top, cy, ph) {
           const back = 2 + Math.round(j1*7), fwd = 2 + Math.round(j2*6);
           const bx1 = Math.max(x0, px - back), bw1 = Math.min(back + Math.round(j2*4), x0 + w - bx1);
           const fx1 = Math.min(px + Math.round(j1*3), x0 + w - 1), fw1 = Math.min(fwd, x0 + w - fx1);
-          if (bw1 > 0) blitCaveTex(bx1, by, bw1, bh, row*4 + side*97 + (by - y) + 31, caveMatTex(pmat));
-          if (fw1 > 0) blitCaveTex(fx1, by, fw1, bh, row*4 + side*97 + (by - y) + 67, caveMatTex(prevMat));
+          if (bw1 > 0) blitCaveTex(bx1, by, bw1, bh, -row*4 + side*97 + (by - y) + 31, caveMatTex(pmat));
+          if (fw1 > 0) blitCaveTex(fx1, by, fw1, bh, -row*4 + side*97 + (by - y) + 67, caveMatTex(prevMat));
           // v136: pixel-level interlock — tiny 2px stamps of each material scattered ACROSS the
           // boundary, so the two geologies grow into each other instead of meeting in a cut
           for (let sp = 0; sp < 3; sp++) {
             const sxp = clamp(px + Math.round((bhash(row*19 + cx*7 + sp*29 + side) - .5) * 12), x0, x0 + w - 2);
-            blitCaveTex(sxp, by, 2, bh, row*4 + side*97 + (by - y) + 83 + sp*11, caveMatTex(sp & 1 ? pmat : prevMat));
+            blitCaveTex(sxp, by, 2, bh, -row*4 + side*97 + (by - y) + 83 + sp*11, caveMatTex(sp & 1 ? pmat : prevMat));
           }
         }
-        // v135 tonal patches, v136: the patch boundary WANDERS per row (wavy vertical edges) and
-        // the band alpha jitters (dithered horizontal edges) — no straight patch rectangles
+        // v135 tonal patches; v137: v136's wander moved the SAMPLE but still painted grid-aligned
+        // rects, and every cell ticked its tint on the same floor(row/9) band = straight lines.
+        // Per-cell row phase staggers the tick; per-band edge insets make the drawn rect wander.
         const wnd = Math.round((bhash(Math.floor(row/3)*41 + side*9 + 1) - .5) * 12);
-        const shade = bhash(Math.floor(row/9)*23 + Math.floor((px + wnd)/CAVE_GEO_W)*61 + side*5 + 3) - .5;
+        const tcol = Math.floor((px + wnd)/CAVE_GEO_W), tph = Math.floor(bhash(tcol*31 + side*7 + 177) * 9);
+        const shade = bhash(Math.floor((row + tph)/9)*23 + tcol*61 + side*5 + 3) - .5;
         if (Math.abs(shade) > .12) {
-          ctx.globalAlpha = Math.min(.11, (Math.abs(shade) - .12) * .3) * (0.7 + 0.6 * bhash(row*7 + cx));
-          ctx.fillStyle = shade > 0 ? '#C9A57A' : '#000';
-          ctx.fillRect(px, by, pw, bh); ctx.globalAlpha = 1;
+          const il = Math.round(bhash(row*29 + cx*3 + side) * 6), ir = Math.round(bhash(row*31 + cx*13 + side) * 6);
+          const tx0 = Math.max(x0, px + il - 3), tx1 = Math.min(x0 + w, px + pw + 3 - ir);
+          if (tx1 > tx0) {
+            ctx.globalAlpha = Math.min(.11, (Math.abs(shade) - .12) * .3) * (0.7 + 0.6 * bhash(row*7 + cx));
+            ctx.fillStyle = shade > 0 ? '#C9A57A' : '#000';
+            ctx.fillRect(tx0, by, tx1 - tx0, bh); ctx.globalAlpha = 1;
+          }
         }
         prevMat = pmat;
       }
@@ -4034,8 +4073,12 @@ function drawCaveWalls(top, cy, ph) {
           ctx.fillRect(tx, y, 2, tl); }
       }
       if (prevW >= 0 && w > prevW + 3) {                                                       // ledge top: lit lip + a pebble
-        const lx = side ? W - w : prevW;
-        ctx.fillStyle = 'rgba(122,96,62,0.6)'; ctx.fillRect(lx, y, Math.abs(w - prevW), 1);
+        const lx = side ? W - w : prevW, lspan = Math.abs(w - prevW);
+        ctx.fillStyle = '#7A603E';  // v137: chipped lip — broken runs, no ruled line
+        for (let sx2 = 0; sx2 < lspan; sx2 += 3) { const sj = bhash(row*7 + sx2*5 + side*3);
+          if (sj < 0.24) continue; ctx.globalAlpha = 0.3 + sj*0.42;
+          ctx.fillRect(lx + sx2, y - (sj > 0.82 ? 1 : 0), Math.min(3, lspan - sx2), 1); }
+        ctx.globalAlpha = 1;
         if (bhash(row*19 + side*101) > 0.42) {
           const span = Math.abs(w - prevW), px = side ? lx + Math.min(span - 1, 4) : lx + Math.max(1, span - 3);
           drawCaveLedgeProp(px, y, row, side, span, ph);                                       // props only on an actual upward-facing surface
