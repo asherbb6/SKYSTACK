@@ -1055,7 +1055,7 @@ const STAR_OBJECTIVES = deepFreeze([
   { two:{type:'perfects',n:10},   three:{type:'streak',n:6} },        // 4  SOFT FOOTING - cloud wobble
   { two:{type:'windLands',n:2},   three:{type:'streak',n:6} },        // 5  CROSSWIND - fast steel + wind
   { two:{type:'perfects',n:13},   three:{type:'streak',n:6} },        // 6  THIN AIR - glass control
-  { two:{type:'recover',n:8},     three:{type:'streak',n:7} },        // 7  ICE TEMPO - quick recovery (v128: 5->8, ice slide made 5 automatic)
+  { two:{type:'recover',n:6},     three:{type:'streak',n:7} },        // 7  ICE TEMPO (v131: 8->6, the stronger slide cuts recovery chances)
   { two:{type:'perfects',n:22},   three:{type:'streak',n:8} },        // 8  LOW GRAVITY - cosmic wobble
   { two:{type:'perfects',n:40},   three:{type:'streak',n:10} },       // 9  ORBITAL ENDURANCE
   { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:4} }    // 10 SUMMIT RUN - final precision
@@ -1821,10 +1821,18 @@ function land() {
 
   const isPerfect = Math.abs(offset) <= effPerfect();
   let nx = oL, nw = overlap;
-  const SOFT_CATCH_PX = 3;                                  // v128: cloud nestles a marginal landing
+  const SOFT_CATCH_PX = 8;                                  // v131: 3px was invisible; cloud now visibly swallows a scrappy landing
   if (!isPerfect && matAt(tier).soft) {
     const grow = Math.min(SOFT_CATCH_PX, f.w - nw);         // never wider than the block that fell
-    if (grow > 0) nw += grow;
+    if (grow > 0) {
+      // v131 FIX: grow INWARD, over the support. Growing outward (the v128 behaviour) pushed the
+      // block's centre further off the tower and INCREASED lean — a "forgiving" mechanic that was
+      // quietly killing runs (12/20 simulated ordinary runs died on CLOUD NINE, up from 3/20).
+      if (offset > 0) nx -= grow;
+      nw += grow;
+      if (grow > 1)   // v131: name the mechanic at the moment it acts
+        floaters.push({ text:'CAUGHT!', x:nx+nw/2, y:towerTopY()-BH-8, vy:-.45, life:1.1, color:'#BFE8FF' });
+    }
   }
   const goldMult = f.golden ? 5 : 1;
   if (isPerfect) {
@@ -1906,7 +1914,7 @@ function land() {
   // locks. Severity reuses the v124 difficulty drift multiplier; the EASY/MEDIUM no-miss guarantee is
   // the same rule v125 established for wind drift. The logical resting x is final immediately; only
   // the DRAWN position animates (see slideT).
-  const SLIDE_PX = 12;                                    // v128: 6px was too subtle to feel on 96px blocks
+  const SLIDE_PX = 24;                                    // v131: 12px still read as noise — Asher could not feel it
   let slid = 0;
   if (!isPerfect && matAt(tier).slide) {
     const lean = offset > 0 ? 1 : -1;                       // the side it overhangs
@@ -1917,6 +1925,8 @@ function land() {
     }
     want = clamp(want, 0, W - nw);
     slid = want - nx; nx = want;
+    if (Math.abs(slid) > 1)   // v131: name the mechanic at the moment it acts
+      floaters.push({ text:'SLIP!', x:nx+nw/2, y:towerTopY()-BH-8, vy:-.45, life:1.1, color:'#7EF2C5' });
   }
   blocks.push({ x:nx, w:nw, col:f.col, slid:slid, slideT:slid ? 1 : 0 });
   faller = null; landFx(nw); cameraTarget = towerTopY() - (H - 100); state = 'playing';
@@ -4414,6 +4424,10 @@ function startRegionIntro(ti) {
   regionIntro = { ti, t: 0, dur: reduceMotion ? 55 : 100 };
   if (state === 'playing' || state === 'dropping') sfx.region(ti);
 }
+// v131: a mechanic nobody is told about cannot be noticed — each biome with a signature rule states
+// it on arrival. Biomes without one stay silent, so silence keeps meaning "nothing special here".
+const BIOME_RULES = ['', '', '', '', 'CLOUD: SOFT LANDINGS STICK', 'JET STREAM: WIND PUSHES YOUR DROP',
+  '', 'ICE: SLOPPY LANDINGS SLIP', 'LOW GRAVITY: BLOCKS FALL SLOWLY', 'LOW GRAVITY: BLOCKS FALL SLOWLY', ''];
 const INTRO_TAGS = ['ESCAPE THE DEEP','INTO THE LIGHT','OVER THE CANOPY','INTO OPEN AIR','INTO THE CLOUDS','RIDE THE WIND','GOLDEN HOUR','POLAR LIGHTS','LEAVE THE SKY','ABOVE THE WORLD','THE SUMMIT'];
 // the per-region signature flourish (screen-space, procedural — no persistent particle arrays)
 function drawIntroFx(ti, p, env, ph) {
@@ -4468,6 +4482,10 @@ function renderRegionIntro() {
   ctx.globalAlpha = env; ctx.fillStyle = T.c; ctx.fillRect(cx - nameW/2, ty - 14, nameW, 2); ctx.fillRect(cx - nameW/2, ty + 14, nameW, 2);
   txt(T.name, cx, ty - 8, 2, T.c, 'center');
   ctx.globalAlpha = env * 0.85; txt(INTRO_TAGS[R.ti], cx, ty + 20, 1, 'rgba(255,246,232,0.9)', 'center');
+  if (BIOME_RULES[R.ti]) {   // v131: this biome's signature rule, stated on arrival
+    ctx.globalAlpha = env * 0.95;
+    txtFit(BIOME_RULES[R.ti], cx, ty + 32, 1, VISUAL_SYSTEM.palette.gold, 'center', W - 24);
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -4854,7 +4872,7 @@ function renderHome() {
   txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, chapterY, 1, 'rgba(255,246,232,0.55)', 'left');
   txt((nl+1)+' / '+TIERS.length,hc.x+hc.w-8,chapterY,1,nt.c,'right');
   if (conquered) {
-    txtFit('SKY CONQUERED!', W/2, nameY, 2, VISUAL_SYSTEM.palette.gold, 'center', hc.w - 16);
+    txtFit('SKY CONQUERED!', W/2, nameY + 5, 2, VISUAL_SYSTEM.palette.gold, 'center', hc.w - 16);   // v131: sits low in its band, clear of the chapter row
     txt('REPLAY THE JOURNEY', W/2, goalY, 1, 'rgba(255,246,232,0.6)', 'center');
   } else {
     txtFit(nt.name, W/2, nameY, 2, nt.c, 'center', hc.w - 16);

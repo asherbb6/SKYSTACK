@@ -2918,6 +2918,48 @@ check('v130 reduceMotion gets neither the startle nor the slow motion', () => {
     ' return beatScale() === 1 ? true : "slow motion under reduceMotion"; })()') === true;
 });
 
+// ---------- v131: the biome mechanics are now felt AND named ----------
+const v131drop = (ti, off) => '(() => { mode="endless"; resetRun(); state="playing"; tier=' + ti + ';' +
+  ' wind=null; const top=blocks[blocks.length-1]; floaters.length=0;' +
+  ' faller={x:top.x+(' + off + '), x0:top.x+(' + off + '), y:towerTopY()-BH, w:top.w, vx:0,' +
+  '   vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+  ' slider=null; state="dropping"; land();' +
+  ' const b=blocks[blocks.length-1];' +
+  ' return JSON.stringify({slid:+(b.slid||0).toFixed(1), w:b.w, texts:floaters.map(f=>f.text)}); })()';
+check('v131 ice slides far enough to be felt, and says SLIP! when it does', () => {
+  const r = JSON.parse(makeGame().run(v131drop(7, 16)));
+  if (!(Math.abs(r.slid) >= 7)) return 'only slid ' + r.slid;
+  return r.texts.indexOf('SLIP!') >= 0 ? true : 'no SLIP! floater: ' + r.texts.join(',');
+});
+check('v131 a perfect landing on ice neither slides nor announces', () => {
+  const r = JSON.parse(makeGame().run(v131drop(7, 0)));
+  return (r.slid === 0 && r.texts.indexOf('SLIP!') < 0) ? true : 'perfect fired: ' + JSON.stringify(r);
+});
+check('v131 cloud says CAUGHT! and a plain biome stays silent', () => {
+  const cloud = JSON.parse(makeGame().run(v131drop(4, 20)));
+  const stone = JSON.parse(makeGame().run(v131drop(0, 20)));
+  if (cloud.texts.indexOf('CAUGHT!') < 0) return 'no CAUGHT!: ' + cloud.texts.join(',');
+  return stone.texts.length === 0 ? true : 'stone announced: ' + stone.texts.join(',');
+});
+check('v131 the cloud catch grows INWARD so it cannot increase lean', () => {
+  const g = makeGame();
+  // a right-overhanging landing: the caught block must not extend further right than the plain one
+  const right = (ti) => JSON.parse(g.run('(() => { mode="endless"; resetRun(); state="playing"; tier=' + ti + ';' +
+    ' wind=null; const top=blocks[blocks.length-1];' +
+    ' faller={x:top.x+20, x0:top.x+20, y:towerTopY()-BH, w:top.w, vx:0,' +
+    '   vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+    ' slider=null; state="dropping"; land();' +
+    ' const b=blocks[blocks.length-1]; return JSON.stringify([b.x, b.x+b.w]); })()'));
+  const cloud = right(4), stone = right(0);
+  if (!(cloud[1] <= stone[1] + 0.001)) return 'cloud extended further out: ' + cloud[1] + ' vs ' + stone[1];
+  return (cloud[1] - cloud[0]) > (stone[1] - stone[0]) ? true : 'cloud did not keep more block';
+});
+check('v131 only the biomes with a mechanic announce a rule on arrival', () =>
+  fresh.run('(() => { if (BIOME_RULES.length !== TIERS.length) return false;' +
+    ' for (const i of [4,5,7,8,9]) if (!BIOME_RULES[i]) return false;' +
+    ' for (const i of [0,1,2,3,6,10]) if (BIOME_RULES[i]) return false;' +
+    ' return true; })()'));
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2943,7 +2985,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v130', () => /const CACHE = 'skystack-v130'/.test(sw));
+check('sw.js cache bumped to v131', () => /const CACHE = 'skystack-v131'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
