@@ -3780,6 +3780,27 @@ function caveWallW(row, side, baseW) {
   }
   return w;
 }
+// v141: the innermost wall edge across a vertical SPAN. Decor used to anchor to the wall width at
+// ONE row while hanging 4-34px below it, so wherever the wall receded underneath, mushrooms, roots,
+// stalactites and posts hung in open air. Anchoring to the narrowest width over the item's whole
+// span keeps it embedded in rock for its entire length.
+// v141: where a multi-lobe void actually opens at screen column x — the top and bottom of the
+// union of its discs. Returns null when no lobe covers x, so rim decor is never drawn into air.
+function caveVoidRim(lobes, x) {
+  let top = Infinity, bot = -Infinity;
+  for (const lo of lobes) {
+    const dx = x - lo.x; if (Math.abs(dx) >= lo.r) continue;
+    const hh = Math.sqrt(lo.r*lo.r - dx*dx);
+    top = Math.min(top, lo.y - hh); bot = Math.max(bot, lo.y + hh);
+  }
+  return isFinite(top) ? { top: Math.round(top), bot: Math.round(bot) } : null;
+}
+function caveWallEdgeSpan(side, yTop, yBot, gy, baseW) {
+  let mw = Infinity;
+  for (let yy = yTop; yy <= yBot; yy += 2) mw = Math.min(mw, caveWallW(Math.round((gy - yy) / 4), side, baseW));
+  if (!isFinite(mw)) mw = caveWallW(Math.round((gy - yTop) / 4), side, baseW);
+  return side ? W - mw : mw;                                                                    // screen x of the rock FACE across the span
+}
 // Geological material at a stable world row: 0 dirt, 1 charcoal stone, 2 clay, 3 gravel.
 // Broad strata plus small secondary noise make organic pockets without frame-to-frame morphing.
 function caveWallMat(row, side) {
@@ -3908,21 +3929,26 @@ function drawCaveBackdrop(top, cy, ph) {
     if (hy - hr - 8 < top) continue;                                                          // keep mouths fully underground
     // v135: an irregular collapsed pocket, not a perfect circle — several offset lobes make a
     // blob that is wider than tall, with its own uneven soft halo
+    // v141: build the lobe list ONCE so the teeth can be placed on the blob's real surface
+    const lobes = [];
+    for (let l = 0; l < 4; l++) lobes.push({
+      x: hx + Math.round((bhash(row*31 + l*17) - .5) * hr * 1.5),
+      y: hy + Math.round((bhash(row*43 + l*23) - .5) * hr * 0.8),
+      r: Math.round(hr * (0.55 + bhash(row*7 + l*11) * 0.4)) });
     ctx.globalAlpha = 0.7;
-    for (let l = 0; l < 4; l++) {
-      const lx = hx + Math.round((bhash(row*31 + l*17) - .5) * hr * 1.5);
-      const ly = hy + Math.round((bhash(row*43 + l*23) - .5) * hr * 0.8);
-      pixDisc(lx, ly, Math.round(hr * (0.55 + bhash(row*7 + l*11) * 0.4)) + 4, 'rgba(8,5,4,0.7)');
-    }
+    for (const lo of lobes) pixDisc(lo.x, lo.y, lo.r + 4, 'rgba(8,5,4,0.7)');
     ctx.globalAlpha = 0.95;
-    for (let l = 0; l < 4; l++) {
-      const lx = hx + Math.round((bhash(row*31 + l*17) - .5) * hr * 1.5);
-      const ly = hy + Math.round((bhash(row*43 + l*23) - .5) * hr * 0.8);
-      pixDisc(lx, ly, Math.round(hr * (0.55 + bhash(row*7 + l*11) * 0.4)), '#050302');
-    }
+    for (const lo of lobes) pixDisc(lo.x, lo.y, lo.r, '#050302');
     ctx.globalAlpha = 0.8; ctx.fillStyle = '#20160F';                                          // dripstone teeth framing the mouth
-    for (let sx = hx - hr; sx < hx + hr; sx += 5) { const st = Math.round(bhash(sx*5 + row) * 7);
-      ctx.fillRect(sx, hy - hr, 2, st); ctx.fillRect(sx + 2, hy + hr - Math.round(bhash(sx*3) * 6), 2, Math.round(bhash(sx*3) * 6)); }
+    // v141: a tooth is placed on the RIM the blob actually has at that x. They used to sit on the
+    // corners of a bounding box, so the ones past the lobes hung in mid-air beside the hole.
+    for (let sx = hx - hr; sx < hx + hr; sx += 5) {
+      const rim = caveVoidRim(lobes, sx);
+      if (!rim) continue;                                                                      // no rock opening here — no tooth
+      const st = Math.round(bhash(sx*5 + row) * 7), sb = Math.round(bhash(sx*3) * 6);
+      if (st > 0) ctx.fillRect(sx, rim.top, 2, st);                                             // hangs DOWN into the void
+      if (sb > 0) ctx.fillRect(sx + 2, rim.bot - sb, 2, sb);                                    // rises UP from the floor lip
+    }
     if (bhash(row*11) > 0.55 && (reduceMotion || Math.sin(ph*0.05 + row*1.7) > 0.15)) {        // eyes blink in the dark
       ctx.globalAlpha = 0.85; ctx.fillStyle = row & 1 ? '#E0863A' : '#D2A83C'; ctx.fillRect(hx - 3, hy, 2, 1); ctx.fillRect(hx + 2, hy, 2, 1); }
   }
@@ -3933,31 +3959,32 @@ function drawCaveBackdrop(top, cy, ph) {
   {
     const hy2 = gy - Math.round(14.5 * BH), hx2 = Math.round(W * 0.34), hr2 = 26;
     if (hy2 + hr2 > top && hy2 - hr2 < H) {
+      const lobes2 = [];                                                                       // v141: one lobe list drives void, rim teeth, crown and rubble
+      for (let l = 0; l < 5; l++) lobes2.push({
+        x: hx2 + Math.round((bhash(l*37 + 3) - .5) * hr2 * 1.9),
+        y: hy2 + Math.round((bhash(l*53 + 11) - .5) * hr2 * 0.7),
+        r: Math.round(hr2 * (0.5 + bhash(l*17 + 7) * 0.4)) });
       ctx.globalAlpha = 0.72;                                                                  // soft halo lobes
-      for (let l = 0; l < 5; l++) {
-        const lx = hx2 + Math.round((bhash(l*37 + 3) - .5) * hr2 * 1.9);
-        const ly = hy2 + Math.round((bhash(l*53 + 11) - .5) * hr2 * 0.7);
-        pixDisc(lx, ly, Math.round(hr2 * (0.5 + bhash(l*17 + 7) * 0.4)) + 4, 'rgba(8,5,4,0.7)');
-      }
+      for (const lo of lobes2) pixDisc(lo.x, lo.y, lo.r + 4, 'rgba(8,5,4,0.7)');
       ctx.globalAlpha = 0.96;                                                                  // the void itself
-      for (let l = 0; l < 5; l++) {
-        const lx = hx2 + Math.round((bhash(l*37 + 3) - .5) * hr2 * 1.9);
-        const ly = hy2 + Math.round((bhash(l*53 + 11) - .5) * hr2 * 0.7);
-        pixDisc(lx, ly, Math.round(hr2 * (0.5 + bhash(l*17 + 7) * 0.4)), '#050302');
-      }
+      for (const lo of lobes2) pixDisc(lo.x, lo.y, lo.r, '#050302');
       pixDisc(hx2 + 4, hy2 + 2, Math.round(hr2 * 0.55), '#000000');                            // deeper black throat
-      ctx.globalAlpha = 0.3;                                                                   // lit crown along the upper edge — v138: softened over the darker art backdrop
-      pixDisc(hx2 - 8, hy2 - hr2 + 3, 5, '#57402C'); pixDisc(hx2 + 6, hy2 - hr2 + 1, 6, '#57402C');
-      pixDisc(hx2 + 18, hy2 - hr2 + 6, 4, '#57402C'); pixDisc(hx2 - 18, hy2 - hr2 + 7, 4, '#57402C');
+      ctx.globalAlpha = 0.3;                                                                   // lit crown — v141: seated on the real upper rim, not a bounding box
+      for (const cxr of [hx2 - 18, hx2 - 8, hx2 + 6, hx2 + 18]) {
+        const rim = caveVoidRim(lobes2, cxr); if (!rim) continue;
+        pixDisc(cxr, rim.top + 2, 4 + (cxr & 1), '#57402C');
+      }
       ctx.globalAlpha = 0.85; ctx.fillStyle = '#20160F';                                       // toothed rim above and below
       for (let sx = hx2 - hr2 - 6; sx < hx2 + hr2 + 6; sx += 4 + (Math.abs(sx) % 3)) {
-        const jt = Math.round(bhash(sx*7 + 5) * 8);
-        ctx.fillRect(sx, hy2 - hr2 + Math.round(bhash(sx*3) * 6) - 2, 2, jt);
-        ctx.fillRect(sx + 1, hy2 + hr2 - 8 - Math.round(bhash(sx*11) * 5), 2, Math.round(bhash(sx*13) * 7));
+        const rim = caveVoidRim(lobes2, sx); if (!rim) continue;                                // only where the chamber truly opens
+        const jt = Math.round(bhash(sx*7 + 5) * 8), jb = Math.round(bhash(sx*13) * 7);
+        if (jt > 0) ctx.fillRect(sx, rim.top, 2, jt);
+        if (jb > 0) ctx.fillRect(sx + 1, rim.bot - jb, 2, jb);
       }
       for (let rb = 0; rb < 6; rb++) {                                                          // rubble spilling from the floor lip
         const rx = hx2 - hr2 + 6 + Math.round(bhash(rb*23 + 1) * hr2 * 1.7);
-        const ry = hy2 + hr2 - 4 + Math.round(bhash(rb*31 + 9) * 6);
+        const rim = caveVoidRim(lobes2, rx); if (!rim) continue;                                // v141: rubble rides the real floor, not a box edge
+        const ry = rim.bot - 2 + Math.round(bhash(rb*31 + 9) * 4);
         ctx.globalAlpha = 0.8; pixDisc(rx, ry, 2 + Math.round(bhash(rb*13) * 3), rb & 1 ? '#32251B' : '#1B1512');
         ctx.globalAlpha = 0.5; pixDisc(rx - 1, ry - 1, 1 + Math.round(bhash(rb*13) * 2), '#57402C');
       }
@@ -3970,7 +3997,8 @@ function drawCaveBackdrop(top, cy, ph) {
   ctx.globalAlpha = 1;
 }
 // side walls framing the play lane: chunky earthy rock with a jagged inner edge, cracks + moss,
-// and altitude-anchored decor (mushrooms on ledges, hanging roots, corner cobwebs).
+// and altitude-anchored decor (mushrooms, hanging roots, stalactites, timber supports) — v141:
+// every piece is anchored across its OWN vertical span, so nothing hangs in the open lane.
 function drawCaveWalls(top, cy, ph) {
   if (H - top <= 0) return;
   const baseW = Math.round(W * 0.17);
@@ -4040,7 +4068,10 @@ function drawCaveWalls(top, cy, ph) {
       const mushroomCut = .12 + main*.24, rootCut = mushroomCut + .30 - main*.08;
       if (my < top - 10 || my > H + 10) continue;
       if (r2 < mushroomCut) {                                                                           // mushrooms become a Main Cave signature
-        const mx = side ? inx - 5 : inx + 2, bob = reduceMotion ? 0 : Math.round(Math.sin(ph*0.04 + row) * 0.8);
+        // v141: sit ON the rock face across the mushroom's own span — it used to be planted 2-5px
+        // out in the open lane, which is why they read as floating up the wall
+        const medge = caveWallEdgeSpan(side, my - 7, my + 2, gy, baseW);
+        const mx = side ? medge + 1 : medge - 1, bob = reduceMotion ? 0 : Math.round(Math.sin(ph*0.04 + row) * 0.8);
         ctx.globalAlpha = 1;
         ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(mx - 2, my, 5, 1);                             // v136: seated shadow — it stands ON the rock
         ctx.fillStyle = '#2A2018'; ctx.fillRect(mx - 1, my - 1, 1, 1); ctx.fillRect(mx + 1, my - 1, 1, 1);   // soil crumbs gripping the stem
@@ -4049,7 +4080,11 @@ function drawCaveWalls(top, cy, ph) {
         ctx.fillStyle = 'rgba(255,220,180,0.35)'; ctx.fillRect(mx, my - 5 + bob, 1, 1);
         if (r2 < 0.1) { ctx.fillStyle = '#6E4A2E'; ctx.fillRect(mx + 3, my - 3, 2, 1); ctx.fillStyle = '#B8A47C'; ctx.fillRect(mx + 3, my - 2, 1, 2); }
       } else if (r2 < rootCut && (mat === 0 || mat === 2)) {                                           // roots/vines emerge from dirt or clay seams
-        const rx = side ? inx - 2 : inx + 1, rl = 10 + Math.round(bhash(row*5) * 20), sway = reduceMotion ? 0 : Math.sin(ph*0.03 + row) * 2;
+        const rl = 10 + Math.round(bhash(row*5) * 20);
+        // v141: a root hangs its full length down the rock face — anchored across that span, so it
+        // can no longer dangle in mid-lane ("worms floating up the walls")
+        const redge = caveWallEdgeSpan(side, my, my + rl, gy, baseW);
+        const rx = side ? redge + 1 : redge - 1, sway = reduceMotion ? 0 : Math.sin(ph*0.03 + row) * 2;
         const leafy = bhash(row*41 + side*13) > 0.5;                                                   // half grow into green vines like the reference
         ctx.globalAlpha = leafy ? 1 : 0.9; ctx.fillStyle = leafy ? '#2C5C22' : '#3A2814';
         for (let t = 0; t < rl; t++) { const vx = Math.round(rx + sway * t / rl); ctx.fillRect(vx, my + t, 1, 1);
@@ -4059,7 +4094,10 @@ function drawCaveWalls(top, cy, ph) {
       } else if (r2 < .72 && (mat === 1 || mat === 3)) {                                               // stalactites only attach to stone/gravel rock
         // v136: they GROW from the rock now — jittered spacing off the 3px grid, a wide embedded
         // root with an AO pocket, and a 2-step taper instead of a straight column hung off a line
-        const sx0 = side ? inx - 1 : inx - 8;
+        // v141: anchored across the longest tooth's span so the cluster grows out of rock that is
+        // actually there — the old single-row anchor left dripstone hanging in the lane
+        const sedge = caveWallEdgeSpan(side, my - 1, my + 15, gy, baseW);
+        const sx0 = side ? sedge + 1 : sedge - 8;
         ctx.globalAlpha = 1;
         for (let t = 0; t < 3; t++) {
           const tl = 4 + Math.round(bhash(row*7 + t*3) * 9);
@@ -4074,7 +4112,10 @@ function drawCaveWalls(top, cy, ph) {
           ctx.fillStyle = 'rgba(122,96,62,0.5)'; ctx.fillRect(tx - 1, ty2, 4, 1);                     // lit lip where the rock grips it
         }
       } else if (r2 < .80 + main*.16) {                                                                 // supports become common in the developed Main Cave
-        const px2 = side ? inx - 5 : inx + 1, pl = 22 + Math.round(bhash(row*3) * 12);
+        const pl = 22 + Math.round(bhash(row*3) * 12);
+        // v141: the post is seated against rock down its whole height (was standing in open lane)
+        const pedge = caveWallEdgeSpan(side, my - 6, my - 4 + pl, gy, baseW);
+        const px2 = side ? pedge + 1 : pedge - 5;
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#4A3018'; ctx.fillRect(px2, my - 4, 4, pl);                                   // post
         ctx.fillStyle = '#5E3F20'; ctx.fillRect(px2, my - 4, 1, pl);                                   // lit edge
@@ -4085,15 +4126,10 @@ function drawCaveWalls(top, cy, ph) {
         ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(px2 - 2, my - 6, 8, 1);                        // v136: AO where the beam seats into the rock
         ctx.fillStyle = '#241A10'; ctx.fillRect(px2 - 3, my - 5, 1, 2); ctx.fillRect(px2 + 6, my - 5, 1, 2);   // rock grips the beam ends
         ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(px2 - 1, my - 4 + pl, 6, 1);                  // footing shadow where the post lands
-      } else {                                                                                         // corner cobweb + occasional hanging spider
-        const cx2 = side ? W - 1 : 0, dir = side ? -1 : 1;
-        ctx.globalAlpha = reduceMotion ? 0.25 : 0.16 + 0.1 * Math.sin(ph*0.04 + row);
-        ctx.fillStyle = '#D6D6C8';
-        for (let a2 = 1; a2 <= 4; a2++) { ctx.fillRect(side ? cx2 - a2*4 : cx2, my + a2*3, a2*4, 1); ctx.fillRect(cx2 + a2*4*dir, my, 1, a2*3); }
-        if (bhash(row*37 + side) > 0.62) { const hang = reduceMotion ? 8 : 8 + Math.round(Math.sin(ph*.035 + row)*2), sx = cx2 + dir*10;
-          ctx.fillStyle = '#B6B09E'; ctx.fillRect(sx, my + 7, 1, hang); ctx.fillStyle = '#17110D'; ctx.fillRect(sx - 1, my + 7 + hang, 3, 2);
-          ctx.fillRect(sx - 2, my + 8 + hang, 1, 1); ctx.fillRect(sx + 2, my + 8 + hang, 1, 1); }
       }
+      // v141: the corner COBWEB slot is gone. It drew a pair of 1px rects per step, which read as
+      // the "weird L shaped lines overlapping" the rock — geometric strokes laid over real art.
+      // Its rows now simply show bare wall, which is what makes the face read clean.
     }
     ctx.globalAlpha = 1;
   }
@@ -4122,8 +4158,10 @@ function drawCaveTorchLight(top, cy, ph) {
     const row = Math.round((gy - y) / TP), side = row & 1, dir = side ? -1 : 1;
     const ty = Math.round(y + bhash(row*7) * 60), wallRow = Math.round((gy - ty) / 4);
     const main = caveMainMixAtRow(wallRow); if (!caveTorchPresent(row, main)) continue;        // world-seeded placement never changes while climbing
-    const wallW = caveWallW(wallRow, side, Math.round(W * 0.17));
-    const tx = side ? W - wallW + 2 : wallW - 2;                                                // bracket is physically attached to the current wall edge
+    // v141: anchored across the bracket + handle span, so a torch never hangs off a wall that has
+    // already receded below it
+    const tedge = caveWallEdgeSpan(side, ty - 6, ty + 9, gy, Math.round(W * 0.17));
+    const tx = side ? tedge + 2 : tedge - 2;                                                    // bracket is physically attached to the current wall edge
     if (ty < top + 6 || ty > H + 20) continue;                                                 // torches only below the ceiling
     const fl = reduceMotion ? 0.85 : (0.72 + 0.28 * Math.sin(ph*0.31 + row*2) * Math.sin(ph*0.17 + row));
     const lightR = Math.round(50 + main*16), lightGain = .42 + main*.16;
@@ -4131,7 +4169,11 @@ function drawCaveTorchLight(top, cy, ph) {
     rg.addColorStop(0, 'rgba(255,181,86,' + (lightGain * fl).toFixed(3) + ')');
     rg.addColorStop(0.45, 'rgba(255,142,48,' + ((.17 + main*.07) * fl).toFixed(3) + ')');
     rg.addColorStop(1, 'rgba(255,130,40,0)');
-    ctx.globalAlpha = 1; ctx.fillStyle = rg; ctx.fillRect(tx - lightR, ty - lightR - 4, lightR*2, lightR*2);
+    // v141: the glow used to fill its whole square from ty - lightR - 4, so the topmost torches
+    // washed light UP over the ceiling and out into the sky. Clip it to the cave interior.
+    ctx.globalAlpha = 1; ctx.fillStyle = rg;
+    const g0 = Math.max(top, ty - lightR - 4), g1 = Math.min(H, ty + lightR - 4);
+    if (g1 > g0) ctx.fillRect(tx - lightR, g0, lightR*2, g1 - g0);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(tx - dir*5 - 1, ty + 5, 3, 3);             // v136: AO pocket where the bracket enters the rock
     ctx.fillStyle = '#3E3D38'; ctx.fillRect(tx - dir*5, ty + 5, 2, 3);                         // iron mounting plate seated into the wall
     for (let t = 0; t < 7; t++) {                                                              // angled wooden handle out of the wall

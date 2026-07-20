@@ -589,8 +589,27 @@ check('cave texture stamping explicitly disables image smoothing', () =>
   /function blitCaveTex[\s\S]{0,320}ctx\.imageSmoothingEnabled = false/.test(src));
 check('ledge props are emitted only from detected upward-facing wall ledges', () =>
   /if \(prevW >= 0 && w > prevW \+ 3\)[\s\S]{0,700}drawCaveLedgeProp\(/.test(src));
-check('torches derive their x position from the current anchored wall edge', () =>
-  /wallRow = Math\.round\(\(gy - ty\) \/ 4\)[\s\S]{0,260}caveWallW\(wallRow[\s\S]{0,220}W - wallW \+ 2 : wallW - 2/.test(src));
+// v141: same intent, stronger — the torch anchors to the wall edge across its whole bracket span
+// (caveWallEdgeSpan), so it cannot hang off a wall that has already receded below the mount row.
+check('torches derive their x position from the anchored wall edge across their span', () =>
+  /wallRow = Math\.round\(\(gy - ty\) \/ 4\)[\s\S]{0,420}caveWallEdgeSpan\(side, ty - 6, ty \+ 9, gy[\s\S]{0,220}tedge \+ 2 : tedge - 2/.test(src));
+// v141: nothing may hang in the open lane, and no rim decor may sit off its void.
+check('span anchoring keeps decor embedded wherever the wall recedes below it', () => bio.run(
+  '(() => { const bw = Math.round(W*0.17), gy = 400;' +
+  '  for (let y = 0; y < 300; y += 7) for (const s of [0,1]) {' +
+  '    const e = caveWallEdgeSpan(s, y, y + 34, gy, bw);' +          // edge across a long root/post span
+  '    for (let yy = y; yy <= y + 34; yy += 2) {' +
+  '      const w = caveWallW(Math.round((gy - yy) / 4), s, bw);' +
+  '      if (s === 0 && e > w) return false;' +                      // left: anchor must stay within the rock at EVERY row
+  '      if (s === 1 && e < W - w) return false;' +                  // right: same
+  '    } } return true; })()'));
+check('void rim decor is placed on the real lobe surface, never in mid-air', () => bio.run(
+  '(() => { const lobes = [{x:60,y:100,r:20},{x:80,y:106,r:14}];' +
+  '  if (caveVoidRim(lobes, 5) !== null) return false;' +            // far outside every lobe -> no decor
+  '  const a = caveVoidRim(lobes, 60); if (!a || a.top >= a.bot) return false;' +
+  '  if (Math.abs(a.top - 80) > 1) return false;' +                  // 100 - 20 at the centre of lobe 1
+  '  const b = caveVoidRim(lobes, 90); if (!b) return false;' +      // covered only by lobe 2
+  '  return b.top > a.top; })()'));                                  // the smaller lobe opens lower
 check('Main Cave has more fixed torch slots than Deep Cave without screen-seeded placement', () => bio.run(
   '(() => { let d=0,m=0;for(let r=-100;r<100;r++){if(caveTorchPresent(r,0))d++;if(caveTorchPresent(r,1))m++;}return m>d*1.35;})()'));
 // the cave walls/backdrop/ground must be WORLD-anchored like the floor: a known camera shift
@@ -3142,7 +3161,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v140', () => /const CACHE = 'skystack-v140'/.test(sw));
+check('sw.js cache bumped to v141', () => /const CACHE = 'skystack-v141'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
