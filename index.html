@@ -219,6 +219,15 @@ function txt(text, x, y, sc, color, align) {
     px += cw;
   }
 }
+// v127: draw at the largest scale that FITS maxW, stepping down instead of spilling out of the card.
+// Long biome names and headlines used to overflow their frame at narrow widths.
+function txtFit(text, x, y, sc, color, align, maxW) {
+  const t = String(text).toUpperCase();
+  let use = sc;
+  while (use > 1 && t.length * 6 * use - use > maxW) use--;
+  txt(t, x, y, use, color, align);
+  return use;
+}
 
 // ---------- audio ----------
 const MUSIC_OUTPUT_LEVEL = 1.05; // Global +3.3 dB lift over the old 0.72 mix; leaves SFX/master headroom intact.
@@ -4806,10 +4815,10 @@ function renderHome() {
   txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, chapterY, 1, 'rgba(255,246,232,0.55)', 'left');
   txt((nl+1)+' / '+TIERS.length,hc.x+hc.w-8,chapterY,1,nt.c,'right');
   if (conquered) {
-    txt('SKY CONQUERED!', W/2, nameY, 2, VISUAL_SYSTEM.palette.gold, 'center');
+    txtFit('SKY CONQUERED!', W/2, nameY, 2, VISUAL_SYSTEM.palette.gold, 'center', hc.w - 16);
     txt('REPLAY THE JOURNEY', W/2, goalY, 1, 'rgba(255,246,232,0.6)', 'center');
   } else {
-    txt(nt.name, W/2, nameY, 2, nt.c, 'center');
+    txtFit(nt.name, W/2, nameY, 2, nt.c, 'center', hc.w - 16);
     const starSum = shownStars().reduce((a,b)=>a+(b||0),0);
     txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, goalY, 1, 'rgba(255,246,232,0.62)', 'center');
   }

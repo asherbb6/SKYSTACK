@@ -2705,6 +2705,26 @@ check('v126 objective text fits its card across a swept viewport range', () =>
     '   if (objectiveLabel(s).length*6 > Math.min(W-24,240) - 16) return false; } }' +
     ' W=320; H=480; relayout(); return true; })()'));
 
+// ---------- v127: text adapts instead of spilling ----------
+check('v127 txtFit steps the scale down until the text fits the width it is given', () =>
+  fresh.run('(() => { const wide = txtFit("SKY CONQUERED!", 100, 10, 2, "#fff", "center", 400);' +
+    ' const tight = txtFit("SKY CONQUERED!", 100, 10, 2, "#fff", "center", 90);' +
+    ' return wide === 2 && tight === 1; })()'));
+check('v127 no hero-card text spills its frame at any fixture or progress state', () => {
+  const g = makeGame();
+  const bad = g.run('(() => { const bad=[]; const t0=txt; var PANEL=null;' +
+    ' txt = function(text,x,y,sc,color,align){ if (PANEL) { const s=String(text).toUpperCase(),' +
+    '   wpx=s.length*6*sc-sc; let left=x;' +
+    '   if (align==="center") left=x-wpx/2; else if (align==="right") left=x-wpx;' +
+    '   if (y>=PANEL.y-2 && y<=PANEL.y+PANEL.h && (left<PANEL.x-1 || left+wpx>PANEL.x+PANEL.w+1))' +
+    '     bad.push(W+"x"+H+" "+s); } return t0(text,x,y,sc,color,align); };' +
+    ' for (const [w,h] of [[180,390],[200,300],[320,480],[430,932],[520,400]]) {' +
+    '   W=w; H=h; relayout(); state="home"; skyMap=false; modePicker=false; diffPicker=false;' +
+    '   for (const p of [0,4,TIERS.length]) { prog=p; PANEL=HERO_CARD; renderHome(); } }' +
+    ' PANEL=null; txt=t0; W=320; H=480; relayout(); return bad.join("|"); })()');
+  return bad === '' ? true : bad;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
@@ -2730,7 +2750,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v126', () => /const CACHE = 'skystack-v126'/.test(sw));
+check('sw.js cache bumped to v127', () => /const CACHE = 'skystack-v127'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
