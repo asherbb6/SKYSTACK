@@ -4182,6 +4182,31 @@ function drawCaveForeground(cy, ph) {
       for (let t = 0; t < rl; t++) { const rx = Math.round(rx0 + dir * t * 0.15 + sway * t / rl); ctx.fillRect(rx, lipY + t, 2, 1);
         if ((t & 7) === 3) { ctx.fillStyle = '#31471F'; ctx.fillRect(rx - 1, lipY + t, 3, 1); ctx.fillStyle = '#2A1C0E'; } }
     }
+    // v145: the near FRONT LIP of the surface — grass + a dirt overhang reaching IN over each hole
+    // edge, drawn in the foreground so the tower emerges from BEHIND it (Asher: "blocks end up under
+    // the very surface floor... slightly harder to land a perfect and visually more realistic").
+    // fgAlpha keeps it translucent over the LIVE tower so the landing stays readable — never a wall.
+    const surfY = Math.round(yCeil), over = 14;
+    for (const side2 of [0, 1]) {
+      const edge = side2 ? cxR : cxL;
+      const a = fgAlpha(side2 ? edge - over : edge, surfY - 6, side2 ? edge : edge + over, surfY + 12);
+      ctx.globalAlpha = a;
+      for (let xx = 0; xx < over; xx++) {
+        const px = side2 ? edge - xx : edge + xx, th = Math.round(10 * (1 - xx/over)) + 3;      // dirt underside, thick at the edge, tapering inward
+        ctx.fillStyle = '#4A3320'; ctx.fillRect(px, surfY, 1, th);
+        ctx.fillStyle = '#3A2818'; ctx.fillRect(px, surfY + th - 2, 1, 2);                      // shaded root band
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(px, surfY + th - 1, 1, 1);              // AO at the overhang tip
+        ctx.fillStyle = '#3E8A32'; ctx.fillRect(px, surfY - 3, 1, 3);                            // grass cap
+        if ((xx & 1) === 0) { const bh2 = 2 + (bhash(px*7) > .5 ? 1 : 0); ctx.fillStyle = '#4EA344'; ctx.fillRect(px, surfY - 3 - bh2, 1, bh2);
+          ctx.fillStyle = '#8EE87A'; ctx.fillRect(px, surfY - 3 - bh2, 1, 1); }                 // blades + sunlit tips
+      }
+      const tipX = side2 ? edge - over : edge + over, dl = 8 + Math.round(bhash(edge)*10);       // a lush vine trailing off the overhang tip
+      const vsway = reduceMotion ? 0 : Math.sin(ph*0.03 + edge) * 2;
+      for (let t = 0; t < dl; t++) { const vx = Math.round(tipX + vsway * t / dl);
+        ctx.fillStyle = '#2E7D32'; ctx.fillRect(vx, surfY + 8 + t, 1, 1);
+        ctx.fillStyle = '#54C24A'; ctx.fillRect(vx, surfY + 8 + t, 1, 1);
+        if (t % 4 === 2) { ctx.fillStyle = '#7BE06A'; ctx.fillRect(vx - 1, surfY + 8 + t, 3, 1); } }
+    }
     ctx.globalAlpha = 1;
   }
   ctx.globalAlpha = 1;
@@ -4206,29 +4231,43 @@ function drawCaveCeiling(ph, ceilY) {
   // v143.1: lush volumetric SUN SHAFTS pouring through the mouth (Asher: "insanely pretty light
   // shafts/sun shines" — Tangled). Warm beams fan out and widen with depth, drawn ADDITIVELY so
   // where they cross they bloom; a soft pool of light gathers just inside the opening; motes drift.
-  const reach = Math.min(H - ceilY, 320);
+  const reach = Math.min(H - ceilY, 360);
   if (reach > 0) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const bloom = ctx.createRadialGradient(holeMid, ceilY + 8, 4, holeMid, ceilY + 8, shaftW * 1.1);
-    bloom.addColorStop(0, 'rgba(255,242,205,0.30)'); bloom.addColorStop(1, 'rgba(255,232,180,0)');
-    ctx.globalAlpha = 1; ctx.fillStyle = bloom; ctx.fillRect(0, ceilY, W, reach);              // the pool of daylight at the hole
-    const beams = reduceMotion ? 4 : 6;
+    // v145: two blooms — a bright pool at the mouth, plus a big soft warm column that carries the
+    // golden glow deep down the shaft (the inviting Tangled grade in Asher's ChatGPT mockup).
+    const col = ctx.createLinearGradient(0, ceilY, 0, ceilY + reach);
+    col.addColorStop(0, 'rgba(255,226,160,0.20)'); col.addColorStop(0.5, 'rgba(255,214,140,0.10)'); col.addColorStop(1, 'rgba(255,205,130,0)');
+    ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.fillRect(cxL - 10, ceilY, (cxR - cxL) + 20, reach);
+    const bloom = ctx.createRadialGradient(holeMid, ceilY + 8, 4, holeMid, ceilY + 8, shaftW * 1.2);
+    bloom.addColorStop(0, 'rgba(255,244,208,0.34)'); bloom.addColorStop(1, 'rgba(255,232,180,0)');
+    ctx.fillStyle = bloom; ctx.fillRect(0, ceilY, W, reach);                                   // the pool of daylight at the hole
+    const beams = reduceMotion ? 5 : 7;
     for (let b = 0; b < beams; b++) {
-      const bw = shaftW * (0.13 + (b % 3) * 0.07), bx0 = holeMid + (b - (beams - 1) / 2) * shaftW * 0.19;
+      const bw = shaftW * (0.12 + (b % 3) * 0.07), bx0 = holeMid + (b - (beams - 1) / 2) * shaftW * 0.17;
       const slant = (b - (beams - 1) / 2) * 0.15, flick = reduceMotion ? 1 : (0.78 + 0.22 * Math.sin(ph*0.02 + b*1.7));
       for (let yy = ceilY; yy < ceilY + reach; yy += 4) {
-        const t = (yy - ceilY) / reach, cx0 = bx0 + (yy - ceilY) * slant, wNow = bw * (1 + t * 1.5);
-        ctx.globalAlpha = 0.13 * (1 - t) * (1 - t) * flick;                                    // quadratic falloff = a soft taper into the dark
-        ctx.fillStyle = 'rgba(255,236,188,1)';
+        const t = (yy - ceilY) / reach, cx0 = bx0 + (yy - ceilY) * slant, wNow = bw * (1 + t * 1.6);
+        ctx.globalAlpha = 0.14 * (1 - t) * (1 - t) * flick;                                    // quadratic falloff = a soft taper into the dark
+        ctx.fillStyle = 'rgba(255,232,175,1)';                                                 // warm gold beam
         ctx.fillRect(Math.round(cx0 - wNow/2), yy, Math.round(wNow), 4);
       }
     }
+    // v145: golden POLLEN drifting in the light — the glowing specks all through the shaft in the
+    // reference. Additive so they twinkle; each floats on its own slow 2-D loop, brighter up top.
+    if (!reduceMotion) {
+      for (let k = 0; k < 26; k++) {
+        const span = reach - 16, dy2 = ceilY + 8 + ((ph*(0.4 + (k%3)*0.14) + k*53) % span);
+        const drift = Math.sin(ph*0.012 + k*1.7) * shaftW*0.4 + Math.sin(ph*0.05 + k)*3;
+        const dx2 = holeMid + drift * (0.5 + (dy2 - ceilY)/reach);                             // fan outward as they fall
+        const tw = 0.5 + 0.5 * Math.sin(ph*0.09 + k*2.3), depth = 1 - (dy2 - ceilY)/reach;
+        ctx.globalAlpha = (0.28 + 0.4*tw) * depth * depth;
+        ctx.fillStyle = k % 4 === 0 ? 'rgba(255,250,210,1)' : 'rgba(255,224,150,1)';
+        const s2 = k % 5 === 0 ? 2 : 1; ctx.fillRect(Math.round(dx2), Math.round(dy2), s2, s2);
+      }
+    }
     ctx.restore();
-    ctx.fillStyle = 'rgba(255,244,210,0.9)';                                                   // dust sparkling in the light, more of it
-    for (let k = 0; k < 12; k++) { const dy2 = ceilY + 10 + ((ph*0.7 + k*29) % (reach - 20));
-      if (dy2 < H) { ctx.globalAlpha = (0.25 + 0.25 * Math.sin(ph*0.1 + k)) * (1 - (dy2 - ceilY)/reach);
-        ctx.fillRect(Math.round(holeMid + Math.sin(ph*0.015 + k*2) * shaftW*0.34), Math.round(dy2), 1, 1); } }
   }
   ctx.globalAlpha = 1;
   for (let x = 0; x < W; x += 6) {                                                            // irregular textured rock rim
@@ -4257,14 +4296,17 @@ function drawCaveCeiling(ph, ceilY) {
     ctx.fillStyle = '#31471F'; ctx.fillRect(ex + dir*5, ceilY - 9, 1, 9);
     ctx.fillStyle = '#456826'; ctx.fillRect(ex + dir*3, ceilY - 8, 3, 1); ctx.fillRect(ex + dir*5, ceilY - 6, dir*3, 1);
   }
-  for (let k = 0; k < 4; k++) {                                                               // dangling leafy vines just inside the mouth
-    const vx0 = cxL + 6 + Math.round(bhash(k*13 + 5) * (shaftW - 12)), vl = 16 + Math.round(bhash(k*7 + 2) * 30);
+  // v145: lush leafy vines draping deep into the mouth — more of them (4->8), longer, and in the
+  // vibrant emerald/lime palette of the wall vines, to match Asher's ChatGPT reference.
+  for (let k = 0; k < 8; k++) {
+    const vx0 = cxL + 4 + Math.round(bhash(k*13 + 5) * (shaftW - 8)), vl = 24 + Math.round(bhash(k*7 + 2) * 46);
     const sway = reduceMotion ? 0 : Math.sin(ph*0.025 + k*1.8) * 3;
-    ctx.fillStyle = '#2C5C22';
     for (let t = 0; t < vl; t++) { const vx = Math.round(vx0 + sway * t / vl);
-      ctx.fillRect(vx, ceilY + t, 1, 1);
-      if ((t & 7) === 3) { ctx.fillStyle = '#3E8A32'; ctx.fillRect(vx - 1, ceilY + t, 3, 1); ctx.fillRect(vx, ceilY + t - 1, 1, 1); ctx.fillStyle = '#2C5C22'; } }
-    ctx.fillStyle = '#6ECB54'; ctx.fillRect(Math.round(vx0 + sway), ceilY + vl, 1, 1);        // bright tip leaf
+      ctx.fillStyle = '#2E7D32'; ctx.fillRect(vx, ceilY + t, 1, 1);
+      ctx.fillStyle = '#54C24A'; ctx.fillRect(vx, ceilY + t, 1, 1);                            // vibrant emerald core
+      if ((t % 5) === 3) { ctx.fillStyle = '#7BE06A'; ctx.fillRect(vx - 1, ceilY + t, 3, 1); ctx.fillRect(vx, ceilY + t - 1, 1, 1);
+        ctx.fillStyle = '#A8F57E'; ctx.fillRect(vx + (t & 1 ? 1 : -1), ceilY + t, 1, 1); } }   // lime leaf pair + sunlit fleck
+    ctx.fillStyle = '#C6FF9E'; ctx.fillRect(Math.round(vx0 + sway), ceilY + vl, 1, 1);         // bright growing tip
   }
   for (let k = 0; k < 7; k++) { const rx = Math.round(bhash(k*23) * W); if (rx > cxL - 6 && rx < cxR + 6) continue;   // fine roots outside the hole
     ctx.globalAlpha = 0.6; ctx.fillStyle = '#3A2A18'; ctx.fillRect(rx, ceilY + 2, 1, 6 + Math.round(bhash(k*5) * 10)); }
