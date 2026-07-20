@@ -3118,7 +3118,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v135', () => /const CACHE = 'skystack-v135'/.test(sw));
+check('sw.js cache bumped to v136', () => /const CACHE = 'skystack-v136'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

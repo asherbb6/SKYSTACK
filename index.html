@@ -3667,7 +3667,7 @@ function makeRockTex(seedOff, pal) {
     };
     for (let k = 0; k < N; k++) {
       const px = bhash(k*97 + 1 + seedOff) * CAVETEX_W, py0 = bhash(k*193 + 47 + seedOff) * CAVETEX_H;
-      if (patchAt(px, py0) < 0.32 && bhash(k*57 + seedOff) < 0.72) continue;                    // sparse pocket: most clods skipped, base earth shows
+      if (patchAt(px, py0) < 0.36 && bhash(k*57 + seedOff) < 0.72) continue;                    // sparse pocket: most clods skipped, base earth shows
       const rare = bhash(k*271 + seedOff) > 0.965 ? 1.8 : 0;
       const r = 1 + bhash(k*43 + 5 + seedOff) * (pal.sq ? 3.4 : 2.7) + rare;
       const t = bhash(k*11 + seedOff), base = t > 0.6 ? pal.tones[2] : t > 0.3 ? pal.tones[1] : pal.tones[0];
@@ -3681,11 +3681,12 @@ function makeRockTex(seedOff, pal) {
     // v135: sparse LARGE boulders — a second spatial scale on top of the fine clods. Each is a
     // multi-disc mass with its own shadow, 3-tone shading, top-left light and a fracture line,
     // so big rocks sit IN the fine rubble instead of everything being the same size.
-    for (let k = 0; k < 13; k++) {
+    for (let k = 0; k < 9; k++) {                                                              // v136: fewer boulders — landmarks in the rubble, not more clutter
       const px = bhash(k*331 + 29 + seedOff) * CAVETEX_W, py0 = bhash(k*401 + 61 + seedOff) * CAVETEX_H;
       const r = 4.5 + bhash(k*211 + seedOff) * 3.5, t = bhash(k*19 + seedOff);
       const body = t > 0.5 ? pal.tones[1] : pal.tones[0];
       for (const py of wrapY(py0)) {
+        disc(px, py, r + 2.5, pal.base);                                                       // v136: clearing halo — the boulder sits IN packed earth, not atop the clods
         disc(px + 2, py + 2, r, pal.shadow);                                                   // deeper offset shadow: reads as a heavier mass
         disc(px, py, r, body);
         disc(px - r*.2, py + r*.25, r*.6, pal.tones[0]);                                       // under-shade
@@ -3809,6 +3810,8 @@ function drawCaveLedgeProp(x, y, row, side, span, ph) {
   const kind = caveDetailKindForZone(row, side), dir = side ? 1 : -1;
   x = Math.round(x); y = Math.round(y); span = Math.max(3, span|0);
   ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x - 3, y, Math.min(7, span + 2), 1);         // v136: every prop casts a seated shadow on its ledge
+  ctx.fillStyle = '#2A2018'; ctx.fillRect(x - 2, y - 1, 1, 1); ctx.fillRect(x + 2, y - 1, 1, 1);   // soil crumbs at the base
   if (kind === 0) {                                                                            // clustered surface pebbles
     for (let k = 0; k < Math.min(3, span >> 1); k++) { const px = x + dir*k*3, pr = 1 + (k & 1);
       ctx.fillStyle = k & 1 ? '#575148' : '#3E3B35'; ctx.fillRect(px - pr, y - pr, pr*2 + 1, pr);
@@ -3849,10 +3852,11 @@ function drawCaveBackdrop(top, cy, ph) {
       blitCaveTex(0, by, W, bh, Math.round(gy - y) + (by - y), caveTexBack);                    // one continuous rear geology: no horizontal material swap seams
       ctx.globalAlpha = 0.10 + main*0.10; ctx.fillStyle = '#8A5732'; ctx.fillRect(0, by, W, bh); // warmer earth gradually enters Main Cave
       ctx.globalAlpha = (1-main)*0.16; ctx.fillStyle = '#090708'; ctx.fillRect(0, by, W, bh);     // Deep Cave retains charcoal depth without losing material detail
-      for (let cx = 0; cx < W; cx += 64) {                                                       // v135: broad tonal patches break the uniform rear pebble field
-        const sh = bhash(Math.floor(brow/8)*37 + Math.floor(cx/64)*71 + 13) - .5;
+      for (let cx = 0; cx < W; cx += 64) {                                                       // v135 tonal patches; v136: wandering sample + alpha jitter = no straight patch edges
+        const bwnd = Math.round((bhash(Math.floor(brow/2)*53 + 9) - .5) * 22);
+        const sh = bhash(Math.floor(brow/8)*37 + Math.floor((cx + bwnd)/64)*71 + 13) - .5;
         if (Math.abs(sh) > .14) {
-          ctx.globalAlpha = Math.min(.09, (Math.abs(sh) - .14) * .25);
+          ctx.globalAlpha = (Math.min(.09, (Math.abs(sh) - .14) * .25)) * (0.7 + 0.6 * bhash(brow*11 + cx));
           ctx.fillStyle = sh > 0 ? '#A8825C' : '#000';
           ctx.fillRect(cx, by, Math.min(64, W - cx), bh);
         }
@@ -3898,6 +3902,47 @@ function drawCaveBackdrop(top, cy, ph) {
     if (bhash(row*11) > 0.55 && (reduceMotion || Math.sin(ph*0.05 + row*1.7) > 0.15)) {        // eyes blink in the dark
       ctx.globalAlpha = 0.85; ctx.fillStyle = row & 1 ? '#E0863A' : '#D2A83C'; ctx.fillRect(hx - 3, hy, 2, 1); ctx.fillRect(hx + 2, hy, 2, 1); }
   }
+  // v136: THE second hole — one landmark collapsed CHAMBER in the deep-to-main transition,
+  // world-anchored and deterministic, clearly bigger and stranger than the small tunnel pockets:
+  // an elongated multi-lobe void with a toothed rim, a deeper black throat, a rubble spill along
+  // its floor, and a pair of amber eyes far inside.
+  {
+    const hy2 = gy - Math.round(14.5 * BH), hx2 = Math.round(W * 0.34), hr2 = 26;
+    if (hy2 + hr2 > top && hy2 - hr2 < H) {
+      ctx.globalAlpha = 0.72;                                                                  // soft halo lobes
+      for (let l = 0; l < 5; l++) {
+        const lx = hx2 + Math.round((bhash(l*37 + 3) - .5) * hr2 * 1.9);
+        const ly = hy2 + Math.round((bhash(l*53 + 11) - .5) * hr2 * 0.7);
+        pixDisc(lx, ly, Math.round(hr2 * (0.5 + bhash(l*17 + 7) * 0.4)) + 4, 'rgba(8,5,4,0.7)');
+      }
+      ctx.globalAlpha = 0.96;                                                                  // the void itself
+      for (let l = 0; l < 5; l++) {
+        const lx = hx2 + Math.round((bhash(l*37 + 3) - .5) * hr2 * 1.9);
+        const ly = hy2 + Math.round((bhash(l*53 + 11) - .5) * hr2 * 0.7);
+        pixDisc(lx, ly, Math.round(hr2 * (0.5 + bhash(l*17 + 7) * 0.4)), '#050302');
+      }
+      pixDisc(hx2 + 4, hy2 + 2, Math.round(hr2 * 0.55), '#000000');                            // deeper black throat
+      ctx.globalAlpha = 0.5;                                                                   // lit crown along the upper edge — the collapse catches what little light there is
+      pixDisc(hx2 - 8, hy2 - hr2 + 3, 5, '#57402C'); pixDisc(hx2 + 6, hy2 - hr2 + 1, 6, '#57402C');
+      pixDisc(hx2 + 18, hy2 - hr2 + 6, 4, '#57402C'); pixDisc(hx2 - 18, hy2 - hr2 + 7, 4, '#57402C');
+      ctx.globalAlpha = 0.85; ctx.fillStyle = '#20160F';                                       // toothed rim above and below
+      for (let sx = hx2 - hr2 - 6; sx < hx2 + hr2 + 6; sx += 4 + (Math.abs(sx) % 3)) {
+        const jt = Math.round(bhash(sx*7 + 5) * 8);
+        ctx.fillRect(sx, hy2 - hr2 + Math.round(bhash(sx*3) * 6) - 2, 2, jt);
+        ctx.fillRect(sx + 1, hy2 + hr2 - 8 - Math.round(bhash(sx*11) * 5), 2, Math.round(bhash(sx*13) * 7));
+      }
+      for (let rb = 0; rb < 6; rb++) {                                                          // rubble spilling from the floor lip
+        const rx = hx2 - hr2 + 6 + Math.round(bhash(rb*23 + 1) * hr2 * 1.7);
+        const ry = hy2 + hr2 - 4 + Math.round(bhash(rb*31 + 9) * 6);
+        ctx.globalAlpha = 0.8; pixDisc(rx, ry, 2 + Math.round(bhash(rb*13) * 3), rb & 1 ? '#32251B' : '#1B1512');
+        ctx.globalAlpha = 0.5; pixDisc(rx - 1, ry - 1, 1 + Math.round(bhash(rb*13) * 2), '#57402C');
+      }
+      if (reduceMotion || Math.sin(ph*0.04 + 2.6) > -0.2) {                                     // something lives in there
+        ctx.globalAlpha = 0.9; ctx.fillStyle = '#E0863A';
+        ctx.fillRect(hx2 + 1, hy2 + 3, 2, 1); ctx.fillRect(hx2 + 6, hy2 + 3, 2, 1);
+      }
+    }
+  }
   ctx.globalAlpha = 1;
 }
 // side walls framing the play lane: chunky earthy rock with a jagged inner edge, cracks + moss,
@@ -3931,12 +3976,19 @@ function drawCaveWalls(top, cy, ph) {
           const fx1 = Math.min(px + Math.round(j1*3), x0 + w - 1), fw1 = Math.min(fwd, x0 + w - fx1);
           if (bw1 > 0) blitCaveTex(bx1, by, bw1, bh, row*4 + side*97 + (by - y) + 31, caveMatTex(pmat));
           if (fw1 > 0) blitCaveTex(fx1, by, fw1, bh, row*4 + side*97 + (by - y) + 67, caveMatTex(prevMat));
+          // v136: pixel-level interlock — tiny 2px stamps of each material scattered ACROSS the
+          // boundary, so the two geologies grow into each other instead of meeting in a cut
+          for (let sp = 0; sp < 3; sp++) {
+            const sxp = clamp(px + Math.round((bhash(row*19 + cx*7 + sp*29 + side) - .5) * 12), x0, x0 + w - 2);
+            blitCaveTex(sxp, by, 2, bh, row*4 + side*97 + (by - y) + 83 + sp*11, caveMatTex(sp & 1 ? pmat : prevMat));
+          }
         }
-        // v135: low-frequency light/dark patches over the stamps (~36px cells) — the wall gains
-        // large-scale tonal structure, so the repeated fine texture stops reading as wallpaper
-        const shade = bhash(Math.floor(row/9)*23 + Math.floor(px/CAVE_GEO_W)*61 + side*5 + 3) - .5;
+        // v135 tonal patches, v136: the patch boundary WANDERS per row (wavy vertical edges) and
+        // the band alpha jitters (dithered horizontal edges) — no straight patch rectangles
+        const wnd = Math.round((bhash(Math.floor(row/3)*41 + side*9 + 1) - .5) * 12);
+        const shade = bhash(Math.floor(row/9)*23 + Math.floor((px + wnd)/CAVE_GEO_W)*61 + side*5 + 3) - .5;
         if (Math.abs(shade) > .12) {
-          ctx.globalAlpha = Math.min(.11, (Math.abs(shade) - .12) * .3);
+          ctx.globalAlpha = Math.min(.11, (Math.abs(shade) - .12) * .3) * (0.7 + 0.6 * bhash(row*7 + cx));
           ctx.fillStyle = shade > 0 ? '#C9A57A' : '#000';
           ctx.fillRect(px, by, pw, bh); ctx.globalAlpha = 1;
         }
@@ -3959,10 +4011,21 @@ function drawCaveWalls(top, cy, ph) {
         const fx = side ? Math.max(x0, inner - 4 - Math.round(bhash(row*37)*w*.35)) : Math.min(inner - 1, 3 + Math.round(bhash(row*37)*w*.35));
         ctx.fillRect(fx, by + (row & 1), 2 + (row % 3), 1); ctx.globalAlpha = 1;
       }
-      if ((mat === 1 || mat === 3) && bhash(row*47 + side*71) > 0.965) {                        // restrained world-fixed ore seam
-        const ox = side ? inner - 5 : inner + 2, ore = bhash(row*61 + side) > 0.55 ? '#9B7440' : '#7A6F62';
-        ctx.fillStyle = '#24211D'; ctx.fillRect(ox - 1, by, 5, bh);
-        ctx.fillStyle = ore; ctx.fillRect(ox, by, 2, bh); ctx.fillRect(ox + (side ? -1 : 2), by + (row & 1), 1, Math.max(1, bh - 1));
+      // v136: ore is a WANDERING VEIN, not a straight 5px box — a smooth field makes connected
+      // runs (~6-18 rows) whose x drifts and whose halo swells/thins per band, ending in stray specks
+      const vseg = Math.floor(row / 6), vfr = row / 6 - vseg;
+      const v0 = bhash(vseg*47 + side*71), v1 = bhash((vseg + 1)*47 + side*71);
+      const vein = v0 + (v1 - v0) * (vfr*vfr*(3 - 2*vfr));
+      if ((mat === 1 || mat === 3) && vein > 0.90) {
+        const d0 = bhash(vseg*91 + side*7 + 5), d1 = bhash((vseg + 1)*91 + side*7 + 5);
+        const drift = Math.round(((d0 + (d1 - d0) * vfr) - .5) * 8);
+        const ox = (side ? inner - 5 : inner + 2) + drift;
+        const ore = bhash(vseg*61 + side) > 0.55 ? '#9B7440' : '#7A6F62';
+        const hw = 3 + Math.round(bhash(row*17 + side) * 2), strength = clamp((vein - 0.90) / 0.06, 0, 1);
+        ctx.globalAlpha = .5 + strength*.5; ctx.fillStyle = '#24211D'; ctx.fillRect(ox - 1, by, hw, bh);
+        ctx.globalAlpha = 1; ctx.fillStyle = ore;
+        ctx.fillRect(ox + (row % 3 === 2 ? 1 : 0), by, 1 + (bhash(row*29 + side) > .5 ? 1 : 0), bh);
+        if (bhash(row*83 + side) > 0.62) ctx.fillRect(ox + (side ? -2 : hw), by + (row & 1), 1, 1);   // stray nugget off the vein
       }
       if (prevW >= 0 && w < prevW - 3) {                                                       // overhang: teeth hang under the bulge
         const ledge = side ? W - prevW : prevW;
@@ -3989,7 +4052,10 @@ function drawCaveWalls(top, cy, ph) {
       if (my < top - 10 || my > H + 10) continue;
       if (r2 < mushroomCut) {                                                                           // mushrooms become a Main Cave signature
         const mx = side ? inx - 5 : inx + 2, bob = reduceMotion ? 0 : Math.round(Math.sin(ph*0.04 + row) * 0.8);
-        ctx.globalAlpha = 1; ctx.fillStyle = '#B8A47C'; ctx.fillRect(mx, my - 3 + bob, 1, 3);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(mx - 2, my, 5, 1);                             // v136: seated shadow — it stands ON the rock
+        ctx.fillStyle = '#2A2018'; ctx.fillRect(mx - 1, my - 1, 1, 1); ctx.fillRect(mx + 1, my - 1, 1, 1);   // soil crumbs gripping the stem
+        ctx.fillStyle = '#B8A47C'; ctx.fillRect(mx, my - 3 + bob, 1, 3);
         ctx.fillStyle = r2 < 0.15 ? '#8A4A38' : '#6E4A2E'; ctx.fillRect(mx - 1, my - 5 + bob, 3, 2);
         ctx.fillStyle = 'rgba(255,220,180,0.35)'; ctx.fillRect(mx, my - 5 + bob, 1, 1);
         if (r2 < 0.1) { ctx.fillStyle = '#6E4A2E'; ctx.fillRect(mx + 3, my - 3, 2, 1); ctx.fillStyle = '#B8A47C'; ctx.fillRect(mx + 3, my - 2, 1, 2); }
@@ -4002,12 +4068,22 @@ function drawCaveWalls(top, cy, ph) {
         if (leafy) { ctx.fillStyle = '#6ECB54'; ctx.fillRect(Math.round(rx + sway), my + rl, 1, 1); } // bright tip
         ctx.fillStyle = leafy ? '#24421A' : '#2A1C0E'; ctx.fillRect(rx, my, 1, 3);                     // anchor at the wall
       } else if (r2 < .72 && (mat === 1 || mat === 3)) {                                               // stalactites only attach to stone/gravel rock
-        const sx0 = side ? inx - 1 : inx - 7;
+        // v136: they GROW from the rock now — jittered spacing off the 3px grid, a wide embedded
+        // root with an AO pocket, and a 2-step taper instead of a straight column hung off a line
+        const sx0 = side ? inx - 1 : inx - 8;
         ctx.globalAlpha = 1;
-        for (let t = 0; t < 3; t++) { const tl = 4 + Math.round(bhash(row*7 + t*3) * 9), tx = sx0 + t*3;
-          ctx.fillStyle = '#2E2216'; ctx.fillRect(tx, my, 2, tl);
-          ctx.fillStyle = '#1A120C'; ctx.fillRect(tx + 1, my, 1, tl);
-          ctx.fillStyle = 'rgba(122,96,62,0.5)'; ctx.fillRect(tx, my, 2, 1); }
+        for (let t = 0; t < 3; t++) {
+          const tl = 4 + Math.round(bhash(row*7 + t*3) * 9);
+          const tx = sx0 + t*3 + Math.round((bhash(row*13 + t*7) - .5) * 2);
+          const ty2 = my - 1 + ((row + t) & 1);
+          ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(tx - 2, ty2 + 2, 5, 1);                    // AO pocket under the root
+          ctx.fillStyle = '#2E2216'; ctx.fillRect(tx - 1, ty2, 4, 2);                                 // embedded root, wider than the shaft
+          const up2 = Math.max(2, Math.round(tl * .6));
+          ctx.fillRect(tx, ty2 + 2, 2, up2);                                                          // upper shaft
+          ctx.fillRect(tx + (t & 1), ty2 + 2 + up2, 1, Math.max(1, tl - up2));                        // tapered tip
+          ctx.fillStyle = '#1A120C'; ctx.fillRect(tx + 1, ty2 + 2, 1, up2);                           // core shade
+          ctx.fillStyle = 'rgba(122,96,62,0.5)'; ctx.fillRect(tx - 1, ty2, 4, 1);                     // lit lip where the rock grips it
+        }
       } else if (r2 < .80 + main*.16) {                                                                 // supports become common in the developed Main Cave
         const px2 = side ? inx - 5 : inx + 1, pl = 22 + Math.round(bhash(row*3) * 12);
         ctx.globalAlpha = 1;
@@ -4017,6 +4093,9 @@ function drawCaveWalls(top, cy, ph) {
         ctx.fillStyle = '#2A1808';                                                                     // lashing X
         for (let t = 0; t < 6; t++) { ctx.fillRect(px2 - 1 + t, my + 2 + t, 1, 1); ctx.fillRect(px2 + 4 - t, my + 2 + t, 1, 1); }
         ctx.fillStyle = '#3A2C1C'; ctx.fillRect(px2 - 2, my - 5, 8, 2);                                // cap beam
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(px2 - 2, my - 6, 8, 1);                        // v136: AO where the beam seats into the rock
+        ctx.fillStyle = '#241A10'; ctx.fillRect(px2 - 3, my - 5, 1, 2); ctx.fillRect(px2 + 6, my - 5, 1, 2);   // rock grips the beam ends
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(px2 - 1, my - 4 + pl, 6, 1);                  // footing shadow where the post lands
       } else {                                                                                         // corner cobweb + occasional hanging spider
         const cx2 = side ? W - 1 : 0, dir = side ? -1 : 1;
         ctx.globalAlpha = reduceMotion ? 0.25 : 0.16 + 0.1 * Math.sin(ph*0.04 + row);
@@ -4068,6 +4147,8 @@ function drawCaveTorchLight(top, cy, ph) {
     rg.addColorStop(0.45, 'rgba(255,142,48,' + ((.17 + main*.07) * fl).toFixed(3) + ')');
     rg.addColorStop(1, 'rgba(255,130,40,0)');
     ctx.globalAlpha = 1; ctx.fillStyle = rg; ctx.fillRect(tx - lightR, ty - lightR - 4, lightR*2, lightR*2);
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(tx - dir*5 - 1, ty + 5, 3, 3);             // v136: AO pocket where the bracket enters the rock
+    ctx.fillStyle = '#3E3D38'; ctx.fillRect(tx - dir*5, ty + 5, 2, 3);                         // iron mounting plate seated into the wall
     for (let t = 0; t < 7; t++) {                                                              // angled wooden handle out of the wall
       ctx.fillStyle = '#5A3A1C'; ctx.fillRect(tx - dir * Math.round(t * 0.7), ty + t, 2, 1);
       ctx.fillStyle = '#33200E'; ctx.fillRect(tx - dir * Math.round(t * 0.7) + 1, ty + t, 1, 1);
@@ -4195,8 +4276,15 @@ function drawCaveCeiling(ph, ceilY) {
     blitCaveTex(x, ceilY - 3, 6, hang + 3, x * 7 + 31, rimTex);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x, ceilY + hang - 2, 6, 2);               // AO under the rim
     const sl = Math.round(bhash(x*11) * 9);                                                   // dripstone tooth below
-    ctx.fillStyle = '#241A10';
-    for (let t = 0; t < sl; t++) { const ww = Math.max(1, Math.round((1 - t/sl) * 4)); ctx.fillRect(Math.round(x + 3 - ww/2), ceilY + hang + t, ww, 1); }
+    // v136: teeth leave the 6px column grid (per-tooth x jitter) and GROW out of the rim — an
+    // embedded 2px root with AO and a lit crumb replaces the bare straight-line attachment
+    if (sl > 1) {
+      const txj = x + 3 + Math.round((bhash(x*29 + 3) - .5) * 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(txj - 3, ceilY + hang, 6, 1);           // AO pocket in the rim underside
+      ctx.fillStyle = '#241A10'; ctx.fillRect(txj - 3, ceilY + hang - 2, 6, 2);               // root embedded up into the rim
+      for (let t = 0; t < sl; t++) { const ww = Math.max(1, Math.round((1 - t/sl) * 4)); ctx.fillRect(Math.round(txj - ww/2), ceilY + hang + t, ww, 1); }
+      ctx.fillStyle = 'rgba(122,96,62,0.35)'; ctx.fillRect(txj - 2, ceilY + hang - 2, 4, 1);  // lit crumb where the rock grips it
+    }
   }
   for (const ex of [cxL, cxR]) {                                                              // foliage spilling over the hole edges
     const dir2 = ex === cxL ? 1 : -1;
@@ -4363,18 +4451,40 @@ function rootedTree(t, seed) {
   ctx.globalAlpha = 1;
 }
 
-// a small flapping bird (multi-frame wing beat): body + head + two bent wings
+// a small flapping bird — v136: the bat's craft level. Wings beat in two SEGMENTS folding at a
+// joint, with feather fingers splaying on the down-beat; the body gains a lighter breast, a tail
+// notch, an amber beak and an eye glint. All detail is layered translucently OVER the caller's
+// colour, so distant dusk/night silhouettes keep their tone and still read at tiny sizes.
 function drawBird(x, y, s, ph, col) {
   x = Math.round(x); y = Math.round(y);
+  const tip = Math.round(Math.sin(ph) * 3 * s);                             // wingtip rise/fall
+  const jTip = Math.round(tip * 0.45);                                      // the joint leads the tip (folded beat)
+  const wl = Math.max(3, Math.round(5 * s)), bw = Math.max(2, Math.round(3 * s));
+  const bh2 = Math.max(1, Math.round(2 * s));
+  const inner = Math.max(2, Math.round(wl * 0.45)), outer = Math.max(2, wl - inner);
   ctx.fillStyle = col;
-  const tip = Math.round(Math.sin(ph) * 3 * s), wl = Math.max(3, Math.round(5 * s)), bw = Math.max(2, Math.round(3 * s));
-  ctx.fillRect(x - 1, y, bw, Math.max(1, Math.round(2 * s)));               // body
-  ctx.fillRect(x + bw - 1, y - 1, 1, 1);                                    // head
-  ctx.fillRect(x - wl, y - tip, wl, 1);                                     // left wing (shoulder)
-  ctx.fillRect(x - wl, Math.min(y, y - tip), 1, Math.max(1, Math.abs(tip)));// left wing tip
-  const rx = x + bw - 1;
-  ctx.fillRect(rx, y - tip, wl, 1);                                         // right wing
-  ctx.fillRect(rx + wl - 1, Math.min(y, y - tip), 1, Math.max(1, Math.abs(tip)));
+  ctx.fillRect(x - 1, y, bw, bh2);                                          // body
+  ctx.fillRect(x - 2, y, 1, 1);                                             // tail notch
+  ctx.fillRect(x + bw - 1, y - 1, Math.max(1, Math.round(s)), 1);           // head
+  for (const dir of [-1, 1]) {                                              // two wings folding at a joint
+    const sx = dir < 0 ? x - 1 : x + bw - 1;                                // shoulder
+    const ix = dir < 0 ? sx - inner : sx + 1;
+    const ox = dir < 0 ? sx - inner - outer : sx + 1 + inner;
+    ctx.fillRect(ix, y - jTip, inner, 1);                                   // inner panel
+    ctx.fillRect(ox, y - tip, outer, 1);                                    // outer panel
+    const jx = dir < 0 ? ix : ix + inner - 1;                               // fold connector at the joint
+    ctx.fillRect(jx, Math.min(y - jTip, y - tip), 1, Math.max(1, Math.abs(tip - jTip) + 1));
+    if (tip < -1) {                                                         // feather fingers splay on the down-beat
+      const fx = dir < 0 ? ox : ox + outer - 1;
+      ctx.fillRect(fx, y - tip + 1, 1, 1); ctx.fillRect(fx - dir, y - tip + 1, 1, 1);
+    }
+  }
+  if (s >= 0.7) {
+    ctx.fillStyle = 'rgba(255,246,232,0.28)'; ctx.fillRect(x - 1, y + bh2 - 1, bw - 1, 1);   // lighter breast
+    ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(x - 1, y, bw, 1);                        // back shade
+    ctx.fillStyle = '#E8A43A'; ctx.fillRect(x + bw - 1 + Math.max(1, Math.round(s)), y - 1, 1, 1);   // beak
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(x + bw - 1, y - 1, 1, 1);          // eye glint
+  }
 }
 // a little bat with angular flapping wings (cave life)
 function drawBat(x, y, ph) {
