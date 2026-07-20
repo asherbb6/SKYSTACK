@@ -2725,6 +2725,38 @@ check('v127 no hero-card text spills its frame at any fixture or progress state'
   return bad === '' ? true : bad;
 });
 
+// ---------- v128: per-biome landing mechanics ----------
+check('v128 only AURORA slides and only CLOUD NINE catches; every other biome is inert', () =>
+  fresh.run('(() => { for (let i=0;i<MATERIALS.length;i++) { const m = MATERIALS[i];' +
+    ' if (typeof m.slide !== "number" || typeof m.soft !== "number") return false;' +
+    ' if (i === 7) { if (m.slide !== 1 || m.soft !== 0) return false; }' +
+    ' else if (i === 4) { if (m.soft !== 1 || m.slide !== 0) return false; }' +
+    ' else if (m.slide !== 0 || m.soft !== 0) return false; }' +
+    ' return true; })()'));
+check('v128 CLOUD NINE keeps more of a cut block than the same landing elsewhere', () => {
+  const g = makeGame();
+  const kept = (ti) => g.run('(() => { mode="endless"; resetRun(); state="playing"; tier=' + ti + ';' +
+    ' wind=null; const top=blocks[blocks.length-1]; const n0=blocks.length;' +
+    ' faller={x:top.x+20, x0:top.x+20, y:towerTopY()-BH, w:top.w, vx:0,' +
+    '   vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+    ' slider=null; state="dropping"; land();' +
+    ' return blocks.length > n0 ? blocks[blocks.length-1].w : -1; })()');
+  const cloud = kept(4), stone = kept(0);
+  if (cloud <= 0 || stone <= 0) return 'landing did not place a block';
+  return cloud > stone ? true : 'cloud kept ' + cloud + ', stone kept ' + stone;
+});
+check('v128 the soft catch never REDUCES what you keep', () => {
+  const g = makeGame();
+  return g.run('(() => { const res = (ti, off) => { mode="endless"; resetRun(); state="playing";' +
+    '   tier=ti; wind=null; const top=blocks[blocks.length-1], n0=blocks.length;' +
+    '   faller={x:top.x+off, x0:top.x+off, y:towerTopY()-BH, w:top.w, vx:0,' +
+    '     vy:dropPhysicsFor(tier).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+    '   slider=null; state="dropping"; land();' +
+    '   return blocks.length>n0 ? blocks[blocks.length-1].w : -1; };' +
+    ' for (const off of [4, 10, 20, 40]) if (res(4,off) < res(0,off)) return "cloud kept less at off="+off;' +
+    ' return true; })()') === true;
+});
+
 check('v111 selected PLAY plate sits inside its card and clear of every text box', () => fresh.run(
   '(() => { const W0=W,H0=H; let bad=null; try { for (const w of [180,320,480]) { W=w; H=w<300?390:480; relayout();' +
   'skyMap=true; prog=5; selLevel=5; for(let i=0;i<11;i++)levelStars[i]=2; bestHeight=230;' +
