@@ -579,7 +579,7 @@ check('cave wall decor is torches, vines and creatures only', () => {
   // plain index checks, NOT one big regex — two bounded [\s\S] wildcards over a 6600-line file
   // backtrack for minutes (learned the hard way in v142)
   if (/drawCaveLedgeProp|caveDetailKind|corner cobweb|dripstone tooth|stalactites only attach|supports become common|mushrooms become a Main Cave/.test(src)) return false;
-  if (!src.includes('roots/vines emerge from dirt or clay seams')) return false;
+  if (!src.includes('the wall carries VINES')) return false;   // v143.1: the vine branch (comment reworded)
   if (!src.includes('function drawCaveTorchLight')) return false;
   return src.includes('beetles pace up/down the inner wall edge')                 // beetles drawn
     && src.includes('worms peek from the bottom dirt')                            // worms drawn
@@ -3173,7 +3173,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v143', () => /const CACHE = 'skystack-v143'/.test(sw));
+check('sw.js cache bumped to v144', () => /const CACHE = 'skystack-v144'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
