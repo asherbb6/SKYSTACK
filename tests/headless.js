@@ -618,8 +618,13 @@ check('cave wall/decor/torch/backdrop grids are ground-anchored (gy = GROUND_Y -
   /toff = \(\(\(gy - top\) % TP\)/.test(src) &&     // wall torches
   !/doff = \(\(cy % DP\)/.test(src) &&              // old screen-anchored decor grid removed
   !/toff = \(\(cy % TP\)/.test(src));               // old screen-anchored torch grid removed
-check('no embedded image backdrops left (cave is fully procedural)', () =>
-  !/caveBgImg|data:image\/jpeg;base64/.test(src));
+// v138 (Decision #80): the cave skins come from Asher's baked art sheet, loaded into the SAME
+// procedural atlas canvases behind a typeof Image guard — headless and pre-load frames must keep
+// the procedural fallback, and no giant base64 blob may be inlined into index.html.
+check('cave art sheet loads into the atlas canvases with a guarded procedural fallback', () =>
+  /typeof Image !== 'undefined'[\s\S]{0,700}art\/cave-mats\.png/.test(src) &&
+  /cavArt, i \* 216, 0, 216, 256, 0, 0, CAVETEX_W, CAVETEX_H/.test(src) &&
+  !/caveBgImg|data:image\/jpeg;base64|data:image\/png;base64,iVBOR/.test(src));
 // ---- foreground occlusion + layout guarantees ----
 check('foreground layer + fade helpers + tuning constants exist', () => bio.run(
   '["drawCaveForeground","fgAlpha","towerScreenBox","caveMouth","mouthShaftW"].every(f => eval("typeof "+f) === "function") ' +
@@ -3118,7 +3123,7 @@ check('v110 redesigned styles carry their markers', () =>
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v137', () => /const CACHE = 'skystack-v137'/.test(sw));
+check('sw.js cache bumped to v138', () => /const CACHE = 'skystack-v138'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&

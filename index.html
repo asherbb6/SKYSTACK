@@ -3738,6 +3738,22 @@ const caveTexGravel = makeRockTex(1370, { base:'#292724', tones:['#45423C','#595
 const caveTexBack = makeRockTex(1810, { base:'#211A15', tones:['#302820','#3C3329','#493E32'], hi:['#594B3D','#675748'],
   shadow:'#0D0907', crack:'#17110D', moss:10, grit:'rgba(126,101,75,0.42)', sq:1, seams:46, count:880 }); // subdued continuous rear wall
 const CAVE_MAT_TEX = [caveTex, caveTexGray, caveTexClay, caveTexGravel];
+// v138: Asher's hand-made cave art (Decision #80) replaces the procedural rock skins. The baked
+// spritesheet art/cave-mats.png holds five 216x256 self-tiling atlas cells [dirt, gray stone,
+// clay, gravel, backdrop] at 1 art-px = 1 game-px. On load each cell is drawn INTO the existing
+// atlas canvas, so every stamping/interlock/anchoring system is untouched and the procedural
+// skins remain the fallback for the headless harness (no Image) and any pre-load frame.
+if (typeof Image !== 'undefined') {
+  const cavArt = new Image();
+  cavArt.onload = () => { try {
+    [caveTex, caveTexGray, caveTexClay, caveTexGravel, caveTexBack].forEach((t, i) => {
+      if (!t) return; const g = t.getContext('2d');
+      g.imageSmoothingEnabled = false;
+      g.drawImage(cavArt, i * 216, 0, 216, 256, 0, 0, CAVETEX_W, CAVETEX_H);
+    });
+  } catch (e) {} };
+  cavArt.src = 'art/cave-mats.png';
+}
 // organic wall width — a LONG-wave mass (26-row scale, per-side seeds) + short-wave bumps, so the
 // two walls are strongly ASYMMETRIC: one side can bulge into a fat cobble column while the other recedes
 function caveWallW(row, side, baseW) {
@@ -3804,7 +3820,7 @@ function caveWallMatAt(row, side, worldX) {                                     
   return mat;
 }
 // stamp a cached rock texture across a horizontal span (world-anchored source row = stable while climbing)
-function blitCaveTex(x0, y, w, h, srcRow, tex) {
+function blitCaveTex(x0, y, w, h, srcRow, tex, cont) {
   tex = tex || caveTex;
   if (!tex) { ctx.fillStyle = '#2A2018'; ctx.fillRect(x0, y, w, h); return; }
   ctx.imageSmoothingEnabled = false;
@@ -3812,7 +3828,11 @@ function blitCaveTex(x0, y, w, h, srcRow, tex) {
   const sh = Math.min(h, CAVETEX_H - sy);
   for (let cx = 0; cx < w; cx += CAVE_STAMP_W) {
     const sw = Math.min(CAVE_STAMP_W, w - cx);
-    const sx = caveStampSourceX(srcRow, x0 + cx);
+    // v138: `cont` maps screen x straight onto atlas x — the per-column drifting windows that
+    // hid repetition in the old isotropic noise CHOP Asher's directional vein art into visible
+    // rectangles. The back atlas cell (216px) is wider than a portrait canvas, so the backdrop
+    // can be one coherent image; columns past the atlas edge (wide screens) keep the windowed path.
+    const sx = cont && x0 + cx + sw <= CAVETEX_W ? x0 + cx : caveStampSourceX(srcRow, x0 + cx);
     ctx.drawImage(tex, sx, sy, sw, sh, x0 + cx, y, sw, sh);
     if (sh < h) ctx.drawImage(tex, sx, 0, sw, h - sh, x0 + cx, y + sh, sw, h - sh);           // vertical wrap; varied source windows hide tile repetition
   }
@@ -3862,25 +3882,11 @@ function drawCaveBackdrop(top, cy, ph) {
       const brow = Math.round((gy - y) / 4), main = caveMainMixAtRow(brow);
       // v137: srcRow must INCREASE down-screen — gy - y decreases, so every band boundary jumped
       // the atlas backwards 24 rows, guillotining each rock blob along a straight line every 12px
-      blitCaveTex(0, by, W, bh, Math.round(y - gy) + (by - y), caveTexBack);                    // one continuous rear geology: no horizontal material swap seams
+      blitCaveTex(0, by, W, bh, Math.round(y - gy) + (by - y), caveTexBack, true);              // one continuous rear geology: no horizontal material swap seams
       ctx.globalAlpha = 0.10 + main*0.10; ctx.fillStyle = '#8A5732'; ctx.fillRect(0, by, W, bh); // warmer earth gradually enters Main Cave
       ctx.globalAlpha = (1-main)*0.16; ctx.fillStyle = '#090708'; ctx.fillRect(0, by, W, bh);     // Deep Cave retains charcoal depth without losing material detail
-      for (let cx = 0; cx < W; cx += 64) {                                                       // v135 tonal patches; v137: v136 jittered the SAMPLE but drew fixed-grid rects, and every
-        // column ticked its tint on the same floor(brow/8) band = full-width straight lines.
-        // Now each column carries its own row phase and each band's drawn edges wander.
-        const bwnd = Math.round((bhash(Math.floor(brow/2)*53 + cx*3 + 9) - .5) * 22);
-        const bcol = Math.floor((cx + bwnd)/64), bph = Math.floor(bhash(bcol*17 + 291) * 8);
-        const sh = bhash(Math.floor((brow + bph)/8)*37 + bcol*71 + 13) - .5;
-        if (Math.abs(sh) > .14) {
-          const il = Math.round(bhash(brow*13 + cx*5 + 5) * 9), ir = Math.round(bhash(brow*17 + cx*11 + 8) * 9);
-          const tx0 = Math.max(0, cx + il - 4), tx1 = Math.min(W, cx + 68 - ir);
-          if (tx1 > tx0) {
-            ctx.globalAlpha = (Math.min(.09, (Math.abs(sh) - .14) * .25)) * (0.7 + 0.6 * bhash(brow*11 + cx));
-            ctx.fillStyle = sh > 0 ? '#A8825C' : '#000';
-            ctx.fillRect(tx0, by, tx1 - tx0, bh);
-          }
-        }
-      }
+      // v138: the v135-v137 tonal patches are retired — they were anti-wallpaper measures for
+      // the procedural noise, and over Asher's art they paint faint alien rectangles.
       ctx.globalAlpha = 0.82;
     } }
   ctx.globalAlpha = 1;
@@ -3888,13 +3894,8 @@ function drawCaveBackdrop(top, cy, ph) {
   hg.addColorStop(0, 'rgba(6,4,3,0)'); hg.addColorStop(0.34, 'rgba(6,4,3,0.28)');
   hg.addColorStop(0.66, 'rgba(6,4,3,0.28)'); hg.addColorStop(1, 'rgba(6,4,3,0)');
   ctx.fillStyle = hg; ctx.fillRect(0, top, W, under);
-  const P = 68, s = cy, off = (((gy - top) % P) + P) % P;                                     // far rock lumps — grid anchored to the ground line (translates 1:1, even at the mouth)
-  for (let y = top + off - P*2; y < H; y += P) { const row = Math.round((y + s) / P);
-    for (let k = 0; k < 4; k++) { const ly = Math.round(y + bhash(row*3 + k) * P), lr = 9 + Math.round(bhash(row + k) * 10);
-      if (ly - lr < top) continue;                                                            // never poke above the ceiling into the sky
-      const lx = Math.round(bhash(row*7 + k*13) * W), main = caveMainMixAtRow(Math.round((gy - ly) / 4));
-      ctx.globalAlpha = 0.42; pixDisc(lx, ly, lr, main > .5 ? '#32251B' : '#1B1512');
-      ctx.globalAlpha = 0.28; pixDisc(lx - lr*0.3|0, ly - lr*0.35|0, Math.max(2, lr*0.55|0), main > .5 ? '#57402C' : '#352A23'); } }   // faint lit crown = 3-D mass
+  // v138: the translucent "far rock lump" discs are retired — over Asher's real rock art they
+  // read as out-of-place soft blobs; the art carries its own boulders. Mouths/chamber stay.
   ctx.globalAlpha = 1;
   const HP = 158, hs = cy, hoff = (((gy - top) % HP) + HP) % HP;                               // tunnel mouths + eye glints — same ground-anchored grid
   for (let y = top + hoff - HP*2; y < H; y += HP) { const row = Math.round((y + hs) / HP);
@@ -3942,7 +3943,7 @@ function drawCaveBackdrop(top, cy, ph) {
         pixDisc(lx, ly, Math.round(hr2 * (0.5 + bhash(l*17 + 7) * 0.4)), '#050302');
       }
       pixDisc(hx2 + 4, hy2 + 2, Math.round(hr2 * 0.55), '#000000');                            // deeper black throat
-      ctx.globalAlpha = 0.5;                                                                   // lit crown along the upper edge — the collapse catches what little light there is
+      ctx.globalAlpha = 0.3;                                                                   // lit crown along the upper edge — v138: softened over the darker art backdrop
       pixDisc(hx2 - 8, hy2 - hr2 + 3, 5, '#57402C'); pixDisc(hx2 + 6, hy2 - hr2 + 1, 6, '#57402C');
       pixDisc(hx2 + 18, hy2 - hr2 + 6, 4, '#57402C'); pixDisc(hx2 - 18, hy2 - hr2 + 7, 4, '#57402C');
       ctx.globalAlpha = 0.85; ctx.fillStyle = '#20160F';                                       // toothed rim above and below
@@ -4016,21 +4017,8 @@ function drawCaveWalls(top, cy, ph) {
             blitCaveTex(sxp, by, 2, bh, -row*4 + side*97 + (by - y) + 83 + sp*11, caveMatTex(sp & 1 ? pmat : prevMat));
           }
         }
-        // v135 tonal patches; v137: v136's wander moved the SAMPLE but still painted grid-aligned
-        // rects, and every cell ticked its tint on the same floor(row/9) band = straight lines.
-        // Per-cell row phase staggers the tick; per-band edge insets make the drawn rect wander.
-        const wnd = Math.round((bhash(Math.floor(row/3)*41 + side*9 + 1) - .5) * 12);
-        const tcol = Math.floor((px + wnd)/CAVE_GEO_W), tph = Math.floor(bhash(tcol*31 + side*7 + 177) * 9);
-        const shade = bhash(Math.floor((row + tph)/9)*23 + tcol*61 + side*5 + 3) - .5;
-        if (Math.abs(shade) > .12) {
-          const il = Math.round(bhash(row*29 + cx*3 + side) * 6), ir = Math.round(bhash(row*31 + cx*13 + side) * 6);
-          const tx0 = Math.max(x0, px + il - 3), tx1 = Math.min(x0 + w, px + pw + 3 - ir);
-          if (tx1 > tx0) {
-            ctx.globalAlpha = Math.min(.11, (Math.abs(shade) - .12) * .3) * (0.7 + 0.6 * bhash(row*7 + cx));
-            ctx.fillStyle = shade > 0 ? '#C9A57A' : '#000';
-            ctx.fillRect(tx0, by, tx1 - tx0, bh); ctx.globalAlpha = 1;
-          }
-        }
+        // v138: wall tonal patches retired with the backdrop ones — Asher's art carries its own
+        // light/dark variety, and any translucent rect over it reads as a foreign smudge.
         prevMat = pmat;
       }
       // v102: the lane edge is no longer traced by continuous perfect lines — the outer AO's

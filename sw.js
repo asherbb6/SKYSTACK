@@ -1,7 +1,7 @@
 ﻿// SKYSTACK service worker â€” network-first app shell (fresh code when online, cache when offline).
-const CACHE = 'skystack-v137';
+const CACHE = 'skystack-v138';
 const COVERS = ['caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'].map(n => './covers/' + n + '.png');
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', ...COVERS];
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './art/cave-mats.png', ...COVERS];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()).catch(() => {}));
