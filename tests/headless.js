@@ -3364,7 +3364,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v157', () => /const CACHE = 'skystack-v157'/.test(sw));
+check('sw.js cache bumped to v158', () => /const CACHE = 'skystack-v158'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3870,6 +3870,91 @@ check('v157 every cloud column is lit on top and shaded underneath', () => {
   if (!body.length) return 'no cloud body drawn';
   if (crown.length !== body.length) return 'crown pixels ' + crown.length + ' != body columns ' + body.length;
   return belly.length === body.length ? true : 'belly pixels ' + belly.length + ' != body columns ' + body.length;
+});
+
+// ---------- v158 the rest of the SURFACE pass ----------
+check('v158 undergrowth, the log and the life NEVER draw over the cave mouth (the lane rule)', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(1); wind = null; tick = 30;');
+  const mouth = JSON.parse(g.run('JSON.stringify(caveMouth())'));
+  // FLOOR elements only. Birds perched up in the canopy legitimately sit above the shaft, because
+  // the v147 bridge spans it — the lane rule is about the forest FLOOR, which stops at the mouth.
+  rec.rects.length = 0;
+  g.run('(() => { const yC = worldY(SURF_A, GROUND_Y - SURF_A*BH - (H - 120));' +
+    ' drawFallenLog(300, yC); drawUndergrowth(300, yC); })()');
+  if (!rec.rects.length) return 'nothing drawn at all';
+  const over = rec.rects.filter(r => r.x + r.w > mouth.cxL && r.x < mouth.cxR);
+  return over.length === 0 ? true : over.length + ' rects cross the shaft (' + mouth.cxL + '..' + mouth.cxR + ')';
+});
+check('v158 butterflies stay over the forest floor, never out over the shaft', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(1); wind = null; tick = 30; cameraY = GROUND_Y - SURF_A*BH - (H - 120);');
+  const mouth = JSON.parse(g.run('JSON.stringify(caveMouth())'));
+  let crossed = 0, seen = 0;
+  for (let ph = 0; ph < 900; ph += 30) {          // sweep their whole drift cycle, not one instant
+    rec.rects.length = 0;
+    g.run('drawSurfaceLife(' + ph + ', worldY(SURF_A, cameraY))');
+    const wings = rec.rects.filter(r => /#FFD75E|#FF9ED8/.test(String(r.style)));   // beaks use #E8A33C
+    seen += wings.length;
+    crossed += wings.filter(r => r.x + r.w > mouth.cxL && r.x < mouth.cxR).length;
+  }
+  if (!seen) return 'no butterflies drawn across the whole cycle';
+  return crossed === 0 ? true : crossed + ' butterfly pixels crossed the shaft';
+});
+check('v158 the landmark log still draws on a PHONE, where the mouth eats the screen', () => {
+  const { rec, g } = v149rec();
+  g.run('W = 191; H = 300; relayout(); prog = 9; startLevel(1); wind = null; tick = 30;');
+  const strips = JSON.parse(g.run('JSON.stringify(surfaceStrips())'));
+  const widest = strips.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a), [0, 0]);
+  rec.rects.length = 0;
+  g.run('drawFallenLog(300, worldY(SURF_A, GROUND_Y - SURF_A*BH - (H - 120)))');
+  if (!rec.rects.length) return 'the landmark vanished at phone width (strips ' + JSON.stringify(strips) + ')';
+  const xs = rec.rects.map(r => r.x);
+  return Math.min(...xs) >= widest[0] - 2 && Math.max(...xs) <= widest[1] + 2
+    ? true : 'the log escaped its strip';
+});
+check('v158 the surface floor is no longer bare between the trunks', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(1); wind = null; tick = 30;');
+  rec.rects.length = 0;
+  g.run('drawUndergrowth(300, worldY(SURF_A, GROUND_Y - SURF_A*BH - (H - 120)))');
+  const kinds = new Set(rec.rects.map(r => String(r.style)));
+  if (rec.rects.length < 20) return 'only ' + rec.rects.length + ' undergrowth marks';
+  return kinds.size >= 4 ? true : 'undergrowth is all one thing (' + kinds.size + ' colours)';
+});
+check('v158 the landmark log is world-anchored — it never floats off the ground line', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(1); wind = null; tick = 30;');
+  const bottomFor = camShift => {
+    rec.rects.length = 0;
+    g.run('(() => { const cy = GROUND_Y - SURF_A*BH - (H - 120) - ' + camShift + ';' +
+      ' drawFallenLog(300, worldY(SURF_A, cy)); })()');
+    const ys = rec.rects.map(r => r.y + r.h);
+    return { bot: Math.max(...ys), line: g.run('worldY(SURF_A, GROUND_Y - SURF_A*BH - (H - 120) - ' + camShift + ')') };
+  };
+  const a = bottomFor(0), b = bottomFor(37);
+  // the log's offset from the surface line must be identical at both camera positions
+  return (a.bot - a.line) === (b.bot - b.line)
+    ? true : 'log drifted off the ground line: ' + (a.bot - a.line) + ' vs ' + (b.bot - b.line);
+});
+check('v158 exactly three kinds of surface life, and the perched birds ride their tree', () => {
+  const g = makeGame();
+  if (g.run('SURF_BUTTERFLIES + SURF_PERCHED') > 6) return 'the creature set has grown past the cave discipline';
+  if (/fireflies/i.test(src.slice(src.indexOf('function drawSurfaceLife'), src.indexOf('function drawDappledLight')))) return 'fireflies crept in without a dusk';
+  // a perched bird must move WITH its tree when the wind bends it
+  const { rec, g: g2 } = v149rec();
+  g2.run('prog = 9; startLevel(1); tick = 30;');
+  // the perched birds read the GLOBAL cameraY (as rootedTree does — the v149 probe gotcha), so the
+  // probe must set it rather than only passing a cy
+  const xs = windExpr => {
+    rec.rects.length = 0;
+    g2.run('cameraY = GROUND_Y - SURF_A*BH - (H - 120); wind = ' + windExpr +
+      '; drawSurfaceLife(300, worldY(SURF_A, cameraY))');
+    return rec.rects.filter(r => String(r.style) === '#3E2A1C').map(r => r.x).join(',');
+  };
+  const calm = xs('null'), gust = xs('{ dir: 1, str: 0.8, dur: 120, t: 60 }');
+  if (!calm.length) return 'no perched birds drawn';
+  return calm !== gust ? true : 'the perched birds ignored the tree they are sitting on';
 });
 
 // ---------- report ----------
