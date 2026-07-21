@@ -3571,6 +3571,28 @@ check('v152 SKY CONQUERED! is reachable on the last first-clear', () => {
   return seen.includes('SKY CONQUERED!') ? true : 'still says ' + JSON.stringify(seen.filter(s => /UNLOCK|CONQUER/.test(s)));
 });
 
+check('v152 the descent glance opens deeper when there is a past to see', () => {
+  const plain = makeGame(); plain.run('prog = 3; startLevel(1)');
+  const withPast = makeGame();
+  withPast.run('startLevel(0)');
+  withPast.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col:"#fff"});');
+  withPast.run('recordPastRun(0); prog = 3; startLevel(1)');
+  const dp = plain.run('cameraY - cameraTarget'), dw = withPast.run('cameraY - cameraTarget');
+  return dw > dp && dp > 0 ? true : 'plain=' + dp + ' past=' + dw;
+});
+check('v152 the descent glance is bounded and respects reduced motion', () => {
+  const rm = makeGame(null, true);
+  rm.run('startLevel(0)');
+  rm.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col:"#fff"});');
+  rm.run('recordPastRun(0); prog = 3; startLevel(1)');
+  if (rm.run('cameraY !== cameraTarget')) return 'reduced motion still pans';
+  const deep = makeGame();
+  deep.run('startLevel(0)');
+  deep.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col:"#fff"});');
+  deep.run('recordPastRun(0); prog = 9; startLevel(9)');
+  return deep.run('cameraY - cameraTarget <= PAST_GLANCE_MAX') ? true : 'glance exceeded the cap';
+});
+
 // ---------- report ----------
 let pass = 0, fail = 0;
 for (const [ok, name, detail] of results) {

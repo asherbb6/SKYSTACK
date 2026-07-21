@@ -1752,7 +1752,13 @@ function resetRun() {
   shield=Math.max(shield,challengeRule(runContext,'lives',1)-1);
   loadout = { shield:false, aura:false, slow:false };
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY; camVel = 0;
-  if (runLevel >= 0 && !reduceMotion) cameraY = cameraTarget + 120;   // pan-to-landmark: reveal the themed base, then settle up into play
+  // v152 DESCENT GLANCE: the run opens looking DOWN your own past column and lifts to the slab.
+  // The camera is a critically-damped follow (smoothTime 1.6), so the offset alone gives the
+  // ease-out — no new camera mode, and no input lock (freezing the player for a second at every
+  // level start would be a feel regression; the camera settles under them either way).
+  // With no past to see we keep the shipped 120px landmark pan.
+  if (runLevel >= 0 && !reduceMotion)
+    cameraY = cameraTarget + (pastDepth ? clamp(120 + pastDepth * BH * 0.5, 120, PAST_GLANCE_MAX) : 120);
   schedulePickups(); spawnSlider();
 }
 // wide screens: blocks travel a centered corridor (phone-width feel) instead of the
@@ -5262,6 +5268,7 @@ function drawBaseCosmetic(cx, topY, bw, id) {
 // NEVER early-return on pastDepth: the pre-stacked tower is drawn HERE now, so bailing would make
 // the v133 "the tower under you is REAL" column vanish for anyone without recorded history.
 const PAST_SEAM = 'rgba(255,246,232,0.5)';
+const PAST_GLANCE_MAX = 260;   // v152: cap the descent glance — a long climb back up reads as a stall
 function pastFade(depth) { return 0.62 / (1 + depth * 0.085); }
 let pastDrawn = 0;   // v152: past rows drawn last frame — lets the v133 "the tower is REAL" guards see this pass
 function drawPastColumn(cy) {
