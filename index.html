@@ -254,12 +254,34 @@ function txt(text, x, y, sc, color, align) {
 }
 // v127: draw at the largest scale that FITS maxW, stepping down instead of spilling out of the card.
 // Long biome names and headlines used to overflow their frame at narrow widths.
-function txtFit(text, x, y, sc, color, align, maxW) {
+// v159 TEXT RULE — NEVER OVERFLOW SILENTLY. txtFit used to shrink to scale 1 and then draw anyway,
+// so any string too long for the box simply ran off the screen. That single behaviour is the root of
+// a whole class of bugs: v151 found a star objective printed under the CLEARED badge, and the phase-5
+// sweep found "LOWER SKY: GUSTS PUSH YOUR DROP" hanging 5px off a 180px screen. It now WRAPS onto up
+// to `maxLines` lines (centred on the same y so callers' layouts hold), and hard-splits a single word
+// that cannot fit on its own. It still returns the scale used.
+function txtFit(text, x, y, sc, color, align, maxW, maxLines) {
   const t = String(text).toUpperCase();
+  const wid = (s, u) => s.length * 6 * u - u;
   let use = sc;
-  while (use > 1 && t.length * 6 * use - use > maxW) use--;
-  txt(t, x, y, use, color, align);
-  return use;
+  while (use > 1 && wid(t, use) > maxW) use--;
+  if (wid(t, use) <= maxW) { txt(t, x, y, use, color, align); return use; }
+  const lim = Math.max(1, maxLines || 2), lines = [];
+  let cur = '';
+  for (let w of t.split(' ')) {
+    while (wid(w, 1) > maxW) {                                   // a single word wider than the box
+      const fit = Math.max(1, Math.floor((maxW + 1) / 6));
+      if (cur) { lines.push(cur); cur = ''; }
+      lines.push(w.slice(0, fit)); w = w.slice(fit);
+    }
+    const next = cur ? cur + ' ' + w : w;
+    if (wid(next, 1) <= maxW || !cur) cur = next; else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  const shown = lines.slice(0, lim);
+  const top = y - Math.round((shown.length - 1) * 4);            // stay centred on the caller's y
+  for (let i = 0; i < shown.length; i++) txt(shown[i], x, top + i * 8, 1, color, align);
+  return 1;
 }
 
 // ---------- audio ----------
@@ -2478,7 +2500,11 @@ function relayout() {
     ({ id, x: Math.round(W/2-44), y: Math.round(H/2-56) + i*20, w: 88, h: 16 }));
   // game over
   SHARE_BTN = { x:W/2-32, y:H-96, w:64, h:16 };
-  REVIVE_BTN = { x: Math.round(W/2 - 56), y: 156, w: 112, h: 22 };
+  // v159: REVIVE sat at a HARD-CODED y=156 while SHARE is bottom-anchored, so on a short screen the
+  // revive block walked straight into it — measured at 480x270, "1 REVIVE PER RUN" (y183) landed on
+  // the SHARE label (y179). The revive button now yields upward: its own height plus the caption
+  // beneath it must clear the share button.
+  REVIVE_BTN = { x: Math.round(W/2 - 56), y: Math.min(156, Math.round(SHARE_BTN.y - 22 - 4)), w: 112, h: 22 };
 }
 relayout();
 // live window/orientation change: recompute size + layout, then re-center the whole
@@ -7077,7 +7103,13 @@ function renderLevelFail() {
   const pct = clamp((blocks.length - from) / (goal - from), 0, 1);
   const topY = Math.round(H*.14);
   txt('LEVEL ' + num + ' - ' + t.name, W/2, topY, 1, 'rgba(255,246,232,0.7)', 'center');
-  const head = overCause === 'quit' ? 'RUN ENDED' : pct >= .6 ? 'SO CLOSE!' : 'TOPPLED!';
+  // v159 COMMON SENSE OVER TEXT: this said "TOPPLED!" whatever actually happened — miss the block
+  // entirely and the game still told you your tower fell over. CAUSE_TXT already held the right
+  // words and simply was not being used here. "SO CLOSE!" still wins when you nearly made it,
+  // because at that point how near you got matters more than how you died.
+  const head = overCause === 'quit' ? 'RUN ENDED'
+             : pct >= .6 ? 'SO CLOSE!'
+             : (CAUSE_TXT[overCause] || 'TOPPLED!');
   txt(head, W/2+1, topY + 13, 2, 'rgba(0,0,0,0.5)', 'center');
   txt(head, W/2, topY + 12, 2, pct >= .6 ? '#FFD75E' : '#FF7E6B', 'center');
   // progress bar toward the goal
@@ -7086,7 +7118,23 @@ function renderLevelFail() {
   plate3D(bx, by, bw, 8, 'rgba(0,0,0,0.5)');
   ctx.fillStyle = t.color; ctx.fillRect(bx, by + 1, fillW, 6);
   txt('REACHED ' + blocks.length*METERS_PER + 'M / ' + goal*METERS_PER + 'M', W/2, by + 14, 1, 'rgba(255,246,232,0.75)', 'center');
-  if (runCoins > 0) { drawCoin(W/2 - 16, by + 27.5); txt('+' + runCoins, W/2 - 5, by + 27, 1, '#FFD75E', 'left'); }
+  // v159 ADAPTABLE TEXT: say something that is TRUE OF THIS RUN. How near you got beats generic
+  // advice when you were nearly there, so the shortfall wins; otherwise name the actual mistake.
+  // Drawn only when there is room above the buttons — hide, never collide.
+  const shortfall = Math.max(0, goal - blocks.length);
+  const coach = shortfall > 0 && shortfall <= 4
+    ? shortfall + (shortfall === 1 ? ' BLOCK SHORT' : ' BLOCKS SHORT')
+    : ({ miss:'TAP WHEN IT LINES UP', topple:'KEEP THE STACK CENTRED',
+         precision:'LAND THEM CLEANER', time:'FASTER NEXT TIME' })[overCause] || '';
+  // This column FLOWS and the revive block below it is PINNED, so it needs a budget exactly like the
+  // win screen's. Before v159 the coin line and the "1 REVIVE PER RUN" caption were both drawn at
+  // fixed offsets and sat 6px apart with 7px-tall text — they overlapped whenever a revive was
+  // actually offered, which no test fixture had ever set up.
+  const failBot = (reviveOffered ? FAIL_REV.y : FAIL_ROWS[0].y) - 4;
+  let iy = by + 26;
+  if (runCoins > 0 && iy + 7 <= failBot) { drawCoin(W/2 - 16, iy + 0.5); txt('+' + runCoins, W/2 - 5, iy, 1, '#FFD75E', 'left'); iy += 12; }
+  if (coach && iy + 7 <= failBot) { txtFit(coach, W/2, iy, 1, 'rgba(255,246,232,0.5)', 'center', W - 40); iy += 10; }
+  const failFlowBot = iy;   // the revive caption below must clear whatever the flow actually used
   if (failT > 24) {
     if (reviveOffered) {
       const cost = reviveCost(), ok = coins >= cost;
@@ -7096,7 +7144,8 @@ function renderLevelFail() {
         ok ? null : 'rgba(255,246,232,0.25)');
       drawCoin(W/2 - 30, FAIL_REV.y + 7.5);
       txt(ok ? 'REVIVE ' + cost : 'NEED ' + cost, W/2 - 20, FAIL_REV.y + 7, 1, ok ? '#08301F' : 'rgba(255,246,232,0.5)', 'left');
-      txt('1 REVIVE PER RUN', W/2, FAIL_REV.y - 10, 1, 'rgba(255,246,232,0.45)', 'center');
+      if (FAIL_REV.y - 10 >= failFlowBot)   // only if the flow above actually left room for it
+        txt('1 REVIVE PER RUN', W/2, FAIL_REV.y - 10, 1, 'rgba(255,246,232,0.45)', 'center');
     }
     for (const rw of FAIL_ROWS) {
       if (rw.id === 'nav') { drawNavSplit(rw, 'rgba(255,246,232,0.3)'); continue; }
@@ -7269,7 +7318,10 @@ function renderGameOver() {
       ok ? null : 'rgba(255,246,232,0.25)');
     drawCoin(W/2 - 32, REVIVE_BTN.y + 8.5);
     txt(ok ? 'REVIVE ' + cost : 'NEED ' + cost, W/2 - 22, REVIVE_BTN.y + 8, 1, ok ? '#08301F' : 'rgba(255,246,232,0.5)', 'left');
-    txt('1 REVIVE PER RUN', W/2, REVIVE_BTN.y + 27, 1, 'rgba(255,246,232,0.45)', 'center');
+    // HIDE, NEVER COLLIDE: on a short screen this caption has nowhere to go — drop it rather than
+    // print it over the SHARE button. The button itself is already clamped above SHARE in relayout.
+    if (REVIVE_BTN.y + 27 + 7 <= SHARE_BTN.y - 2)
+      txt('1 REVIVE PER RUN', W/2, REVIVE_BTN.y + 27, 1, 'rgba(255,246,232,0.45)', 'center');
   } else if (runSettled) {
     let y = modifierResults.length ? (challengeReward?178:167) : (challengeReward?167:156);
     let ct = 42;   // the reward cascade reveals last, one item at a time, each with its own accent

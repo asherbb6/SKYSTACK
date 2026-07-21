@@ -1385,7 +1385,9 @@ check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 ever
   /drawCoin\(PAD, 5\.5\)/.test(src) && /drawCoin\(22, 7\.5\)/.test(src) &&
   /drawCoin\(x\+w-27,rowY\+\.5\)/.test(src) && /drawCoin\(W\/2 \+ 8, EQUIP_BTN\.y\+5\.5\)/.test(src) &&
   /drawCoin\(W\/2\+8,EQUIP_BTN\.y\+5\.5\)/.test(src) && /drawCoin\(c\.x\+14, c\.y\+13\.5\)/.test(src) &&
-  /drawCoin\(W\/2 - 20, sy \+ 1\.5\)/.test(src) && /drawCoin\(W\/2 - 16, by \+ 27\.5\)/.test(src) &&
+  // v159: the fail screen's coin moved from a fixed `by + 27.5` into the budgeted flow as
+  // `iy + 0.5`, with its text at `iy` — the +0.5 centring rule this guard exists for is unchanged.
+  /drawCoin\(W\/2 - 20, sy \+ 1\.5\)/.test(src) && /drawCoin\(W\/2 - 16, iy \+ 0\.5\)/.test(src) &&
   /drawCoin\(W\/2 - 30, FAIL_REV\.y \+ 7\.5\)/.test(src) && /drawCoin\(W\/2-24, 127\.5\)/.test(src) &&
   /drawCoin\(W\/2 - 32, REVIVE_BTN\.y \+ 8\.5\)/.test(src));
 
@@ -1742,6 +1744,10 @@ check('v107 level-win: bonus line uses plain BONUS wording, not MODS', () =>
 const failFixtures = [
   'prog=10; startLevel(0); score=300; while(blocks.length<20) blocks.push({x:0,w:96,col:"#fff"}); gameOver("topple"); failT=80;',
   'prog=10; startLevel(7); score=300; while(blocks.length<TIERS[6].n+10) blocks.push({x:0,w:96,col:"#fff"}); gameOver("fall"); failT=80;',
+  // v159: every fixture had ZERO coins, so a revive was never offered and that whole branch — the
+  // revive plate, its caption and the coin line — was NEVER swept. It was overlapping.
+  'coins=500; prog=10; startLevel(2); score=300; runCoins=8; while(blocks.length<levelGoalA(2)-2) blocks.push({x:0,w:96,col:"#fff"}); gameOver("miss"); failT=80;',
+  'coins=500; prog=10; startLevel(2); score=300; runCoins=0; while(blocks.length<runLaunch+3) blocks.push({x:0,w:96,col:"#fff"}); gameOver("topple"); failT=80;',
 ];
 check('v107 level-fail: no text/button overlaps or leaves the screen at any aspect ratio', () =>
   resultSweep('renderLevelFail', failFixtures));
@@ -3364,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v158', () => /const CACHE = 'skystack-v158'/.test(sw));
+check('sw.js cache bumped to v159', () => /const CACHE = 'skystack-v159'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3955,6 +3961,119 @@ check('v158 exactly three kinds of surface life, and the perched birds ride thei
   const calm = xs('null'), gust = xs('{ dir: 1, str: 0.8, dur: 120, t: 60 }');
   if (!calm.length) return 'no perched birds drawn';
   return calm !== gust ? true : 'the perched birds ignored the tree they are sitting on';
+});
+
+// ---------- v159 PHASE 5: the whole-game text audit ----------
+// resultSweep only ever covered the two result screens. This sweeps EVERY screen across a viewport
+// matrix and fails on text that overlaps other text or runs off the edge. Two things it must NOT
+// flag: layered draws of the same string (drop shadows/outlines), and the sky map's scrolling cards,
+// which are CLIPPED to viewTop — those txt() calls happen but are never painted.
+const SCREEN_VIEWS = [[180, 390], [180, 520], [242, 300], [320, 480], [414, 720], [480, 270]];
+const SCREENS = [
+  ['renderHome',            'state="home"; skyMap=false;'],
+  ['renderSkyMap',          'prog=5; openSkyMap();'],
+  ['renderPause',           'prog=5; startLevel(2); state="paused"; paused=true;'],
+  ['renderShop',            'state="shop";'],
+  ['renderMe',              'state="me";'],
+  ['renderMissionsOverlay', 'state="home";'],
+  ['renderChallengePicker', 'state="home";'],
+  ['renderModePicker',      'state="home";'],
+  ['renderDifficultyPicker','state="home";'],
+  ['renderBaseShop',        'state="shop";'],
+  ['renderGameOver',        'prog=5; startLevel(2); score=420; while(blocks.length<40) blocks.push({x:0,w:96,col:"#fff"}); gameOver("topple"); overT=80;'],
+  ['renderSplash',          'state="splash";'],
+  ['renderRegionIntro',     'prog=5; startLevel(2); startRegionIntro(3); regionIntro.t=30;']
+];
+function screenTextSweep() {
+  for (const [fn, setup] of SCREENS) {
+    for (const [w, h] of SCREEN_VIEWS) {
+      const g = makeGame();
+      g.run('W=' + w + ';H=' + h + ';');
+      g.run(setup);
+      const raw = g.run(
+        '(() => { relayout();' +
+        ' const calls=[]; const orig=txt;' +
+        ' txt=(t,x,y,sc,col,al)=>{sc=sc||1;t=String(t);const tw=t.length*6*sc-sc;' +
+        '  const x0=al==="center"?Math.round(x-tw/2):al==="right"?Math.round(x-tw):x;' +
+        '  if(String(col).indexOf("0,0,0")<0)calls.push({t,x0,x1:x0+tw,y,sc});};' +
+        ' let err=null;' +
+        ' try { ' + fn + '(); } catch(e) { err=e.message; } finally { txt=orig; }' +
+        ' return JSON.stringify({err, calls}); })()');
+      const r = JSON.parse(raw);
+      if (r.err) return fn + ' threw at ' + w + 'x' + h + ': ' + r.err;
+      const clipTop = fn === 'renderSkyMap' ? JSON.parse(g.run('JSON.stringify(skyMapNodes().viewTop)')) : -1;
+      const c = r.calls.filter(a => clipTop < 0 || a.y >= clipTop - 6 || a.sc >= 2);
+      for (const a of c) if (a.x0 < 0 || a.x1 > w) return fn + ' text off screen at ' + w + 'x' + h + ': "' + a.t + '" spans ' + a.x0 + '..' + a.x1;
+      for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) {
+        const a = c[i], b = c[j];
+        if (a.t === b.t && Math.abs(a.x0 - b.x0) <= 2 && Math.abs(a.y - b.y) <= 2) continue;   // drop shadow
+        if (a.y < b.y + 7 * b.sc && b.y < a.y + 7 * a.sc && a.x0 < b.x1 && b.x0 < a.x1)
+          return fn + ' text overlap at ' + w + 'x' + h + ': "' + a.t + '" x "' + b.t + '"';
+      }
+    }
+  }
+  return true;
+}
+check('v159 no text overlaps or leaves the screen on ANY screen, at any aspect ratio', screenTextSweep);
+check('v159 the revive button never lands on the share button', () => {
+  for (const [w, h] of SCREEN_VIEWS) {
+    const g = makeGame();
+    g.run('W=' + w + ';H=' + h + '; relayout();');
+    const bad = g.run('(() => { const a = REVIVE_BTN, b = SHARE_BTN;' +
+      ' return (a.y < b.y + b.h && b.y < a.y + a.h && a.x < b.x + b.w && b.x < a.x + a.w) ? "overlap" : ""; })()');
+    if (bad) return 'REVIVE and SHARE overlap at ' + w + 'x' + h;
+  }
+  return true;
+});
+check('v159 txtFit WRAPS instead of overflowing when a string cannot fit at scale 1', () => {
+  const g = makeGame();
+  g.run('W=180;H=390;relayout();');
+  const out = JSON.parse(g.run('(() => { const seen=[]; const orig=txt;' +
+    ' txt=(t,x,y,sc,col,al)=>{sc=sc||1;t=String(t);const tw=t.length*6*sc-sc;' +
+    '  const x0=al==="center"?Math.round(x-tw/2):al==="right"?Math.round(x-tw):x;' +
+    '  seen.push({t,x0,x1:x0+tw,y});};' +
+    ' try { txtFit("LOWER SKY: GUSTS PUSH YOUR DROP", W/2, 100, 1, "#FFF", "center", W - 24); }' +
+    ' finally { txt=orig; }' +
+    ' return JSON.stringify(seen); })()'));
+  if (out.length < 2) return 'it did not wrap (' + out.length + ' line)';
+  const w = g.run('W');
+  for (const l of out) if (l.x0 < 0 || l.x1 > w) return 'a wrapped line still overflows: ' + l.t;
+  return true;
+});
+
+check('v159 the fail headline tells the TRUTH about how the run ended', () => {
+  const headFor = cause => {
+    const g = makeGame();
+    g.run('W=320;H=480; prog=5; startLevel(2);' +
+      ' while (blocks.length < runLaunch + 2) blocks.push({x:0,w:96,col:"#fff"});' +   // well short of the goal
+      ' gameOver("' + cause + '"); failT = 80;');
+    return JSON.parse(g.run('(() => { relayout(); const s=[]; const orig=txt;' +
+      ' txt=(t,x,y,sc)=>{ if ((sc||1) >= 2) s.push(String(t)); };' +
+      ' try { renderLevelFail(); } finally { txt=orig; }' +
+      ' return JSON.stringify(s); })()'));
+  };
+  const miss = headFor('miss'), topple = headFor('topple'), quit = headFor('quit');
+  if (!miss.includes('MISSED!')) return 'a miss still reports ' + JSON.stringify(miss);
+  if (!topple.includes('TOPPLED!')) return 'a topple reports ' + JSON.stringify(topple);
+  if (!quit.includes('RUN ENDED')) return 'quitting reports ' + JSON.stringify(quit);
+  return true;
+});
+check('v159 the fail screen says something TRUE OF THIS RUN, not a fixed string', () => {
+  const lines = (blocksShort, cause) => {
+    const g = makeGame();
+    g.run('W=320;H=480; prog=5; startLevel(2);' +
+      ' while (blocks.length < levelGoalA(2) - ' + blocksShort + ') blocks.push({x:0,w:96,col:"#fff"});' +
+      ' runCoins = 0; gameOver("' + cause + '"); failT = 80;');
+    return JSON.parse(g.run('(() => { relayout(); const s=[]; const orig=txt;' +
+      ' txt=(t)=>{ s.push(String(t)); };' +
+      ' try { renderLevelFail(); } finally { txt=orig; }' +
+      ' return JSON.stringify(s); })()'));
+  };
+  const near = lines(2, 'topple'), far = lines(25, 'miss');
+  if (!near.some(s => s === '2 BLOCKS SHORT')) return 'a near miss did not report the shortfall: ' + JSON.stringify(near);
+  if (!far.some(s => s === 'TAP WHEN IT LINES UP')) return 'a distant miss gave no advice: ' + JSON.stringify(far);
+  const one = lines(1, 'topple');
+  return one.some(s => s === '1 BLOCK SHORT') ? true : 'singular/plural is wrong: ' + JSON.stringify(one.filter(s => /SHORT/.test(s)));
 });
 
 // ---------- report ----------
