@@ -2240,12 +2240,12 @@ check('v123 the duration model is biome-aware: low-g levels are modelled longer,
   // measured re-audit numbers. blind model (v122): L8 ideal 80.0, L9 146.7, L0 93.7, L10 206.1.
   // low-g adds (12-10) impact frames/block: L8 +55*2/60 = +1.8s, L9 +100*2/60 = +3.3s.
   const r = g.run('(() => { const ideal = i => levelBalanceReport(i,"assisted",.35).durationSeconds.ideal;' +
-    ' if (!(ideal(7) > 81.4 && ideal(7) < 82.2)) return "SPACE not lengthened by low-g: " + ideal(7) + " (blind was 80.0)";' +
+    ' if (!(ideal(7) > 80.9 && ideal(7) < 81.6)) return "SPACE not lengthened by low-g: " + ideal(7) + " (blind was 80.0)";' +
     ' if (!(ideal(8) > 149.6 && ideal(8) < 150.4)) return "ORBIT not lengthened by low-g: " + ideal(8) + " (blind was 146.7)";' +
     // v132: L0 was 93.7 until CAVES got its cramped lane. That is a REAL pacing change (a narrower
     // corridor is genuinely quicker to cross), not model drift, so the baseline moves once, here.
-    ' if (ideal(0) !== 81.4) return "normal-g L0 drifted: " + ideal(0);' +
-    ' if (ideal(9) !== 206.1) return "normal-g SUMMIT drifted: " + ideal(9);' +
+    ' if (ideal(0) !== 81.1) return "normal-g L0 drifted: " + ideal(0);' +
+    ' if (ideal(9) !== 206.2) return "normal-g SUMMIT drifted: " + ideal(9);' +
     ' return true; })()');
   return r === true;
 });
@@ -2467,8 +2467,8 @@ check('v124 RE-AUDIT: MEDIUM reports are byte-identical to v123 and every level 
 // scales with campaignLevel, so every level above the merge shifts a few tenths of a second.
 // The merged level (index 1) is a genuinely new number: 48.0s ideal over 27 blocks. Every
 // level still models INSIDE its own target range - the S1 range guard proves that separately.
-  fresh.run('(() => { const v123 = { 0:81.4, 1:48, 2:27.8, 3:32.9, 4:35.7, 5:38.5, 6:43,' +
-    '   7:81.8, 8:150.1, 9:206.1 };' +
+  fresh.run('(() => { const v123 = { 0:81.1, 1:48.3, 2:27.8, 3:32.8, 4:35.8, 5:38.4, 6:43.4,' +
+    '   7:81.2, 8:149.9, 9:206.2 };' +
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
     '   if (d.ideal !== v123[i]) return false;' +
@@ -2646,8 +2646,8 @@ check('v125 reduceMotion does NOT change where a block lands (drift is simulatio
   return land(false) === land(true);
 });
 check('v125 RE-AUDIT: level durations are untouched (drift moves WHERE a block lands, not how long)', () =>
-  fresh.run('(() => { const pinned = { 0:81.4, 1:48, 2:27.8, 3:32.9, 4:35.7, 5:38.5, 6:43,' +
-    '   7:81.8, 8:150.1, 9:206.1 };' +       // v132: L0 81.4 — CAVES' cramped lane; v151: re-indexed by the forest merge
+  fresh.run('(() => { const pinned = { 0:81.1, 1:48.3, 2:27.8, 3:32.8, 4:35.8, 5:38.4, 6:43.4,' +
+    '   7:81.2, 8:149.9, 9:206.2 };' +       // v132: L0 81.4 — CAVES' cramped lane; v151: re-indexed by the forest merge
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
     '   if (d.ideal !== pinned[i]) return false;' +
@@ -2939,8 +2939,8 @@ check('v128 reduceMotion may shorten the slide animation but not move the restin
   return rest(false) === rest(true);
 });
 check('v128 RE-AUDIT: level durations are untouched (landing changes cannot alter fall time)', () =>
-  fresh.run('(() => { const pinned = { 0:81.4, 1:48, 2:27.8, 3:32.9, 4:35.7, 5:38.5, 6:43,' +
-    '   7:81.8, 8:150.1, 9:206.1 };' +       // v132: L0 81.4 — CAVES' cramped lane; v151: re-indexed by the forest merge
+  fresh.run('(() => { const pinned = { 0:81.1, 1:48.3, 2:27.8, 3:32.8, 4:35.8, 5:38.4, 6:43.4,' +
+    '   7:81.2, 8:149.9, 9:206.2 };' +       // v132: L0 81.4 — CAVES' cramped lane; v151: re-indexed by the forest merge
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
     '   if (d.ideal !== pinned[i]) return false;' +
@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v160', () => /const CACHE = 'skystack-v160'/.test(sw));
+check('sw.js cache bumped to v161', () => /const CACHE = 'skystack-v161'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4137,6 +4137,54 @@ check('v160 driftForce STILL never reads the wind visuals', () => {
   const seg = src.slice(i0, src.indexOf('\n}', i0)).replace(/\/\/[^\n]*/g, '');
   return !/windWaveAt|gustFrontAt|gustVisEnv|drawGustFront/.test(seg)
     ? true : 'driftForce now depends on the visual layer';
+});
+
+// ---------- v161: speed cross-fades biomes; wind tapers with air ----------
+check('v161 the biome speed multiplier CROSS-FADES across a line instead of snapping', () => {
+  const g = makeGame();
+  g.run('prog = 9; startLevel(0);');
+  // sample slider speed across the SURFACE->TREETOPS line (T[1].n) and the CLOUD->JET line
+  const speedAt = h => g.run('difficultyAt(runContext, ' + h + ', 0, undefined).sliderSpeed');
+  const line = g.run('TIERS[4].n');   // CLOUD NINE -> JET STREAM, a real spd change (1.00 -> 1.06)
+  const steps = [];
+  for (let h = line - 6; h <= line + 6; h++) steps.push(speedAt(h));
+  let maxJump = 0;
+  for (let i = 1; i < steps.length; i++) maxJump = Math.max(maxJump, Math.abs(steps[i] - steps[i-1]));
+  // the per-block jump anywhere near the line must be small — no single big step
+  const avg = steps.reduce((a, b) => a + b) / steps.length;
+  return maxJump < avg * 0.03 ? true : 'still snapping at the biome line: max per-block jump ' + maxJump.toFixed(3);
+});
+check('v161 the cross-fade preserves each biome peak away from the lines', () => {
+  const g = makeGame();
+  g.run('prog = 9; startLevel(0);');
+  // deep inside a biome (not within SPD_BLEND of a line) speed uses that biome spd exactly
+  const mid = Math.round((g.run('TIERS[4].n') + g.run('TIERS[3].n')) / 2);   // middle of CLOUD NINE
+  const withBlend = g.run('difficultyAt(runContext, ' + mid + ', 0, undefined).sliderSpeed');
+  const raw = g.run('(() => { const d = runContext.difficultyProfile, s = d.slider, h = ' + mid + ';' +
+    ' let sp = Math.min(s.base + h*s.perBlock, s.max);' +
+    ' sp *= MATERIALS[4].spd * (d.levelSpeedScale||1) * (d.difficultyScale||1); return sp; })()');
+  return Math.abs(withBlend - raw) < 0.001 ? true : 'mid-biome speed drifted from its raw value: ' + withBlend + ' vs ' + raw;
+});
+check('v161 wind falls with air: peaks at the jet stream, gone in space', () => {
+  const g = makeGame();
+  const w = ti => g.run('MATERIALS[' + ti + '].wind');
+  const jet = w(5), strat = w(6), aurora = w(7), space = w(8), orbit = w(9), stars = w(10);
+  if (!(jet >= strat && strat > aurora && aurora > space)) return 'wind does not taper above the jet stream: ' + [jet, strat, aurora, space].join('/');
+  if (space !== 0 || orbit !== 0 || stars !== 0) return 'there is aerodynamic wind in space: ' + [space, orbit, stars].join('/');
+  // the jet stream is still the windiest biome in the game
+  const all = []; for (let i = 0; i < g.run('MATERIALS.length'); i++) all.push(w(i));
+  return Math.max(...all) === jet ? true : 'the jet stream is no longer the windiest biome';
+});
+check('v161 no level star objective needs wind in a now-windless biome', () => {
+  const g = makeGame();
+  // windLands objectives may only sit on levels whose biome still has wind
+  return g.run('(() => { for (let i = 0; i < LEVEL_REGISTRY.length; i++) {' +
+    ' const O = LEVEL_REGISTRY[i].starObjectives;' +
+    ' for (const star of [O.two, O.three]) if (star && star.type === "windLands") {' +
+    '   const band = LEVEL_BANDS[i]; let anyWind = false;' +
+    '   for (let t = band.t0; t <= band.t1; t++) if (MATERIALS[t].wind > 0) anyWind = true;' +
+    '   if (!anyWind) return "level " + i + " needs wind but its biome has none"; } }' +
+    ' return true; })()');
 });
 
 // ---------- report ----------
