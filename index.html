@@ -5269,7 +5269,11 @@ function drawBaseCosmetic(cx, topY, bw, id) {
 // the v133 "the tower under you is REAL" column vanish for anyone without recorded history.
 const PAST_SEAM = 'rgba(255,246,232,0.5)';
 const PAST_GLANCE_MAX = 260;   // v152: cap the descent glance — a long climb back up reads as a stall
-function pastFade(depth) { return 0.62 / (1 + depth * 0.085); }
+// Tuned against a real frame: the first pass (0.62 base, 0.55 dark veil) sank the column into a
+// near-black silhouette that read as an empty SHAFT in the cave, not as blocks. Asher asked for
+// "slightly darker/translucent", so the block keeps its own colour and each row keeps its lit top
+// edge — that edge is what makes a stack read as stacked.
+function pastFade(depth) { return 0.78 / (1 + depth * 0.055); }
 let pastDrawn = 0;   // v152: past rows drawn last frame — lets the v133 "the tower is REAL" guards see this pass
 function drawPastColumn(cy) {
   const top = blocks.length - 1;
@@ -5286,9 +5290,17 @@ function drawPastColumn(cy) {
     ctx.globalAlpha = a;
     ctx.fillStyle = b.col;                                   // its own biome colour, dimmed by the veil below
     ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
-    ctx.globalAlpha = a * 0.55;                              // desaturate toward the dark: an old block, not a lit one
+    ctx.globalAlpha = a * 0.30;                              // pushed toward the dark: an old block, not a lit one
     ctx.fillStyle = 'rgba(8,10,20,1)';
     ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
+    // the lit top edge + shaded underside: without these a column of flat rectangles reads as one
+    // dark VOID rather than as blocks you once stood on
+    ctx.globalAlpha = a * 0.34;
+    ctx.fillStyle = '#FFF6E8';
+    ctx.fillRect(Math.round(bx), y, Math.round(bw), 1);
+    ctx.globalAlpha = a * 0.40;
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.fillRect(Math.round(bx), y + BH - 1, Math.round(bw), 1);
     ctx.globalAlpha = 1;
   }
   // the seam: above it is NOW, below it is THEN. Drawn under the slab row, which the live loop
