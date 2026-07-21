@@ -4891,10 +4891,17 @@ function drawForestBand(cy, ph) {
     const y = worldY(A, cy); if (y < -20 || y > H + 20) continue;
     const r = bhash(A * 131); if (r < 0.3) continue;
     const t = clamp((A - WISP_A0) / (WISP_A1 - WISP_A0), 0, 1);                                // denser and bolder as the clouds near
-    const wx = Math.round(((r * 1.7) % 1) * W + (reduceMotion ? 0 : Math.sin(ph * .008 + A) * 8));
+    const wx0 = ((r * 1.7) % 1) * W + (reduceMotion ? 0 : Math.sin(ph * .008 + A) * 8);
+    // v156: the wisps RIDE THE GUST — they slide downwind and stretch out as the front passes,
+    // so the air you are about to be pushed by is visibly moving before it reaches you.
+    const gw = wind ? windWaveAt(wx0) : 0;
+    const wx = Math.round(wx0 + (wind ? gw * wind.dir * 16 : 0));
+    const stretch = 1 + gw * 1.1;
     ctx.globalAlpha = 0.14 + t * 0.3;
     pixDisc(wx, y, 6 + Math.round(t * 5), '#FFFFFF');
-    pixDisc(wx - 7, y + 2, 4 + Math.round(t * 3), '#FFFFFF'); pixDisc(wx + 7, y + 2, 4 + Math.round(t * 3), '#FFFFFF');
+    const off = Math.round(7 * stretch), rr = 4 + Math.round(t * 3);
+    pixDisc(wx - off, y + 2, rr, '#FFFFFF'); pixDisc(wx + off, y + 2, rr, '#FFFFFF');
+    if (gw > 0.35) { ctx.globalAlpha *= 0.7; pixDisc(wx - Math.round(off * 1.8 * wind.dir), y + 1, rr - 1, '#FFFFFF'); }   // the tail it leaves behind
   }
   ctx.globalAlpha = 1;
 }
@@ -4963,6 +4970,63 @@ function drawGroundWorld(cy, ph) {
   drawDappledLight(ph, yCeil);                                                                 // v150: warm light pools where the canopy breaks
   drawDaylightBlend(ph, yCeil);                                                              // v146: overexpose the surface line so grass + shafts read as one continuous daylight
   drawForestBand(cy, ph);                                                                      // canopy flanks, leaf-fall, first wisps (A 40..82)
+  drawLowerSkyAir(cy, ph);                                                                     // v156: open air gets banks + a flock (A 58..84)
+}
+// ---------- v156: LOWER SKY — open air you can read ----------
+// The emptiest biome in the game: a sky gradient, the canopy flanks fading out, and a few wisps.
+// It gets DEPTH (distant cloud banks at several removes) and LIFE (a flock riding the gusts).
+// GATING DISCIPLINE (the v150 lesson): every element here EXISTS ONLY at an altitude inside the
+// band and is drawn as a bounded sprite. There is deliberately NO full-width veil anywhere in this
+// function — a screen-wide rect is exactly what leaked the forest haze across the whole sky in v150.
+const LSKY_BANKS = 7;
+function drawLowerSkyAir(cy, ph) {
+  const A0 = TIERS[2].n - 2, A1 = TIERS[3].n + 4;                                              // 58..84
+  for (let k = 0; k < LSKY_BANKS; k++) {
+    const A = A0 + (A1 - A0) * ((k * 0.1379 + 0.06) % 1);
+    const y = worldY(A, cy);
+    if (y < -34 || y > H + 34) continue;
+    const h1 = bhash(k * 977), h2 = bhash(k * 613 + 31);
+    const far = 0.3 + h2 * 0.7;                                                                // 1 = nearest/boldest bank
+    const drift = reduceMotion ? 0 : Math.sin(ph * 0.0026 + k * 1.7) * 9;
+    const bx0 = ((h1 + k * 0.13) % 1) * (W + 130) - 65 + drift;
+    const gw = wind ? windWaveAt(bx0) : 0;
+    const bx = Math.round(bx0 + (wind ? gw * wind.dir * 22 : 0));                               // banks are shoved downwind too
+    const rBase = 5 + far * 7;
+    // the segments must OVERLAP or the bank reads as a row of separate dots (it did) — spacing is
+    // a fraction of the radius, and the gust stretches the bank rather than pulling it apart
+    const step = rBase * (0.85 + gw * 0.35);
+    ctx.globalAlpha = (0.09 + far * 0.16) * (1 - gw * 0.15);
+    for (let s = -3; s <= 3; s++) {                                                            // an elongated bank, not a ball
+      const taper = 1 - Math.abs(s) * 0.19;
+      const r = Math.max(2, Math.round(rBase * taper));
+      pixDisc(Math.round(bx + s * step), y + (s & 1 ? 2 : 0) - Math.round(Math.abs(s) * 0.6), r, '#FFFFFF');
+    }
+    ctx.globalAlpha = 1;
+  }
+  drawSkyFlock(cy, ph, A0, A1);
+}
+// A skein of birds crossing the open air. They are the biome's LIFE and its second wind tell: a
+// gust visibly shoves the whole flock sideways before it reaches your block.
+function drawSkyFlock(cy, ph, A0, A1) {
+  const A = A0 + (A1 - A0) * 0.62;
+  const y = worldY(A, cy);
+  if (y < -20 || y > H + 20) return;
+  const span = W + 90;
+  const fx0 = reduceMotion ? W * 0.5 : ((ph * 0.05) % span) - 45;
+  const gw = wind ? windWaveAt(fx0) : 0;
+  const fx = fx0 + (wind ? gw * wind.dir * 26 : 0);
+  ctx.fillStyle = '#3E5A72';
+  for (let b = 0; b < 5; b++) {
+    const side = b % 2 ? 1 : -1, rank = (b + 1) >> 1;
+    const bxp = Math.round(fx - rank * 9), byp = Math.round(y + side * rank * 5);
+    if (bxp < -8 || bxp > W + 8) continue;
+    const flap = reduceMotion ? 1 : (Math.sin(ph * 0.22 + b * 1.3) > 0 ? 1 : 0);               // two-frame wing beat
+    ctx.globalAlpha = 0.5 - rank * 0.06;
+    ctx.fillRect(bxp - 2, byp + flap, 2, 1);
+    ctx.fillRect(bxp, byp, 1, 1);
+    ctx.fillRect(bxp + 1, byp + flap, 2, 1);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawBiomeDecor(cy) {

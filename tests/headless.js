@@ -3364,7 +3364,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v155', () => /const CACHE = 'skystack-v155'/.test(sw));
+check('sw.js cache bumped to v156', () => /const CACHE = 'skystack-v156'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3784,6 +3784,61 @@ check('v155 the streaks ride the front: they move with it and fade with the gust
   if (!(mid.x > early.x)) return 'streaks did not travel with the front: ' + early.x + ' -> ' + mid.x;
   const late = at(118);   // the gust is dying: the envelope must take the streaks with it
   return late.n === 0 || late.n < mid.n ? true : 'streaks did not fade out with the gust';
+});
+
+// ---------- v156 LOWER SKY: open air you can read ----------
+check('v156 the lower-sky air is GATED to its band — nothing in the cave, nothing in high sky', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(3); wind = null; tick = 30;');
+  const marks = A => {
+    rec.rects.length = 0;
+    g.run('drawLowerSkyAir(GROUND_Y - ' + A + '*BH - (H - 100), 400)');
+    return rec.rects.length;
+  };
+  const deep = marks(8), forest = marks(45), band = marks(70), high = marks(140), space = marks(240);
+  if (band === 0) return 'nothing drawn inside LOWER SKY itself';
+  return deep === 0 && high === 0 && space === 0
+    ? true : 'leaked: cave=' + deep + ' forest=' + forest + ' high=' + high + ' space=' + space;
+});
+check('v156 no full-width veil in the lower-sky air (the v150 haze trap)', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(3); wind = null; tick = 30;');
+  rec.rects.length = 0;
+  g.run('drawLowerSkyAir(GROUND_Y - 70*BH - (H - 100), 400)');
+  const wide = rec.rects.filter(r => r.w >= g.run('W') * 0.9);
+  return wide.length === 0 ? true : wide.length + ' screen-wide rects — that is how v150 milkied the sky';
+});
+check('v156 the air rides the gust: banks and flock shove downwind', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(3); tick = 30;');
+  const meanX = windExpr => {
+    rec.rects.length = 0;
+    g.run('wind = ' + windExpr + '; drawLowerSkyAir(GROUND_Y - 70*BH - (H - 100), 400)');
+    return rec.rects.length ? rec.rects.reduce((a, r) => a + r.x, 0) / rec.rects.length : null;
+  };
+  const calm = meanX('null'), gust = meanX('{ dir: 1, str: 0.7, dur: 120, t: 60 }');
+  if (calm === null || gust === null) return 'nothing drawn';
+  return gust > calm ? true : 'the air ignored the gust: calm=' + calm.toFixed(1) + ' gust=' + gust.toFixed(1);
+});
+check('v156 reduced motion holds the flock and banks still', () => {
+  // build a recording ctx with reduced motion ON (v149rec is motion-ON, so this needs its own)
+  const rec = { rects: [] };
+  const chain = anyProxy();
+  const base = { fillRect: function (x, y, w, h) { rec.rects.push({ x, y, w, h }); } };
+  const ctxRec = new Proxy(base, {
+    get(t, k) { if (k in t) return t[k]; if (k === Symbol.toPrimitive) return () => 0; if (k === 'then') return undefined; return chain; },
+    set(t, k, v) { t[k] = v; return true; }
+  });
+  const g = makeGame(null, true, false, ctxRec);
+  g.run('prog = 9; startLevel(3); wind = null;');
+  const at = ph => {
+    rec.rects.length = 0;
+    g.run('tick = ' + ph + '; drawLowerSkyAir(GROUND_Y - 70*BH - (H - 100), ' + ph + ')');
+    return rec.rects.map(r => r.x + ':' + r.y).join(',');
+  };
+  const a = at(100), b = at(900);
+  if (!a.length) return 'nothing drawn under reduced motion';
+  return a === b ? true : 'the air still drifts under reduced motion';
 });
 
 // ---------- report ----------
