@@ -1644,6 +1644,55 @@ let demo = { n: 1, t: 0 };
 
 function towerTopY() { return GROUND_Y - blocks.length * BH; }
 function blockCol(i) { const s = runContext&&runContext.characterSnapshot?characterById(runContext.characterSnapshot.id):skin(); return s.base(i, tierHueAt(i)); }   // v134: hue follows the biome the block sits in
+// ---------- v152: THE PAST TOWER ----------
+// Every campaign level pre-stacks a perfect, centred column to the level's start altitude. It is
+// REAL (v133 draws it) but it is not YOURS — it says nothing about the climb you actually made.
+// We record the shape you really built and replay it under you as a faded past.
+// NEUTRALITY IS STRUCTURAL: the recorded shape rides on the same blocks[] entries as RENDER-ONLY
+// fields (gx/gw/past/slab). blocks[i].x and .w stay full-width and centred, so altitude, tier,
+// scoring, objectives and pickups are mathematically identical to before this feature. Nothing
+// outside the render path may ever read gx/gw — that is what makes "your old blocks cannot define
+// your new level" a property of the code rather than a rule someone has to remember.
+const PAST_KEY = 'skystack-history';
+function loadPastHistory() {
+  const h = store.get(PAST_KEY, null);
+  if (!h || typeof h !== 'object' || Array.isArray(h) || h.v !== 1) return { v: 1, lv: {} };
+  return (h.lv && typeof h.lv === 'object' && !Array.isArray(h.lv)) ? h : { v: 1, lv: {} };
+}
+// Called on a level win. Stores only the rows the player placed inside that level's own band.
+function recordPastRun(lv) {
+  if (!(lv >= 0)) return;
+  const a0 = levelStartA(lv), a1 = levelGoalA(lv), rows = [];
+  for (let i = a0; i < a1; i++) {
+    const b = blocks[i];
+    if (!b) break;
+    rows.push([Math.round(b.x), Math.round(b.w)]);
+  }
+  if (!rows.length) return;
+  const h = loadPastHistory();
+  h.lv[lv] = { a0, rows };   // latest clear WINS — the column is your last journey, not your best one
+  store.set(PAST_KEY, h);
+}
+// Stitch every recorded level into one bottom-up array covering altitudes 0..launch-1.
+// Uncovered altitudes stay null and fall back to the plain centred column at draw time; because
+// the column is already dissolving with depth, a gap reads as distance, not as missing data.
+function pastRowsForLaunch(launch) {
+  const out = new Array(Math.max(0, launch | 0)).fill(null);
+  const h = loadPastHistory();
+  for (const k in h.lv) {
+    const rec = h.lv[k];
+    if (!rec || !Array.isArray(rec.rows)) continue;
+    const a0 = rec.a0 | 0;
+    for (let j = 0; j < rec.rows.length; j++) {
+      const a = a0 + j, r = rec.rows[j];
+      if (a < 0 || a >= out.length || !Array.isArray(r)) continue;
+      const gw = Math.round(r[1]);
+      if (!(gw > 0)) continue;
+      out[a] = { gx: Math.round(r[0]), gw: Math.min(gw, BASE_W) };   // recorded widths can never exceed the slab
+    }
+  }
+  return out;
+}
 function setExpr(e, t) { mascot.expr = e; mascot.exprT = t; }
 function effPerfect() { return PERFECT_PX * (auraBlocks > 0 ? 2 : 1) * (1 + assist) * passiveEffect(runContext,'perfect',1); }
 
@@ -2125,6 +2174,7 @@ function levelComplete() {
   winStars = winStarMet.reduce((n, m) => n + (m ? 1 : 0), 0);
   winFirst = i + 1 > prog;
   if (winFirst) { prog = i + 1; store.set('skystack-tiers', prog); }
+  recordPastRun(i);   // v152: your real tower becomes the past under the NEXT level
   const starDiff = activeDifficulty().id, SR = recordsFor(starDiff);     // v124: stars are per-difficulty
   if (winStars > (SR.stars[i] || 0)) { SR.stars[i] = winStars; saveRecords(starDiff, SR); }
   winReward = 15 + i * 10 + winStars * 5 + (winFirst ? 25 : 0) + (winFirst && prog === LEVEL_COUNT ? 200 : 0);

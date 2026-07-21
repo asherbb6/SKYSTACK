@@ -3355,6 +3355,59 @@ check('no merge conflict markers in index.html', () => !/^(<{7}|={7}|>{7})/m.tes
 check('level stars stored under skystack-levelstars', () => /store\.set\('skystack-levelstars'/.test(src));
 check('no dead skystack-launch key left', () => !/skystack-launch/.test(src));
 
+// ---------- v152 past tower history ----------
+check('v152 recordPastRun stores exactly the level span', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 7 + blocks.length, w: 40, col:"#fff"});');
+  g.run('recordPastRun(0)');
+  const h = JSON.parse(g.run('JSON.stringify(loadPastHistory())'));
+  const rec = h.lv['0'];
+  if (!rec) return 'no record written';
+  const want = g.run('levelGoalA(0) - levelStartA(0)');
+  return rec.a0 === g.run('levelStartA(0)') && rec.rows.length === want
+    ? true : 'a0=' + rec.a0 + ' rows=' + rec.rows.length + ' want=' + want;
+});
+check('v152 replaying a level overwrites its record, never appends', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 5, w: 40, col:"#fff"});');
+  g.run('recordPastRun(0)');
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 9, w: 22, col:"#fff"});');
+  g.run('recordPastRun(0)');
+  const rec = JSON.parse(g.run('JSON.stringify(loadPastHistory())')).lv['0'];
+  const want = g.run('levelGoalA(0) - levelStartA(0)');
+  return rec.rows.length === want && rec.rows[1][1] === 22
+    ? true : 'rows=' + rec.rows.length + ' w=' + rec.rows[1][1];
+});
+check('v152 pastRowsForLaunch stitches history and leaves gaps null', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 11, w: 33, col:"#fff"});');
+  g.run('recordPastRun(0)');
+  const goal = g.run('levelGoalA(0)');
+  const out = JSON.parse(g.run('JSON.stringify(pastRowsForLaunch(levelGoalA(0) + 6))'));
+  const covered = out.slice(g.run('levelStartA(0)'), goal);
+  return out.length === goal + 6 && covered.every(r => r && r.gw === 33)
+    && out.slice(goal).every(r => r === null)
+    ? true : 'covered=' + covered.filter(Boolean).length + ' tail=' + JSON.stringify(out.slice(goal));
+});
+check('v152 malformed history degrades to no past rows (never throws)', () => {
+  const g = makeGame({ 'skystack-save': JSON.stringify({ v: 2, data: { 'skystack-history': 'garbage' } }) });
+  const out = JSON.parse(g.run('JSON.stringify(pastRowsForLaunch(12))'));
+  return out.length === 12 && out.every(r => r === null) ? true : JSON.stringify(out);
+});
+check('v152 a level win records the run', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('score=500; while (blocks.length < levelGoalA(0)) blocks.push({x:0,w:96,col:"#fff"});');
+  g.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
+  if (g.run('state') !== 'levelwin') return 'level did not win';
+  const rec = JSON.parse(g.run('JSON.stringify(loadPastHistory())')).lv['0'];
+  return rec && rec.rows.length > 0 ? true : 'no record after win';
+});
+
 // ---------- report ----------
 let pass = 0, fail = 0;
 for (const [ok, name, detail] of results) {
