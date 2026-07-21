@@ -1671,8 +1671,11 @@ function recordPastRun(lv) {
   }
   if (!rows.length) return;
   const h = loadPastHistory();
-  h.lv[lv] = { a0, rows };   // latest clear WINS — the column is your last journey, not your best one
-  store.set(PAST_KEY, h);
+  // v154: record the SKIN YOU WORE on that run. Skin `base(i, hueBase)` functions are pure and the
+  // biome hue per altitude is fixed (#79 — no random palette), so the id alone reproduces the exact
+  // colours you played with. Change skins later and your past keeps the look it was built in.
+  h.lv[lv] = { a0, rows, skin: (runContext && runContext.characterSnapshot && runContext.characterSnapshot.id) || skinId };
+  store.set(PAST_KEY, h);   // latest clear WINS — the column is your last journey, not your best one
 }
 // Stitch every recorded level into one bottom-up array covering altitudes 0..launch-1.
 // Uncovered altitudes stay null and fall back to the plain centred column at draw time; because
@@ -1689,7 +1692,10 @@ function pastRowsForLaunch(launch) {
       if (a < 0 || a >= out.length || !Array.isArray(r)) continue;
       const gw = Math.round(r[1]);
       if (!(gw > 0)) continue;
-      out[a] = { gx: Math.round(r[0]), gw: Math.min(gw, BASE_W) };   // recorded widths can never exceed the slab
+      // v154: rebuild the colour AND finish from the skin worn on that run, not the one equipped now
+      const sk = characterById(rec.skin || skinId);
+      out[a] = { gx: Math.round(r[0]), gw: Math.min(gw, BASE_W),   // recorded widths can never exceed the slab
+                 gcol: sk.base(a, tierHueAt(a)), gstyle: sk.style };
     }
   }
   return out;
@@ -1721,9 +1727,10 @@ function resetRun() {
   for (let i = 0; i < runLaunch - 1; i++) {   // the TOP pre-stacked row is the fresh slab, never past
     const r = pastRows[i];
     blocks[i].past = true;
-    if (r) { blocks[i].gx = r.gx; blocks[i].gw = r.gw; pastDepth++; }
+    if (r) { blocks[i].gx = r.gx; blocks[i].gw = r.gw; blocks[i].gcol = r.gcol; blocks[i].gstyle = r.gstyle; pastDepth++; }
   }
   if (runLaunch > 0) blocks[runLaunch - 1].slab = true;
+  pastPrepare();   // v154: bake each past row's colour + alpha once, against the tower you'll stand on
   debris = []; particles = []; floaters = []; trails = []; coinFx = []; pickups = [];
   balloon = null; lastBalloonRow = 0;
   score = 0; combo = 0; maxCombo = 0; newBest = false; newHeight = false;
@@ -2816,85 +2823,86 @@ function update(dt) {
 }
 
 // ---------- draw helpers ----------
-function drawBlock(x, y, w, h, col, isTop, glow, style) {
+function drawBlock(x, y, w, h, col, isTop, glow, style, gtx) {
+  const g = gtx || ctx;   // v154: optional target so the past column can render a REAL skin into an offscreen buffer and blit it with alpha
   const hu = col.h, sat = clamp(col.s, 0, 100), l = col.l;
   style = style || 'gloss';
   const C = (dl, ds) => 'hsl('+hu+','+clamp(sat+(ds||0),0,100)+'%,'+clamp(l+dl,4,96)+'%)';
   const on = w > 8 && h > 6;                                              // draw fine detail only on full-size blocks
-  if (glow > 0) { ctx.globalAlpha = glow*.5; ctx.fillStyle = 'hsl('+hu+',100%,78%)'; ctx.fillRect(x-2, y-2, w+4, h+4); ctx.globalAlpha = 1; }
+  if (glow > 0) { g.globalAlpha = glow*.5; g.fillStyle = 'hsl('+hu+',100%,78%)'; g.fillRect(x-2, y-2, w+4, h+4); g.globalAlpha = 1; }
   // ---- body: soft vertical shading (lit top → shaded bottom) ----
-  ctx.fillStyle = C(0);   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = C(8);   ctx.fillRect(x, y, w, Math.max(1, h/2|0));
-  ctx.fillStyle = C(-10); ctx.fillRect(x, y + (h*0.72|0), w, h - (h*0.72|0));
+  g.fillStyle = C(0);   g.fillRect(x, y, w, h);
+  g.fillStyle = C(8);   g.fillRect(x, y, w, Math.max(1, h/2|0));
+  g.fillStyle = C(-10); g.fillRect(x, y + (h*0.72|0), w, h - (h*0.72|0));
   // ---- bevel ----
-  ctx.fillStyle = C(20, -8); ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);            // lit top + left
-  ctx.fillStyle = C(-24);    ctx.fillRect(x, y+h-1, w, 1); ctx.fillRect(x+w-1, y, 1, h);    // shaded bottom + right
-  ctx.fillStyle = C(-15);    ctx.fillRect(x, y, 1, 1); ctx.fillRect(x+w-1, y+h-1, 1, 1);    // corner clips
+  g.fillStyle = C(20, -8); g.fillRect(x, y, w, 1); g.fillRect(x, y, 1, h);            // lit top + left
+  g.fillStyle = C(-24);    g.fillRect(x, y+h-1, w, 1); g.fillRect(x+w-1, y, 1, h);    // shaded bottom + right
+  g.fillStyle = C(-15);    g.fillRect(x, y, 1, 1); g.fillRect(x+w-1, y+h-1, 1, 1);    // corner clips
   // ---- per-skin surface finish (v110: ONE shared clip — no effect may leave the block) ----
   if (on) {
-    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip();
     const hsh = ((x*7 + y*13) & 1023);                                   // stable-ish per-block hash
     if (style === 'gloss') {                                             // glossy plastic — sheen + soft travelling highlight
-      ctx.globalAlpha = .55; ctx.fillStyle = '#FFF'; ctx.fillRect(x+2, y+2, w-4, 1);
+      g.globalAlpha = .55; g.fillStyle = '#FFF'; g.fillRect(x+2, y+2, w-4, 1);
       if (!reduceMotion) { const sw = x + ((tick*.9 + y*5) % (w+18)) - 9;
-        ctx.globalAlpha = .07; ctx.fillRect(Math.round(sw)-1, y+1, 1, h-2); ctx.fillRect(Math.round(sw)+3, y+1, 1, h-2);
-        ctx.globalAlpha = .14; ctx.fillRect(Math.round(sw), y+1, 3, h-2); }
-      ctx.globalAlpha = 1;
+        g.globalAlpha = .07; g.fillRect(Math.round(sw)-1, y+1, 1, h-2); g.fillRect(Math.round(sw)+3, y+1, 1, h-2);
+        g.globalAlpha = .14; g.fillRect(Math.round(sw), y+1, 3, h-2); }
+      g.globalAlpha = 1;
     } else if (style === 'stripe') {                                     // satin candy — soft diagonal bands
-      ctx.globalAlpha = .24; ctx.fillStyle = '#FFF'; const o = reduceMotion ? 0 : (tick*.5) % 14;
-      for (let sx = x - h - 14 + o; sx < x + w; sx += 14) { ctx.beginPath(); ctx.moveTo(sx, y+h); ctx.lineTo(sx+h, y); ctx.lineTo(sx+h+5, y); ctx.lineTo(sx+5, y+h); ctx.closePath(); ctx.fill(); }
-      ctx.globalAlpha = 1;
+      g.globalAlpha = .24; g.fillStyle = '#FFF'; const o = reduceMotion ? 0 : (tick*.5) % 14;
+      for (let sx = x - h - 14 + o; sx < x + w; sx += 14) { g.beginPath(); g.moveTo(sx, y+h); g.lineTo(sx+h, y); g.lineTo(sx+h+5, y); g.lineTo(sx+5, y+h); g.closePath(); g.fill(); }
+      g.globalAlpha = 1;
     } else if (style === 'ember') {                                      // molten — jagged magma veins + embers rising inside
       const vy1 = y + Math.max(2, (h/3|0)), vy2 = y + Math.min(h-3, (h*2/3|0));
       const pu = reduceMotion ? .5 : .45 + .35*Math.sin(tick*.12 + y*.3);
       const seg = Math.max(3, ((w-6)/3)|0);
-      ctx.fillStyle = 'hsl(24,100%,58%)'; ctx.globalAlpha = pu;
+      g.fillStyle = 'hsl(24,100%,58%)'; g.globalAlpha = pu;
       for (let s3 = 0; s3 < 3; s3++) { const off = (s3 + (hsh&1)) % 2 ? 1 : -1;
-        ctx.fillRect(x+3 + s3*seg, vy1 + (s3%2?off:0), seg-1, 1);
-        ctx.fillRect(x+3 + s3*seg, vy2 + (s3%2?0:off), seg-1, 1); }
-      ctx.globalAlpha = pu*.6; ctx.fillStyle = 'hsl(46,100%,70%)'; ctx.fillRect(x+3+seg, vy1, seg-1, 1);
-      ctx.globalAlpha = 1;
+        g.fillRect(x+3 + s3*seg, vy1 + (s3%2?off:0), seg-1, 1);
+        g.fillRect(x+3 + s3*seg, vy2 + (s3%2?0:off), seg-1, 1); }
+      g.globalAlpha = pu*.6; g.fillStyle = 'hsl(46,100%,70%)'; g.fillRect(x+3+seg, vy1, seg-1, 1);
+      g.globalAlpha = 1;
       if (!reduceMotion) for (let e2 = 0; e2 < 2; e2++) {                // sparks die out before the top edge
         const cyc = ((tick*.6 + e2*37 + hsh) % (h*4)) / 4;
         const ey = y + h - 2 - cyc, ex = x + 3 + ((hsh>>e2) + e2*29) % Math.max(2, w-6);
-        if (ey > y) { ctx.globalAlpha = clamp((ey - y) / 3, 0, 1)*.8; ctx.fillStyle = 'hsl(40,100%,68%)';
-          ctx.fillRect(Math.round(ex), Math.round(ey), 1, 1); ctx.globalAlpha = 1; }
+        if (ey > y) { g.globalAlpha = clamp((ey - y) / 3, 0, 1)*.8; g.fillStyle = 'hsl(40,100%,68%)';
+          g.fillRect(Math.round(ex), Math.round(ey), 1, 1); g.globalAlpha = 1; }
       }
     } else if (style === 'facet') {                                      // cut gem — diagonal wedges + travelling bevel glint
-      ctx.fillStyle = '#FFF'; ctx.globalAlpha = .10;
-      for (let d2 = 0; d2 < 3; d2++) ctx.fillRect(x+1, y+1+d2, Math.max(2, (w*.5|0) - d2*((w/6)|0)), 1);
-      ctx.fillStyle = '#000'; ctx.globalAlpha = .12;
-      for (let d2 = 0; d2 < 3; d2++) { const ww2 = Math.max(2, (w*.5|0) - d2*((w/6)|0)); ctx.fillRect(x+w-1-ww2, y+h-2-d2, ww2, 1); }
+      g.fillStyle = '#FFF'; g.globalAlpha = .10;
+      for (let d2 = 0; d2 < 3; d2++) g.fillRect(x+1, y+1+d2, Math.max(2, (w*.5|0) - d2*((w/6)|0)), 1);
+      g.fillStyle = '#000'; g.globalAlpha = .12;
+      for (let d2 = 0; d2 < 3; d2++) { const ww2 = Math.max(2, (w*.5|0) - d2*((w/6)|0)); g.fillRect(x+w-1-ww2, y+h-2-d2, ww2, 1); }
       const gp = (tick*.7 + hsh) % Math.max(1, w-6);
-      ctx.fillStyle = '#FFF'; ctx.globalAlpha = reduceMotion ? .5 : .5 + .3*Math.sin(tick*.2);
-      ctx.fillRect(x+2 + (reduceMotion ? ((w-6)/2|0) : Math.round(gp)), y+1, 2, 1);
+      g.fillStyle = '#FFF'; g.globalAlpha = reduceMotion ? .5 : .5 + .3*Math.sin(tick*.2);
+      g.fillRect(x+2 + (reduceMotion ? ((w-6)/2|0) : Math.round(gp)), y+1, 2, 1);
       const tw2 = reduceMotion ? .4 : .2 + .3*(Math.sin(tick*.14 + y)*.5 + .5);
-      ctx.globalAlpha = tw2; ctx.fillRect(x + (w*.5|0), y + (h*.5|0), 1, 1);
-      ctx.globalAlpha = 1;
+      g.globalAlpha = tw2; g.fillRect(x + (w*.5|0), y + (h*.5|0), 1, 1);
+      g.globalAlpha = 1;
     } else if (style === 'sparkle') {                                    // frost — frosted rim + smooth cross twinkles
-      ctx.globalAlpha = .35; ctx.fillStyle = '#FFF';
-      ctx.fillRect(x+1, y+1, w-2, 1); ctx.fillRect(x+1, y+h-2, w-2, 1);
-      ctx.fillRect(x+1, y+1, 1, h-2); ctx.fillRect(x+w-2, y+1, 1, h-2);
+      g.globalAlpha = .35; g.fillStyle = '#FFF';
+      g.fillRect(x+1, y+1, w-2, 1); g.fillRect(x+1, y+h-2, w-2, 1);
+      g.fillRect(x+1, y+1, 1, h-2); g.fillRect(x+w-2, y+1, 1, h-2);
       for (let t3 = 0; t3 < 3; t3++) {
         const a3 = reduceMotion ? (t3 === 0 ? .5 : 0) : Math.pow(Math.max(0, Math.sin(tick*.07 + t3*2.1 + hsh)), 2);
         if (a3 <= .02) continue;
         const tx2 = x + 3 + ((hsh*(t3+3) + t3*41) % Math.max(1, w-6)), ty2 = y + 3 + (((hsh>>(t3+1)) + t3*17) % Math.max(1, h-6));
-        ctx.globalAlpha = a3*.95; ctx.fillRect(tx2, ty2-1, 1, 3); ctx.fillRect(tx2-1, ty2, 3, 1);
+        g.globalAlpha = a3*.95; g.fillRect(tx2, ty2-1, 1, 3); g.fillRect(tx2-1, ty2, 3, 1);
       }
-      ctx.globalAlpha = 1;
+      g.globalAlpha = 1;
     } else if (style === 'shimmer') {                                    // metal — bright top + specular sweep with trailing shine
-      ctx.fillStyle = C(26); ctx.fillRect(x+1, y+1, w-2, 1);
+      g.fillStyle = C(26); g.fillRect(x+1, y+1, w-2, 1);
       if (!reduceMotion) { const shx = x + ((tick*1.6) % (w+22)) - 11;
-        ctx.globalAlpha = .5; ctx.fillStyle = '#FFFDE8'; ctx.fillRect(Math.round(shx), y+1, 3, h-2);
-        ctx.fillStyle = '#FFF'; ctx.fillRect(Math.round(shx)+1, y+1, 1, h-2);
-        ctx.globalAlpha = .18; ctx.fillStyle = '#FFFDE8'; ctx.fillRect(Math.round(shx)-6, y+1, 2, h-2);
-        ctx.globalAlpha = 1; }
+        g.globalAlpha = .5; g.fillStyle = '#FFFDE8'; g.fillRect(Math.round(shx), y+1, 3, h-2);
+        g.fillStyle = '#FFF'; g.fillRect(Math.round(shx)+1, y+1, 1, h-2);
+        g.globalAlpha = .18; g.fillStyle = '#FFFDE8'; g.fillRect(Math.round(shx)-6, y+1, 2, h-2);
+        g.globalAlpha = 1; }
     } else if (style === 'glow') {                                       // neon tube — four pulsing inner edges + running current
       const pu2 = reduceMotion ? .55 : .35 + .35*Math.sin(tick*.12 + y*.2);
-      ctx.fillStyle = C(38); ctx.globalAlpha = pu2;
-      ctx.fillRect(x+1, y+1, w-2, 1); ctx.fillRect(x+1, y+h-2, w-2, 1);
-      ctx.fillRect(x+1, y+1, 1, h-2); ctx.fillRect(x+w-2, y+1, 1, h-2);
-      ctx.globalAlpha = .8; ctx.fillStyle = C(32); ctx.fillRect(x+2, y+2, w-4, 1);
+      g.fillStyle = C(38); g.globalAlpha = pu2;
+      g.fillRect(x+1, y+1, w-2, 1); g.fillRect(x+1, y+h-2, w-2, 1);
+      g.fillRect(x+1, y+1, 1, h-2); g.fillRect(x+w-2, y+1, 1, h-2);
+      g.globalAlpha = .8; g.fillStyle = C(32); g.fillRect(x+2, y+2, w-4, 1);
       if (!reduceMotion) {
         const per = 2*(w-2) + 2*(h-2), cp2 = (tick*1.2 + hsh) % per;
         const edge = d3 => { let d = (cp2 - d3 + per) % per, px2, py2;
@@ -2904,14 +2912,14 @@ function drawBlock(x, y, w, h, col, isTop, glow, style) {
           else { px2 = x+1; py2 = y+h-2 - (d-2*(w-2)-(h-2)); }
           return [Math.round(px2), Math.round(py2)]; };
         const c1 = edge(0), c2 = edge(2);
-        ctx.globalAlpha = .95; ctx.fillStyle = '#FFF'; ctx.fillRect(c1[0], c1[1], 1, 1);
-        ctx.globalAlpha = .45; ctx.fillRect(c2[0], c2[1], 1, 1);
+        g.globalAlpha = .95; g.fillStyle = '#FFF'; g.fillRect(c1[0], c1[1], 1, 1);
+        g.globalAlpha = .45; g.fillRect(c2[0], c2[1], 1, 1);
       }
-      ctx.globalAlpha = 1;
+      g.globalAlpha = 1;
     }
-    ctx.restore();
+    g.restore();
   }
-  if (isTop && flashT > 0) { ctx.globalAlpha = flashT*.85; ctx.fillStyle = '#FFF'; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1; }
+  if (isTop && flashT > 0) { g.globalAlpha = flashT*.85; g.fillStyle = '#FFF'; g.fillRect(x, y, w, h); g.globalAlpha = 1; }
 }
 function drawCoin(x, y) {
   // v91 fine grid: chamfered ring, thin rim, shaded base edge + glint — same 6x6 footprint
@@ -5269,17 +5277,63 @@ function drawBaseCosmetic(cx, topY, bw, id) {
 // the v133 "the tower under you is REAL" column vanish for anyone without recorded history.
 const PAST_SEAM = 'rgba(255,246,232,0.5)';
 const PAST_GLANCE_MAX = 260;   // v152: cap the descent glance — a long climb back up reads as a stall
-// Tuned against real frames. Pass 1 (flat fill, 0.62 base, 0.55 dark veil) sank the column into a
-// near-black silhouette that read as an empty SHAFT in the cave, not as blocks. Pass 2 added
-// hand-drawn top/bottom edges. Pass 3 (Asher: "show the actual skins of the previous levels blocks
-// but just make the brightness/transparency lower") threw the hand-drawn edges away and runs the
-// REAL skin renderer with a dimmed colour, so the past wears whatever skin the player has equipped.
-// `a` is the row's fade: ~0.78 at the seam, falling with depth.
-function pastFade(depth) { return 0.78 / (1 + depth * 0.055); }
+// Tuned against real frames, in four passes. 1: a flat fill — sank into a near-black silhouette that
+// read as an empty SHAFT in the cave. 2: hand-drawn top/bottom edges. 3: the real skin renderer fed
+// a HEAVILY dimmed colour — Asher's verdict was blunt and correct, *"its just black and not
+// transparent now"*, because crushing the lightness of an already-dark cave palette lands on black,
+// and dimming a colour is not the same thing as being see-through.
+// 4 (current): the row renders at FULL colour into an offscreen buffer and is BLITTED with a real
+// globalAlpha, so the cave genuinely shows through it. Only a gentle lightness trim remains. This is
+// why drawBlock takes an optional target context — an alpha set around a direct drawBlock call does
+// not survive, because each per-skin finish sets and clears globalAlpha itself.
+// `a` is the row's alpha: ~0.78 at the seam, falling with depth.
+function pastFade(depth) { return 0.66 / (1 + depth * 0.075); }
 let pastDrawn = 0;   // v152: past rows drawn last frame — lets the v133 "the tower is REAL" guards see this pass
+let pastBuf = null, pastBufCtx = null;
+// One scratch canvas, one block tall, reused for every row. Sized in DEVICE pixels (RS) so the
+// blitted block stays as crisp as a directly-drawn one.
+// HSL lightness is NOT perceived brightness: a yellow at l=31 reads far brighter than a purple at
+// l=44 (measured — a GOLD past sat at 133 against a VOID live tower at 50 with both capped on `l`).
+// So the cap is computed on real luminance.
+function hslLum(c) {
+  const s = clamp(c.s, 0, 100) / 100, l = clamp(c.l, 0, 100) / 100;
+  const k = n => (n + c.h / 30) % 12, A = s * Math.min(l, 1 - l);
+  const f = n => l - A * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return 255 * (0.299 * f(0) + 0.587 * f(8) + 0.114 * f(4));
+}
+// v154: bake each past row's final colour and alpha ONCE, at reset.
+// Two reasons. (1) It is the only place the luminance cap can be solved without doing it per frame.
+// (2) It fixes a real bug: the fade used to key off `blocks.length - 1`, so YOUR PAST GOT DARKER AS
+// YOU STACKED HIGHER. The past is finished — it must not change while you climb. Depth is measured
+// from the SEAM, which never moves during a run.
+function pastPrepare() {
+  const slabIdx = runLaunch - 1;
+  if (slabIdx < 1 || !blocks[slabIdx]) return;
+  const liveLum = hslLum(blocks[slabIdx].col);
+  for (let i = 0; i < slabIdx; i++) {
+    const b = blocks[i];
+    if (!b.past) continue;
+    const a = pastFade(slabIdx - i);
+    const c = b.gcol || b.col;
+    const sat = clamp(c.s * (0.68 + 0.24 * a), 0, 100);
+    let l = clamp(c.l * (0.55 + 0.35 * a), 4, 96);
+    // the past always sits BEHIND the block you stand on, whatever skin either was built in
+    const target = liveLum * (0.52 + 0.30 * a);
+    for (let k = 0; k < 8 && hslLum({ h: c.h, s: sat, l }) > target && l > 4; k++) l = Math.max(4, l * 0.88);
+    b.gdraw = { h: c.h, s: sat, l };
+    b.galpha = a;
+  }
+}
+function pastBuffer() {
+  const bw = Math.max(1, Math.round(BASE_W * RS)), bh = Math.max(1, Math.round(BH * RS));
+  if (!pastBuf) { pastBuf = document.createElement('canvas'); pastBufCtx = pastBuf.getContext('2d'); }
+  if (pastBuf.width !== bw || pastBuf.height !== bh) { pastBuf.width = bw; pastBuf.height = bh; }
+  return pastBufCtx;
+}
 function drawPastColumn(cy) {
   const top = blocks.length - 1;
-  const pastStyle = skin().style;   // the past wears the same skin finish the live tower does
+  const liveStyle = skin().style;   // fallback finish for rows with no recorded skin
+  const g = pastBuffer();
   pastDrawn = 0;
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
@@ -5288,21 +5342,19 @@ function drawPastColumn(cy) {
     if (y > H || y + BH < 0) continue;                       // screen-space cull: cost is viewport-bound
     const bw = b.gw === undefined ? BASE_W : b.gw;
     const bx = b.gw === undefined ? (W - BASE_W) / 2 : b.gx;
-    const a = pastFade(top - i);
     pastDrawn++;
-    // v152b: draw the REAL SKIN. drawBlock resets globalAlpha internally (the per-skin finishes set
-    // and clear it), so wrapping the call in an alpha does not survive — but drawBlock takes its
-    // colour as an HSL object, so handing it a DIMMED colour runs the player's actual skin renderer
-    // (bevels, sheen, stripes, roots, stars) at a lower brightness for free. No canvas filter: a
-    // per-primitive opacity filter double-darkens every overlapping bevel and costs a layer per fill.
-    const c = b.col;
-    const dim = { h: c.h,
-                  s: clamp(c.s * (0.26 + 0.30 * a), 0, 100),
-                  l: clamp(c.l * (0.18 + 0.40 * a), 4, 96) };
-    drawBlock(Math.round(bx), y, Math.round(bw), BH, dim, false, 0, pastStyle);
-    ctx.globalAlpha = (1 - a) * 0.45;                        // the air between you and then, thickening with depth
-    ctx.fillStyle = 'rgba(8,10,20,1)';
-    ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
+    // Colour, finish and alpha were baked by pastPrepare() — the skin YOU WORE on that run, capped
+    // to sit behind the live tower. Rows with no record fall back to what is equipped now.
+    const a = b.galpha === undefined ? pastFade(Math.max(0, top - i)) : b.galpha;
+    const soft = b.gdraw || b.col;
+    const style = b.gstyle || liveStyle;
+    const dw = Math.round(bw), dx = Math.round(bx);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, pastBuf.width, pastBuf.height);
+    g.setTransform(RS, 0, 0, RS, 0, 0);
+    drawBlock(0, 0, dw, BH, soft, false, 0, style, g);       // full-strength skin, into the buffer
+    ctx.globalAlpha = a;                                     // ...then blitted see-through
+    ctx.drawImage(pastBuf, 0, 0, Math.max(1, Math.round(dw * RS)), Math.max(1, Math.round(BH * RS)), dx, y, dw, BH);
     ctx.globalAlpha = 1;
   }
   // the seam: above it is NOW, below it is THEN. Drawn under the slab row, which the live loop

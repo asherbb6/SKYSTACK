@@ -3364,7 +3364,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v153', () => /const CACHE = 'skystack-v153'/.test(sw));
+check('sw.js cache bumped to v154', () => /const CACHE = 'skystack-v154'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3490,13 +3490,57 @@ check('v152 the past column is LOCKED: sway moves the live tower, never the past
   g.run('startLevel(0)');
   g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col:"#fff"});');
   g.run('recordPastRun(0); prog = 3; startLevel(1)');
+  // v154: rows render into an offscreen buffer at x=0 and are BLITTED into place, so the fillRect
+  // x's are all 0 and prove nothing. The blit destination is what carries the position.
   const grab = sway => {
-    rec.rects.length = 0;
+    rec.blits.length = 0;
     g.run('cameraY = GROUND_Y - runLaunch*BH - (H - 100); swayX = ' + sway + '; drawPastColumn(cameraY)');
-    return rec.rects.map(r => r.x).join(',');
+    return rec.blits.map(b => b.dx + ':' + b.dy).join(',');
   };
   const still = grab(0), leaned = grab(24);
-  return still.length > 0 && still === leaned ? true : 'past moved with sway';
+  if (!still.length) return 'no past blits recorded — the guard would pass vacuously';
+  return still === leaned ? true : 'past moved with sway';
+});
+check('v152c the past wears the skin from THAT run, not the one equipped now', () => {
+  const g = makeGame();
+  g.run('skinId = "candy"; startLevel(0)');   // clear level 1 wearing CANDY
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col: blockCol(blocks.length)});');
+  g.run('recordPastRun(0)');
+  const rec = JSON.parse(g.run('JSON.stringify(loadPastHistory())')).lv['0'];
+  if (rec.skin !== 'candy') return 'recorded skin was ' + rec.skin;
+  g.run('skinId = "gold"; prog = 3; startLevel(1)');   // now equip GOLD and start the next level
+  const want = JSON.parse(g.run('JSON.stringify(characterById("candy").base(3, tierHueAt(3)))'));
+  const got = JSON.parse(g.run('JSON.stringify(blocks[3].gcol)'));
+  const styles = g.run('JSON.stringify([blocks[3].gstyle, characterById("candy").style, skin().style])');
+  const [gs, candyStyle, liveStyle] = JSON.parse(styles);
+  if (gs !== candyStyle) return 'past style is ' + gs + ', wanted candy\'s ' + candyStyle;
+  if (gs === liveStyle) return 'test is blind: candy and gold share a style';
+  return got && got.h === want.h && got.l === want.l
+    ? true : 'past colour ' + JSON.stringify(got) + ' != candy\'s ' + JSON.stringify(want);
+});
+check('v152c past rows are BLITTED with a real alpha (genuinely see-through)', () => {
+  // must use a REAL recording ctx: the default harness ctx is anyProxy, whose set trap is a no-op,
+  // so overriding ctx.drawImage inside the vm records nothing and the check passes vacuously.
+  const alphas = [];
+  const chain = anyProxy();
+  const base = {
+    globalAlpha: 1,
+    drawImage: function () { alphas.push(base.globalAlpha); },
+    fillRect: function () {}
+  };
+  const ctxRec = new Proxy(base, {
+    get(t, k) { if (k in t) return t[k]; if (k === Symbol.toPrimitive) return () => 0; if (k === 'then') return undefined; return chain; },
+    set(t, k, v) { t[k] = v; return true; }
+  });
+  const g = makeGame(null, false, false, ctxRec);
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col: blockCol(blocks.length)});');
+  g.run('recordPastRun(0); prog = 3; startLevel(1)');
+  alphas.length = 0;
+  g.run('cameraY = GROUND_Y - runLaunch*BH - (H - 100); drawPastColumn(cameraY)');
+  if (!alphas.length) return 'no past row was blitted';
+  if (!alphas.every(a => a > 0 && a < 1)) return 'a past row was blitted opaque: ' + alphas.slice(0, 4).join(',');
+  return alphas[0] < alphas[alphas.length - 1] ? true : 'alpha does not fall with depth';
 });
 check('v152 past rows draw their RECORDED width, not the physics width', () => {
   const { rec, g } = v149rec();
