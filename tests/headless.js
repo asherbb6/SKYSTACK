@@ -3453,6 +3453,50 @@ check('v152 altitude math is untouched by history', () => {
     && a.run('nextPickupRow') === b.run('nextPickupRow') ? true : 'run state diverged with history present';
 });
 
+check('v152 past fade decreases monotonically with depth', () => fresh.run(
+  '(() => { let prev = Infinity;' +
+  'for (let d = 0; d < 40; d++) { const a = pastFade(d);' +
+  'if (!(a > 0 && a <= 1)) return "alpha out of range at " + d;' +
+  'if (a >= prev) return "not decreasing at depth " + d; prev = a; } return true; })()'));
+check('v152 the past column is LOCKED: sway moves the live tower, never the past', () => {
+  const { rec, g } = v149rec();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col:"#fff"});');
+  g.run('recordPastRun(0); prog = 3; startLevel(1)');
+  const grab = sway => {
+    rec.rects.length = 0;
+    g.run('cameraY = GROUND_Y - runLaunch*BH - (H - 100); swayX = ' + sway + '; drawPastColumn(cameraY)');
+    return rec.rects.map(r => r.x).join(',');
+  };
+  const still = grab(0), leaned = grab(24);
+  return still.length > 0 && still === leaned ? true : 'past moved with sway';
+});
+check('v152 past rows draw their RECORDED width, not the physics width', () => {
+  const { rec, g } = v149rec();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 37, col:"#fff"});');
+  g.run('recordPastRun(0); prog = 3; startLevel(1)');
+  rec.rects.length = 0;
+  g.run('cameraY = GROUND_Y - runLaunch*BH - (H - 100); drawPastColumn(cameraY)');
+  const bh = g.run('BH'), base = g.run('BASE_W');
+  const widths = new Set(rec.rects.filter(r => r.h === bh).map(r => r.w));
+  if (!widths.size) return 'nothing drawn';
+  return widths.has(37) && !widths.has(base) ? true : 'widths=' + [...widths].join(',');
+});
+check('v152 the main block loop no longer draws past rows itself', () => {
+  const i0 = src.indexOf('for (let i=0;i<blocks.length;i++)');
+  const seg = src.slice(i0, i0 + 1400);
+  return seg.includes('if (blocks[i].past) continue;') ? true : 'past rows are still drawn by the live loop';
+});
+check('v152 with NO history the launch column still renders (v133 tower never vanishes)', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 3; startLevel(1)');
+  rec.rects.length = 0;
+  g.run('cameraY = GROUND_Y - runLaunch*BH - (H - 100); drawPastColumn(cameraY)');
+  const bh = g.run('BH');
+  return rec.rects.filter(r => r.h === bh).length > 0 ? true : 'the pre-stacked tower drew nothing';
+});
+
 // ---------- report ----------
 let pass = 0, fail = 0;
 for (const [ok, name, detail] of results) {

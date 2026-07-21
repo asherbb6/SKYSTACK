@@ -5252,10 +5252,41 @@ function drawBaseCosmetic(cx, topY, bw, id) {
   }
   ctx.restore();
 }
+// v152 THE PAST IS LOCKED AND FADING. Two rules live here:
+// (1) drawPastColumn is called OUTSIDE the swayX translate, so the past never leans with the live
+//     tower. That is not just taste — a past that does not move is a past that visibly is not
+//     holding you up.
+// (2) Alpha and brightness both fall with depth below the seam, so DISTANCE READS AS TIME. It also
+//     means an unrecorded row (older save, skipped checkpoint) dissolves instead of announcing
+//     itself as a gap — it falls back to the plain centred column and fades on the same curve.
+// NEVER early-return on pastDepth: the pre-stacked tower is drawn HERE now, so bailing would make
+// the v133 "the tower under you is REAL" column vanish for anyone without recorded history.
+const PAST_SEAM = 'rgba(255,246,232,0.5)';
+function pastFade(depth) { return 0.62 / (1 + depth * 0.085); }
+function drawPastColumn(cy) {
+  const top = blocks.length - 1;
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (!b.past) continue;
+    const y = Math.round(GROUND_Y - (i + 1) * BH - cy);
+    if (y > H || y + BH < 0) continue;                       // screen-space cull: cost is viewport-bound
+    const bw = b.gw === undefined ? BASE_W : b.gw;
+    const bx = b.gw === undefined ? (W - BASE_W) / 2 : b.gx;
+    const a = pastFade(top - i);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = b.col;                                   // its own biome colour, dimmed by the veil below
+    ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
+    ctx.globalAlpha = a * 0.55;                              // desaturate toward the dark: an old block, not a lit one
+    ctx.fillStyle = 'rgba(8,10,20,1)';
+    ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
+    ctx.globalAlpha = 1;
+  }
+}
 function renderWorld(cy, shX) {
   ctx.save(); ctx.translate(Math.round(shX), 0);
   // the cave floor at A=0 is drawn by drawCaveGround (earthy dirt) — the old flat street strip is gone
 
+  drawPastColumn(cy);   // v152: OUTSIDE the sway — the past does not lean with the live tower
   ctx.save(); ctx.translate(Math.round(swayX * RS) / RS, 0);
   const sstyle = skin().style;
   const h = blocks.length;
@@ -5272,6 +5303,7 @@ function renderWorld(cy, shX) {
   let topScreenX = W/2, topScreenY = 0;
   for (let i=0;i<blocks.length;i++) {
     if (toppleHideTop>0 && i >= blocks.length - toppleHideTop) continue;   // v121: these tumbled off as debris
+    if (blocks[i].past) continue;   // v152: drawn by drawPastColumn, outside the sway
     const b = blocks[i]; let y = Math.round(GROUND_Y-(i+1)*BH-cy), bh=BH, bw=b.w, bx=b.x - (b.slid || 0) * (b.slideT || 0);   // v128: eases from the landing spot to rest
     const isTop = i === blocks.length-1;
     if (isTop && squash>0 && !reduceMotion) {                 // v121: compress -> overshoot -> settle, depth = squashPow
