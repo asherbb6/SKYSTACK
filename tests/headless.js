@@ -3408,6 +3408,51 @@ check('v152 a level win records the run', () => {
   return rec && rec.rows.length > 0 ? true : 'no record after win';
 });
 
+check('v152 NEUTRALITY: pre-stacked blocks keep full width and centre whatever history says', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 3, w: 18, col:"#fff"});');
+  g.run('recordPastRun(0)');
+  g.run('startLevel(1)');
+  return g.run('(() => { const cx = (W - BASE_W) / 2;' +
+    'for (let i = 0; i < runLaunch; i++) { const b = blocks[i];' +
+    'if (b.w !== BASE_W) return "row " + i + " w=" + b.w;' +
+    'if (b.x !== cx) return "row " + i + " x=" + b.x; } return true; })()');
+});
+check('v152 recorded geometry is attached as render-only fields', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 3, w: 18, col:"#fff"});');
+  g.run('recordPastRun(0)');
+  g.run('startLevel(1)');
+  return g.run('blocks[2].past === true && blocks[2].gw === 18 && blocks[2].gx === 3 && pastDepth > 0');
+});
+check('v152 the top pre-stacked row is the fresh slab, and it is not past', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 3, w: 18, col:"#fff"});');
+  g.run('recordPastRun(0)');
+  g.run('startLevel(1)');
+  return g.run('(() => { const t = blocks[runLaunch - 1];' +
+    'return t.slab === true && !t.past && t.w === BASE_W; })()');
+});
+check('v152 no history: the launch column is plain, pastDepth 0, nothing marked past', () => {
+  const g = makeGame();
+  g.run('prog = 3; startLevel(1)');
+  return g.run('pastDepth === 0 && blocks.slice(0, runLaunch - 1).every(b => !b.gw)');
+});
+check('v152 altitude math is untouched by history', () => {
+  const a = makeGame(); a.run('prog = 3; startLevel(2)');
+  const b = makeGame();
+  b.run('startLevel(0)');
+  b.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 3, w: 18, col:"#fff"});');
+  b.run('recordPastRun(0); prog = 3; startLevel(2)');
+  return a.run('blocks.length') === b.run('blocks.length')
+    && a.run('tier') === b.run('tier')
+    && a.run('runLaunch') === b.run('runLaunch')
+    && a.run('nextPickupRow') === b.run('nextPickupRow') ? true : 'run state diverged with history present';
+});
+
 // ---------- report ----------
 let pass = 0, fail = 0;
 for (const [ok, name, detail] of results) {

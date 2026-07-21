@@ -1273,6 +1273,7 @@ function assistFloorFor(skillValue) { const a=BALANCE_REGISTRY.assist; return cl
 function assistFloor() { return assistFloorFor(skill); }
 let state = 'splash';             // splash | home | shop | me | playing | dropping | gameover
 let blocks = [], slider = null, faller = null;
+let pastDepth = 0;   // v152: how many pre-stacked rows carry RECORDED geometry (render-only)
 let debris = [], particles = [], floaters = [], trails = [], coinFx = [], pickups = [];
 let balloon = null, lastBalloonRow = 0;
 let cameraY = 0, cameraTarget = 0, camVel = 0, shake = 0, fadeT = 0;
@@ -1711,8 +1712,18 @@ function resetRun() {
   const runCharacter=challenge&&challenge.characterId?challenge.characterId:skinId;
   runContext = createRunContext({ mode:m.id, challengeId:challenge&&challenge.id, campaignLevel:runLevel, startingAltitude:runLaunch, checkpointId:checkpoint.id, baseId, seed, skill, loadout, characterId:runCharacter, characterMastery:masteryFor(runCharacter) });
   rnd = mulberry32(runContext.seed);   // v134: no hueBase re-roll — palette is locked per biome
+  // v152: the pre-stack is UNCHANGED as a physics column — full width, centred, one row per
+  // altitude. Recorded geometry is attached alongside it and read only by the renderer.
+  const pastRows = pastRowsForLaunch(runLaunch);
+  pastDepth = 0;
   blocks = [{ x:(W-BASE_W)/2, w:BASE_W, col:blockCol(0) }];
   for (let i = 1; i < runLaunch; i++) blocks.push({ x:(W-BASE_W)/2, w:BASE_W, col: blockCol(i) });
+  for (let i = 0; i < runLaunch - 1; i++) {   // the TOP pre-stacked row is the fresh slab, never past
+    const r = pastRows[i];
+    blocks[i].past = true;
+    if (r) { blocks[i].gx = r.gx; blocks[i].gw = r.gw; pastDepth++; }
+  }
+  if (runLaunch > 0) blocks[runLaunch - 1].slab = true;
   debris = []; particles = []; floaters = []; trails = []; coinFx = []; pickups = [];
   balloon = null; lastBalloonRow = 0;
   score = 0; combo = 0; maxCombo = 0; newBest = false; newHeight = false;
