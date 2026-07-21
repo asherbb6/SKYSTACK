@@ -4225,51 +4225,69 @@ function drawCave(ph, top, ceilY, cy) {
 // the cave MOUTH — an organic overgrown opening, not a hard cutoff: irregular textured rock rim
 // with rounded corners into the walls, foliage spilling over the edge, dangling leafy vines,
 // angled sunbeams with drifting dust, and the escape hole slightly OFF-CENTRE (asymmetric).
+// v146: the sun shafts moved OUT of drawCaveCeiling (which is hard-gated to the mouth being
+// on-screen, so they snapped on "like a light switch") into drawSunShafts, which fades them in with
+// surface proximity and is called from drawGroundWorld whether or not the mouth is on screen yet.
+const SUN_FADE = 320;                                                                          // vertical distance over which daylight ramps in as the surface nears (no on/off pop)
+function sunShaftIntensity(yCeil) { const t = clamp((yCeil + SUN_FADE) / SUN_FADE, 0, 1); return t*t*(3 - 2*t); }
+function drawSunShafts(ph, yCeil) {
+  const I = sunShaftIntensity(yCeil); if (I <= 0.01) return;                                   // still too deep — nothing yet
+  const { cxL, cxR } = caveMouth(), shaftW = cxR - cxL, holeMid = (cxL + cxR) / 2;
+  const reach = Math.min(H - yCeil, 360); if (reach <= 0) return;
+  const y1 = yCeil + reach, yStart = Math.max(-2, yCeil);                                      // draw only the on-screen part; falloff still measured from the true mouth
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const col = ctx.createLinearGradient(0, yCeil, 0, y1);                                       // warm column carrying the glow down the shaft
+  col.addColorStop(0, 'rgba(255,226,160,' + (0.20*I).toFixed(3) + ')'); col.addColorStop(0.5, 'rgba(255,214,140,' + (0.10*I).toFixed(3) + ')'); col.addColorStop(1, 'rgba(255,205,130,0)');
+  ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.fillRect(cxL - 10, yStart, (cxR - cxL) + 20, y1 - yStart);
+  const bloom = ctx.createRadialGradient(holeMid, yCeil + 8, 4, holeMid, yCeil + 8, shaftW * 1.2);
+  bloom.addColorStop(0, 'rgba(255,244,208,' + (0.34*I).toFixed(3) + ')'); bloom.addColorStop(1, 'rgba(255,232,180,0)');
+  ctx.fillStyle = bloom; ctx.fillRect(0, yStart, W, y1 - yStart);                              // the pool of daylight at the hole
+  const beams = reduceMotion ? 5 : 7;
+  for (let b = 0; b < beams; b++) {
+    const bw = shaftW * (0.12 + (b % 3) * 0.07), bx0 = holeMid + (b - (beams - 1) / 2) * shaftW * 0.17;
+    const slant = (b - (beams - 1) / 2) * 0.15, flick = reduceMotion ? 1 : (0.78 + 0.22 * Math.sin(ph*0.02 + b*1.7));
+    for (let yy = yStart; yy < y1; yy += 4) {
+      const t = (yy - yCeil) / reach, cx0 = bx0 + (yy - yCeil) * slant, wNow = bw * (1 + t * 1.6);
+      ctx.globalAlpha = 0.14 * (1 - t) * (1 - t) * flick * I;                                  // quadratic falloff into the dark, scaled by the fade-in
+      ctx.fillStyle = 'rgba(255,232,175,1)';                                                   // warm gold beam
+      ctx.fillRect(Math.round(cx0 - wNow/2), yy, Math.round(wNow), 4);
+    }
+  }
+  if (!reduceMotion) {                                                                         // golden pollen drifting in the light
+    for (let k = 0; k < 26; k++) {
+      const span = reach - 16, dy2 = yCeil + 8 + ((ph*(0.4 + (k%3)*0.14) + k*53) % span);
+      if (dy2 < yStart) continue;
+      const drift = Math.sin(ph*0.012 + k*1.7) * shaftW*0.4 + Math.sin(ph*0.05 + k)*3;
+      const dx2 = holeMid + drift * (0.5 + (dy2 - yCeil)/reach);
+      const tw = 0.5 + 0.5 * Math.sin(ph*0.09 + k*2.3), depth = 1 - (dy2 - yCeil)/reach;
+      ctx.globalAlpha = (0.28 + 0.4*tw) * depth * depth * I;
+      ctx.fillStyle = k % 4 === 0 ? 'rgba(255,250,210,1)' : 'rgba(255,224,150,1)';
+      const s2 = k % 5 === 0 ? 2 : 1; ctx.fillRect(Math.round(dx2), Math.round(dy2), s2, s2);
+    }
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+// v146: the daylight BLEND — a warm additive bloom sitting ON the surface line, drawn AFTER the
+// surface ground, so the bright grass lip and the shaft top overexpose together and read as ONE
+// continuous daylight (Asher: "make the surface as bright as the light shafts and blend them").
+function drawDaylightBlend(ph, yCeil) {
+  const I = sunShaftIntensity(yCeil); if (I <= 0.01) return;
+  const { cxL, cxR } = caveMouth(), mid = (cxL + cxR) / 2, shaftW = cxR - cxL;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(mid, yCeil, 4, mid, yCeil, shaftW * 1.35);               // centred on the surface line: lifts the grass above AND the shaft below
+  g.addColorStop(0, 'rgba(255,247,216,' + (0.5*I).toFixed(3) + ')');
+  g.addColorStop(0.5, 'rgba(255,238,186,' + (0.24*I).toFixed(3) + ')');
+  g.addColorStop(1, 'rgba(255,232,175,0)');
+  ctx.globalAlpha = 1; ctx.fillStyle = g;
+  ctx.fillRect(0, Math.max(0, yCeil - Math.round(shaftW*1.1)), W, Math.round(shaftW*2.4));
+  ctx.restore(); ctx.globalAlpha = 1;
+}
+// dripstone ceiling + escape hole + roots — the cave MOUTH (organic overgrown opening).
 function drawCaveCeiling(ph, ceilY) {
   const { cxL, cxR } = caveMouth();
   const shaftW = cxR - cxL, holeMid = (cxL + cxR) / 2;
-  // v143.1: lush volumetric SUN SHAFTS pouring through the mouth (Asher: "insanely pretty light
-  // shafts/sun shines" — Tangled). Warm beams fan out and widen with depth, drawn ADDITIVELY so
-  // where they cross they bloom; a soft pool of light gathers just inside the opening; motes drift.
-  const reach = Math.min(H - ceilY, 360);
-  if (reach > 0) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    // v145: two blooms — a bright pool at the mouth, plus a big soft warm column that carries the
-    // golden glow deep down the shaft (the inviting Tangled grade in Asher's ChatGPT mockup).
-    const col = ctx.createLinearGradient(0, ceilY, 0, ceilY + reach);
-    col.addColorStop(0, 'rgba(255,226,160,0.20)'); col.addColorStop(0.5, 'rgba(255,214,140,0.10)'); col.addColorStop(1, 'rgba(255,205,130,0)');
-    ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.fillRect(cxL - 10, ceilY, (cxR - cxL) + 20, reach);
-    const bloom = ctx.createRadialGradient(holeMid, ceilY + 8, 4, holeMid, ceilY + 8, shaftW * 1.2);
-    bloom.addColorStop(0, 'rgba(255,244,208,0.34)'); bloom.addColorStop(1, 'rgba(255,232,180,0)');
-    ctx.fillStyle = bloom; ctx.fillRect(0, ceilY, W, reach);                                   // the pool of daylight at the hole
-    const beams = reduceMotion ? 5 : 7;
-    for (let b = 0; b < beams; b++) {
-      const bw = shaftW * (0.12 + (b % 3) * 0.07), bx0 = holeMid + (b - (beams - 1) / 2) * shaftW * 0.17;
-      const slant = (b - (beams - 1) / 2) * 0.15, flick = reduceMotion ? 1 : (0.78 + 0.22 * Math.sin(ph*0.02 + b*1.7));
-      for (let yy = ceilY; yy < ceilY + reach; yy += 4) {
-        const t = (yy - ceilY) / reach, cx0 = bx0 + (yy - ceilY) * slant, wNow = bw * (1 + t * 1.6);
-        ctx.globalAlpha = 0.14 * (1 - t) * (1 - t) * flick;                                    // quadratic falloff = a soft taper into the dark
-        ctx.fillStyle = 'rgba(255,232,175,1)';                                                 // warm gold beam
-        ctx.fillRect(Math.round(cx0 - wNow/2), yy, Math.round(wNow), 4);
-      }
-    }
-    // v145: golden POLLEN drifting in the light — the glowing specks all through the shaft in the
-    // reference. Additive so they twinkle; each floats on its own slow 2-D loop, brighter up top.
-    if (!reduceMotion) {
-      for (let k = 0; k < 26; k++) {
-        const span = reach - 16, dy2 = ceilY + 8 + ((ph*(0.4 + (k%3)*0.14) + k*53) % span);
-        const drift = Math.sin(ph*0.012 + k*1.7) * shaftW*0.4 + Math.sin(ph*0.05 + k)*3;
-        const dx2 = holeMid + drift * (0.5 + (dy2 - ceilY)/reach);                             // fan outward as they fall
-        const tw = 0.5 + 0.5 * Math.sin(ph*0.09 + k*2.3), depth = 1 - (dy2 - ceilY)/reach;
-        ctx.globalAlpha = (0.28 + 0.4*tw) * depth * depth;
-        ctx.fillStyle = k % 4 === 0 ? 'rgba(255,250,210,1)' : 'rgba(255,224,150,1)';
-        const s2 = k % 5 === 0 ? 2 : 1; ctx.fillRect(Math.round(dx2), Math.round(dy2), s2, s2);
-      }
-    }
-    ctx.restore();
-  }
-  ctx.globalAlpha = 1;
   for (let x = 0; x < W; x += 6) {                                                            // irregular textured rock rim
     if (x > cxL - 2 && x < cxR - 4) continue;                                                 // v135: rim runs right up to the hole edge (old 8px standoff left a naked slit at the corners)
     const edgeD = Math.min(Math.abs(x - cxL), Math.abs(x - cxR));                             // distance to the hole edge
@@ -4627,8 +4645,10 @@ function drawGroundWorld(cy, ph) {
   for (let i = 0; i < TREES.length; i++) rootedTree(TREES[i], i + 17);                         // rooted trees on the surface
   if (yCeil > 0) drawCave(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil, cy);              // the living cave below the ceiling
   else if (worldY(0, cy) > 0) drawCave(ph, 0, -999, cy);                                       // (transition safety) rock still below
+  drawSunShafts(ph, yCeil);                                                                    // v146: daylight pouring in, faded in by surface proximity (no on/off pop) — beams from the true mouth even when it's still above the screen
   drawCaveCreatures(cy, ph);                                                                   // bats/beetles/worms (self-cull to the cave band)
   if (yCeil > -8 && yCeil < H + 8) drawSurfaceGround(ph, yCeil);
+  drawDaylightBlend(ph, yCeil);                                                                // v146: overexpose the surface line so grass + shafts read as one continuous daylight
   drawForestBand(cy, ph);                                                                      // canopy flanks, leaf-fall, first wisps (A 40..82)
 }
 
