@@ -4978,30 +4978,55 @@ function drawGroundWorld(cy, ph) {
 // GATING DISCIPLINE (the v150 lesson): every element here EXISTS ONLY at an altitude inside the
 // band and is drawn as a bounded sprite. There is deliberately NO full-width veil anywhere in this
 // function — a screen-wide rect is exactly what leaked the forest haze across the whole sky in v150.
-const LSKY_BANKS = 7;
+// v157: A CLOUD IS NOT A STACK OF DISCS. The first cut built each bank from overlapping pixDiscs
+// and it read as bokeh — the identical failure Decision #81 fixed in the foliage. A cumulus is now
+// a CONTINUOUS PER-PIXEL SILHOUETTE, the same construction as the v149 treeline: a flat-ish base
+// where the air condenses, a lumpy top from two out-of-phase lobes plus a per-column bite, a sunlit
+// crown on the top pixel and a cool shaded belly on the bottom one. That top light is what makes it
+// read as a solid body of vapour instead of a smudge.
+function cloudTopAt(dx, halfW, seed) {
+  const t = clamp(dx / halfW, -1, 1);
+  const body = Math.sqrt(Math.max(0, 1 - t * t));                                              // wide, flat-bottomed envelope
+  const l1 = 0.58 + 0.42 * Math.sin(dx * 0.17 + seed * 2.3);
+  const l2 = 0.62 + 0.38 * Math.sin(dx * 0.39 + seed * 5.1 + 1.7);                             // out of phase -> lumpy, not scalloped
+  const bite = bhash(Math.round(dx * 0.5) * 131 + Math.round(seed * 17)) * 0.16;
+  return Math.max(0, body * (0.55 * l1 + 0.45 * l2) - bite);
+}
+function drawCloudBank(cx, baseY, halfW, height, alpha, seed) {
+  if (baseY < -40 || baseY - height > H + 40) return;
+  for (let dx = -halfW; dx <= halfW; dx++) {
+    const x = Math.round(cx + dx);
+    if (x < -1 || x > W + 1) continue;
+    const h = Math.round(height * cloudTopAt(dx, halfW, seed));
+    if (h <= 0) continue;
+    const top = baseY - h;
+    ctx.globalAlpha = alpha;            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, top, 1, h);
+    ctx.globalAlpha = Math.min(1, alpha * 1.7); ctx.fillStyle = '#FFFDF4'; ctx.fillRect(x, top, 1, 1);          // sunlit crown
+    ctx.globalAlpha = alpha * 0.62;     ctx.fillStyle = '#A9C6DE'; ctx.fillRect(x, baseY - 1, 1, 1);            // cool belly
+  }
+  ctx.globalAlpha = 1;
+}
+// Two DECKS instead of seven scattered puffs: distance now reads as a stratum (small/pale/high vs
+// large/bold/low), which is what turns a bag of clouds into a sky with depth.
+const LSKY_DECKS = [
+  { at: 0.26, halfW: 24, h: 8,  a: 0.11, n: 3 },
+  { at: 0.62, halfW: 37, h: 14, a: 0.17, n: 3 }
+];
 function drawLowerSkyAir(cy, ph) {
   const A0 = TIERS[2].n - 2, A1 = TIERS[3].n + 4;                                              // 58..84
-  for (let k = 0; k < LSKY_BANKS; k++) {
-    const A = A0 + (A1 - A0) * ((k * 0.1379 + 0.06) % 1);
-    const y = worldY(A, cy);
-    if (y < -34 || y > H + 34) continue;
-    const h1 = bhash(k * 977), h2 = bhash(k * 613 + 31);
-    const far = 0.3 + h2 * 0.7;                                                                // 1 = nearest/boldest bank
-    const drift = reduceMotion ? 0 : Math.sin(ph * 0.0026 + k * 1.7) * 9;
-    const bx0 = ((h1 + k * 0.13) % 1) * (W + 130) - 65 + drift;
-    const gw = wind ? windWaveAt(bx0) : 0;
-    const bx = Math.round(bx0 + (wind ? gw * wind.dir * 22 : 0));                               // banks are shoved downwind too
-    const rBase = 5 + far * 7;
-    // the segments must OVERLAP or the bank reads as a row of separate dots (it did) — spacing is
-    // a fraction of the radius, and the gust stretches the bank rather than pulling it apart
-    const step = rBase * (0.85 + gw * 0.35);
-    ctx.globalAlpha = (0.09 + far * 0.16) * (1 - gw * 0.15);
-    for (let s = -3; s <= 3; s++) {                                                            // an elongated bank, not a ball
-      const taper = 1 - Math.abs(s) * 0.19;
-      const r = Math.max(2, Math.round(rBase * taper));
-      pixDisc(Math.round(bx + s * step), y + (s & 1 ? 2 : 0) - Math.round(Math.abs(s) * 0.6), r, '#FFFFFF');
+  for (let d = 0; d < LSKY_DECKS.length; d++) {
+    const D = LSKY_DECKS[d];
+    for (let k = 0; k < D.n; k++) {
+      const sd = d * 31 + k * 7;
+      const A = A0 + (A1 - A0) * (D.at + (bhash(sd * 401) - 0.5) * 0.16);
+      const y = worldY(A, cy);
+      if (y < -40 || y > H + 40) continue;
+      const drift = reduceMotion ? 0 : Math.sin(ph * 0.0024 + sd) * 8;
+      const bx0 = ((bhash(sd * 977) + k * 0.34) % 1) * (W + 150) - 75 + drift;
+      const gw = wind ? windWaveAt(bx0) : 0;
+      const bx = Math.round(bx0 + (wind ? gw * wind.dir * 22 : 0));                             // banks are shoved downwind too
+      drawCloudBank(bx, Math.round(y), Math.round(D.halfW * (1 + gw * 0.28)), D.h, D.a, sd);    // and stretched by the gust
     }
-    ctx.globalAlpha = 1;
   }
   drawSkyFlock(cy, ph, A0, A1);
 }
@@ -5015,16 +5040,19 @@ function drawSkyFlock(cy, ph, A0, A1) {
   const fx0 = reduceMotion ? W * 0.5 : ((ph * 0.05) % span) - 45;
   const gw = wind ? windWaveAt(fx0) : 0;
   const fx = fx0 + (wind ? gw * wind.dir * 26 : 0);
-  ctx.fillStyle = '#3E5A72';
-  for (let b = 0; b < 5; b++) {
+  // v157: the first cut packed five birds into 18px and read as a SAWTOOTH, not a skein. A flock
+  // needs air between its birds: wide ranks, a shallow V, and each bird just three pixels.
+  ctx.fillStyle = '#41607A';
+  for (let b = 0; b < 6; b++) {
     const side = b % 2 ? 1 : -1, rank = (b + 1) >> 1;
-    const bxp = Math.round(fx - rank * 9), byp = Math.round(y + side * rank * 5);
+    const bxp = Math.round(fx - rank * 17 - (b % 2) * 5);                                      // ranks well apart, halves offset
+    const byp = Math.round(y + side * rank * 8);
     if (bxp < -8 || bxp > W + 8) continue;
-    const flap = reduceMotion ? 1 : (Math.sin(ph * 0.22 + b * 1.3) > 0 ? 1 : 0);               // two-frame wing beat
-    ctx.globalAlpha = 0.5 - rank * 0.06;
-    ctx.fillRect(bxp - 2, byp + flap, 2, 1);
-    ctx.fillRect(bxp, byp, 1, 1);
-    ctx.fillRect(bxp + 1, byp + flap, 2, 1);
+    const flap = reduceMotion ? 0 : (Math.sin(ph * 0.19 + b * 1.7) > 0 ? 1 : 0);               // two-frame wing beat
+    ctx.globalAlpha = 0.46 - rank * 0.05;
+    ctx.fillRect(bxp - 1, byp + flap, 1, 1);                                                   // left wing
+    ctx.fillRect(bxp,     byp,        1, 1);                                                   // body
+    ctx.fillRect(bxp + 1, byp + flap, 1, 1);                                                   // right wing
   }
   ctx.globalAlpha = 1;
 }
@@ -5428,6 +5456,7 @@ function pastBuffer() {
 // has no crosswind to show, and drawing them there would contradict MATERIALS[0].wind = 0.3.
 // Nothing here reads or writes physics: it is the telegraph, not the force.
 const GUST_STREAKS = 30;   // tuned on a real LOWER SKY frame: 16 faint dashes were invisible as a tell
+const GUST_STREAK_COL = '#EAF4FF';
 function drawGustFront(cy) {
   if (!wind || reduceMotion) return;
   const env = Math.sin(clamp(wind.t / Math.max(1, wind.dur), 0, 1) * Math.PI);
@@ -5437,7 +5466,7 @@ function drawGustFront(cy) {
   if (open <= 0) return;
   const p = clamp(wind.t / (wind.dur * 0.5), 0, 1);
   const fx = (wind.dir >= 0 ? -0.15 + p * 1.30 : 1.15 - p * 1.30) * W;
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = GUST_STREAK_COL;   // v157: pure white read as scratches on the sky; this sits in the sky's own family
   for (let k = 0; k < GUST_STREAKS; k++) {
     const hs = (k * 2654435761) >>> 0;                                 // stable per-streak hash: no RNG, DAILY unaffected
     const y = ((hs >>> 7) % Math.max(1, H | 0));

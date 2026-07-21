@@ -3364,7 +3364,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v156', () => /const CACHE = 'skystack-v156'/.test(sw));
+check('sw.js cache bumped to v157', () => /const CACHE = 'skystack-v157'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3755,13 +3755,15 @@ check('v155 reduced motion keeps the world still', () => {
   return g.run('treeBend(0.2) === 0') ? true : 'trees still bend under reduced motion';
 });
 
+const GUST_COL = (src.match(/const GUST_STREAK_COL = '(#[0-9A-Fa-f]{6})'/) || [])[1];
 check('v155 the gust front is drawn in open air and NEVER in the sheltered cave', () => {
+  if (!GUST_COL) return 'no GUST_STREAK_COL constant';
   const { rec, g } = v149rec();
   const streaks = (A, hasWind) => {
     rec.rects.length = 0;
     g.run('tick = 40; wind = ' + (hasWind ? '{ dir: 1, str: 0.6, dur: 120, t: 30 }' : 'null') + ';' +
       ' drawGustFront(GROUND_Y - ' + A + '*BH - H/2);');
-    return rec.rects.filter(r => String(r.style) === '#FFFFFF' && r.h === 1).length;
+    return rec.rects.filter(r => String(r.style) === GUST_COL && r.h === 1).length;
   };
   g.run('prog = 9; startLevel(3)');
   const cave = streaks(8, true), openAir = streaks(70, true), calm = streaks(70, false);
@@ -3776,7 +3778,7 @@ check('v155 the streaks ride the front: they move with it and fade with the gust
     rec.rects.length = 0;
     g.run('wind = { dir: 1, str: 0.6, dur: 120, t: ' + t + ' };' +
       ' drawGustFront(GROUND_Y - 70*BH - H/2);');
-    const s = rec.rects.filter(r => String(r.style) === '#FFFFFF' && r.h === 1);
+    const s = rec.rects.filter(r => String(r.style) === GUST_COL && r.h === 1);
     return { n: s.length, x: s.length ? s.reduce((a, r) => a + r.x, 0) / s.length : null };
   };
   const early = at(14), mid = at(40);
@@ -3839,6 +3841,35 @@ check('v156 reduced motion holds the flock and banks still', () => {
   const a = at(100), b = at(900);
   if (!a.length) return 'nothing drawn under reduced motion';
   return a === b ? true : 'the air still drifts under reduced motion';
+});
+
+check('v157 cloud banks are continuous silhouettes, never stacked discs', () => {
+  const i0 = src.indexOf('function drawLowerSkyAir');
+  const seg = src.slice(i0, src.indexOf('function drawSkyFlock', i0)).replace(/\/\/[^\n]*/g, '');
+  if (/pixDisc/.test(seg)) return 'the air is drawing pixDiscs again (that read as bokeh)';
+  // a real cumulus has a lumpy top: sample the profile and demand direction changes + asymmetry
+  return fresh.run('(() => { const hw = 30, tops = [];' +
+    ' for (let dx = -hw; dx <= hw; dx++) tops.push(cloudTopAt(dx, hw, 3));' +
+    ' let turns = 0;' +
+    ' for (let i = 2; i < tops.length; i++) { const a = Math.sign(tops[i]-tops[i-1]), b = Math.sign(tops[i-1]-tops[i-2]);' +
+    '   if (a && b && a !== b) turns++; }' +
+    ' const asym = tops.reduce((s, v, i) => s + Math.abs(v - tops[tops.length-1-i]), 0);' +
+    ' if (turns < 3) return "top is too smooth: " + turns + " turns";' +
+    ' if (asym < 0.6) return "top is symmetrical (asym " + asym.toFixed(2) + ")";' +
+    ' if (tops[0] > 0.02 || tops[tops.length-1] > 0.02) return "the bank does not taper to nothing at its edges";' +
+    ' return true; })()');
+});
+check('v157 every cloud column is lit on top and shaded underneath', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(3); wind = null; tick = 20;');
+  rec.rects.length = 0;
+  g.run('drawCloudBank(Math.round(W/2), 120, 30, 14, 0.2, 5)');
+  const crown = rec.rects.filter(r => String(r.style) === '#FFFDF4');
+  const belly = rec.rects.filter(r => String(r.style) === '#A9C6DE');
+  const body  = rec.rects.filter(r => String(r.style) === '#FFFFFF');
+  if (!body.length) return 'no cloud body drawn';
+  if (crown.length !== body.length) return 'crown pixels ' + crown.length + ' != body columns ' + body.length;
+  return belly.length === body.length ? true : 'belly pixels ' + belly.length + ' != body columns ' + body.length;
 });
 
 // ---------- report ----------
