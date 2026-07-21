@@ -3171,9 +3171,59 @@ check('v110 redesigned styles carry their markers', () =>
   /jagged magma veins/.test(src) && /cut gem/.test(src) &&
   /smooth cross twinkles/.test(src) && /neon tube/.test(src));
 
+// ---------- v149 bridge dirt = the wall picture; organic trees; bark stops crawling ----------
+// The harness ctx is an anyProxy (sets are swallowed), so these two need the REAL recording ctx
+// injected through makeGame's ctx2dOverride — the v110 pattern above.
+function v149rec() {                                          // records blits and fillRects with their current fillStyle
+  const rec = { blits: [], rects: [] };
+  const chain = anyProxy();
+  const base = {
+    drawImage: function (img, sx, sy, sw, sh, dx, dy) { if (arguments.length === 9) rec.blits.push({ sx, sy, dx, dy }); },
+    fillRect: function (x, y, w, h) { rec.rects.push({ x, y, w, h, style: base.fillStyle }); }
+  };
+  const ctxRec = new Proxy(base, {
+    get(t, k) { if (k in t) return t[k]; if (k === Symbol.toPrimitive) return () => 0; if (k === 'then') return undefined; return chain; },
+    set(t, k, v) { t[k] = v; return true; }
+  });
+  return { rec, g: makeGame(null, false, false, ctxRec) };
+}
+check('v149 the bridge dirt is ONE continuous read of the wall atlas (no per-column collage)', () => {
+  if (!/v149: ONE PICTURE PER SURFACE applies to the bridge too/.test(src)) return false;
+  if (/blitCaveTex\(x, ty, 3, segBot - ty, x\*7 \+ 13, caveTex\)/.test(src)) return false;
+  const { rec, g } = v149rec();
+  rec.blits.length = 0;
+  g.run('drawCaveForeground(GROUND_Y - SURF_A*BH - 160, 0)');
+  if (rec.blits.length < 20) return 'no bridge blits (' + rec.blits.length + ')';
+  const shifts = new Set(rec.blits.map(b => b.sx - b.dx)), rows = new Set(rec.blits.map(b => b.sy - b.dy));
+  return shifts.size === 1 && rows.size === 1 ? true : 'shifts=' + shifts.size + ' rows=' + rows.size;
+});
+check('v149 leaf masses are ragged silhouettes, not stacked discs', () =>
+  /v149 — NO CIRCLES/.test(src) &&
+  fresh.run('(() => { const p = leafProfile(15, 123); const up = [], circ = [];' +
+    'for (let dx = -15; dx <= 15; dx++) { up.push(p.upAt(dx)); circ.push(Math.round(Math.sqrt(Math.max(0, 225 - dx*dx)))); }' +
+    'const asym = up.reduce((s, v, i) => s + Math.abs(v - up[up.length-1-i]), 0);' +
+    'const dev = Math.max(...up.map((v, i) => Math.abs(v - circ[i])));' +
+    'let turns = 0; for (let i = 2; i < up.length; i++) { const a = Math.sign(up[i]-up[i-1]), b = Math.sign(up[i-1]-up[i-2]); if (a && b && a !== b) turns++; }' +
+    'return asym > 10 && dev >= 3 && turns >= 3; })()'));
+check('v149 bark is world-anchored: the grain never slides along the trunk while climbing', () => {
+  if (!/v149 BARK ANCHORING FIX/.test(src)) return false;
+  const { rec, g } = v149rec();
+  const grab = (camExpr, tk) => {
+    rec.rects.length = 0;
+    g.run('tick=' + tk + '; cameraY = ' + camExpr + '; rootedTree(TREES[0], 17)');
+    const base = g.run('worldY(SURF_A, ' + camExpr + ')');
+    return rec.rects.filter(r => r.style === 'rgba(14,7,2,0.75)').map(r => Math.round(base - r.y));
+  };
+  const c0 = 'GROUND_Y - 20*BH - (H - 100)';
+  const A = grab(c0, 0), B = grab(c0 + ' - 37', 40), C = grab(c0 + ' - 260', 400);
+  if (A.length < 3) return 'no bark nicks (' + A.length + ')';
+  const inSet = (p, q) => { const s = new Set(q); return p.every(v => s.has(v)); };
+  return inSet(A, B) && inSet(A, C) ? true : 'grain moved: A=' + A.slice(0,6) + ' B=' + B.slice(0,6);
+});
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v148', () => /const CACHE = 'skystack-v148'/.test(sw));
+check('sw.js cache bumped to v149', () => /const CACHE = 'skystack-v149'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
