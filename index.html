@@ -4145,67 +4145,38 @@ function drawCaveForeground(cy, ph) {
   if (gy < -40 || yCeil > H + 40) { fgTowerBox = null; return; }               // only inside the cave band
   fgTowerBox = towerScreenBox(cy);
   const cyF = cy;                                                             // locked to the world — the near layer moves exactly with the walls + tower (no parallax slide)
-  // (the near dirt "side rails" that hugged the screen edges were removed — they just overlapped the walls)
-  // (2) sparse dangling clumps: a rooty rock knot hangs from above; the tower slips behind it, then it clears
-  const CP = 178, coff = ((cyF % CP) + CP) % CP;
-  for (let y = -coff - CP; y < H; y += CP) {
-    const row = Math.round((y + cyF) / CP);
-    if (bhash(row*17) < 0.5) continue;
-    const cxp = Math.round(bhash(row*5) * (W - 60) + 30), topy = Math.round(y);
-    if (topy > H + 20 || topy + 40 < yCeil) continue;                          // never hang a clump up in the open sky
-    const rl = 14 + Math.round(bhash(row*3) * 22), sway = reduceMotion ? 0 : Math.sin(ph*0.03 + row) * 2;
-    ctx.globalAlpha = fgAlpha(cxp - 8, topy, cxp + 8, topy + rl + 8);
-    pixDisc(cxp, topy + 3, 5, '#241A11'); pixDisc(cxp - 2, topy + 1, 3, '#31241A');           // rock knot
-    ctx.fillStyle = 'rgba(132,104,66,0.4)'; ctx.fillRect(cxp - 4, topy, 3, 1);                // lit top
-    ctx.fillStyle = '#2A1C0E';
-    for (let t = 0; t < rl; t++) { const rx = Math.round(cxp + sway * t / rl); ctx.fillRect(rx, topy + 6 + t, 1, 1);
-      if ((t & 6) === 2) ctx.fillRect(rx + (t & 1 ? 1 : -1), topy + 6 + t, 1, 1); }             // fine offshoots
-    if (bhash(row*11) > 0.5) { ctx.fillStyle = '#31471F'; ctx.fillRect(cxp - 2, topy + 6, 4, 2); ctx.fillStyle = '#456826'; ctx.fillRect(cxp - 1, topy + 5, 2, 1); }
-    ctx.globalAlpha = 1;
-  }
-  ctx.globalAlpha = 1;
-  // (3) exit: a NEAR ceiling lip + thick foreground roots the tower passes behind as it emerges into daylight
+  // v147: the sparse dangling "rock knot on a root" clumps are gone — they only faded over the
+  // ACTIVE tower box, so over a placed/landmark block they read as a "ball on a stick" overlapping
+  // the blocks. The surface BRIDGE below is the deliberate foreground element now.
+  // (3) surface BRIDGE: a full-width strip of grass + dirt + rock at the surface line, drawn in the
+  // FOREGROUND. Per-segment fgAlpha lets the tower pass THROUGH it — the strip goes slightly
+  // translucent exactly where the tower crosses (a passthrough effect, Asher), and reads as solid
+  // ground everywhere else. Vines trail off its underside.
   if (yCeil > -CEIL_THICK && yCeil < H) {
-    const { cxL, cxR } = caveMouth(), lipY = Math.round(yCeil + 3);            // sits a touch below the bg rim = closer
+    const surfY = Math.round(yCeil);
     for (let x = 0; x < W; x += 6) {
-      if (x > cxL - 4 && x < cxR + 4) continue;                               // leave the hole open
-      const edgeD = Math.min(Math.abs(x - cxL), Math.abs(x - cxR));
-      const hang = 8 + Math.round(bhash(x*5 + 3) * 14) + (edgeD < 26 ? Math.round((26 - edgeD) * 0.5) : 0);
-      ctx.globalAlpha = fgAlpha(x, lipY, x + 6, lipY + hang);
-      blitCaveTex(x, lipY, 6, hang, x*7 + 13, caveTex);                                        // v140: one atlas (was a gray/dirt mix = two pictures)
-      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(x, lipY + hang - 2, 6, 2);             // AO under the near lip
+      const hang = 9 + Math.round(bhash(x*5 + 3) * 7);                        // ragged dirt/rock underside
+      ctx.globalAlpha = fgAlpha(x, surfY - 5, x + 6, surfY + hang);           // translucent where the tower passes through
+      blitCaveTex(x, surfY, 6, hang, x*7 + 13, caveTex);                      // rock/dirt body from the one cave atlas
+      ctx.fillStyle = 'rgba(74,51,32,0.55)'; ctx.fillRect(x, surfY, 6, 3);    // warmer topsoil over the rock crown
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x, surfY + hang - 2, 6, 2);   // AO along the underside
+      ctx.fillStyle = '#3E8A32'; ctx.fillRect(x, surfY - 3, 6, 4);            // grass cap across the whole bridge
+      ctx.fillStyle = '#2E6E3A'; ctx.fillRect(x, surfY, 6, 1);               // grass roots shade into the dirt
+      for (let gx = 0; gx < 6; gx += 2) { const bh2 = 2 + (bhash((x+gx)*7) > .5 ? 1 : 0);
+        ctx.fillStyle = '#4EA344'; ctx.fillRect(x + gx, surfY - 3 - bh2, 1, bh2);
+        ctx.fillStyle = '#8EE87A'; ctx.fillRect(x + gx, surfY - 3 - bh2, 1, 1); }   // blades + sunlit tips
+      ctx.globalAlpha = 1;
     }
-    for (const ex of [cxL, cxR]) {                                            // thick roots dangling into the hole
-      const dir = ex === cxL ? 1 : -1, rx0 = ex + dir * 3, rl = 22 + Math.round(bhash(ex) * 16);
-      const sway = reduceMotion ? 0 : Math.sin(ph*0.025 + ex) * 3;
-      ctx.globalAlpha = fgAlpha(rx0 - 3, lipY, rx0 + 3, lipY + rl); ctx.fillStyle = '#2A1C0E';
-      for (let t = 0; t < rl; t++) { const rx = Math.round(rx0 + dir * t * 0.15 + sway * t / rl); ctx.fillRect(rx, lipY + t, 2, 1);
-        if ((t & 7) === 3) { ctx.fillStyle = '#31471F'; ctx.fillRect(rx - 1, lipY + t, 3, 1); ctx.fillStyle = '#2A1C0E'; } }
-    }
-    // v145: the near FRONT LIP of the surface — grass + a dirt overhang reaching IN over each hole
-    // edge, drawn in the foreground so the tower emerges from BEHIND it (Asher: "blocks end up under
-    // the very surface floor... slightly harder to land a perfect and visually more realistic").
-    // fgAlpha keeps it translucent over the LIVE tower so the landing stays readable — never a wall.
-    const surfY = Math.round(yCeil), over = 14;
-    for (const side2 of [0, 1]) {
-      const edge = side2 ? cxR : cxL;
-      const a = fgAlpha(side2 ? edge - over : edge, surfY - 6, side2 ? edge : edge + over, surfY + 12);
-      ctx.globalAlpha = a;
-      for (let xx = 0; xx < over; xx++) {
-        const px = side2 ? edge - xx : edge + xx, th = Math.round(10 * (1 - xx/over)) + 3;      // dirt underside, thick at the edge, tapering inward
-        ctx.fillStyle = '#4A3320'; ctx.fillRect(px, surfY, 1, th);
-        ctx.fillStyle = '#3A2818'; ctx.fillRect(px, surfY + th - 2, 1, 2);                      // shaded root band
-        ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(px, surfY + th - 1, 1, 1);              // AO at the overhang tip
-        ctx.fillStyle = '#3E8A32'; ctx.fillRect(px, surfY - 3, 1, 3);                            // grass cap
-        if ((xx & 1) === 0) { const bh2 = 2 + (bhash(px*7) > .5 ? 1 : 0); ctx.fillStyle = '#4EA344'; ctx.fillRect(px, surfY - 3 - bh2, 1, bh2);
-          ctx.fillStyle = '#8EE87A'; ctx.fillRect(px, surfY - 3 - bh2, 1, 1); }                 // blades + sunlit tips
-      }
-      const tipX = side2 ? edge - over : edge + over, dl = 8 + Math.round(bhash(edge)*10);       // a lush vine trailing off the overhang tip
-      const vsway = reduceMotion ? 0 : Math.sin(ph*0.03 + edge) * 2;
-      for (let t = 0; t < dl; t++) { const vx = Math.round(tipX + vsway * t / dl);
-        ctx.fillStyle = '#2E7D32'; ctx.fillRect(vx, surfY + 8 + t, 1, 1);
-        ctx.fillStyle = '#54C24A'; ctx.fillRect(vx, surfY + 8 + t, 1, 1);
-        if (t % 4 === 2) { ctx.fillStyle = '#7BE06A'; ctx.fillRect(vx - 1, surfY + 8 + t, 3, 1); } }
+    for (let k = 0; k < 6; k++) {                                             // vines trailing off the bridge underside
+      const vx0 = Math.round((bhash(k*23 + 3)*0.9 + 0.05) * W), vl = 12 + Math.round(bhash(k*7 + 1) * 18);
+      const vsway = reduceMotion ? 0 : Math.sin(ph*0.03 + k*1.6) * 2;
+      ctx.globalAlpha = fgAlpha(vx0 - 1, surfY, vx0 + 1, surfY + vl + 9);
+      for (let t = 0; t < vl; t++) { const vx = Math.round(vx0 + vsway * t / vl), vy = surfY + 8 + t;
+        ctx.fillStyle = '#2E7D32'; ctx.fillRect(vx, vy, 1, 1);
+        ctx.fillStyle = '#54C24A'; ctx.fillRect(vx, vy, 1, 1);
+        if (t % 4 === 2) { ctx.fillStyle = '#7BE06A'; ctx.fillRect(vx - 1, vy, 3, 1); } }
+      ctx.fillStyle = '#C6FF9E'; ctx.fillRect(Math.round(vx0 + vsway), surfY + 8 + vl, 1, 1);
+      ctx.globalAlpha = 1;
     }
     ctx.globalAlpha = 1;
   }
@@ -4237,19 +4208,22 @@ function drawSunShafts(ph, yCeil) {
   const y1 = yCeil + reach, yStart = Math.max(-2, yCeil);                                      // draw only the on-screen part; falloff still measured from the true mouth
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
+  // v147: dimmer in the main play area + steeper (cubic) depth falloff, so the light concentrates
+  // right at the surface and fades quickly into the deeper cave — "slightly lower... fully adapt to
+  // the surface". Lower base alphas across the board.
   const col = ctx.createLinearGradient(0, yCeil, 0, y1);                                       // warm column carrying the glow down the shaft
-  col.addColorStop(0, 'rgba(255,226,160,' + (0.20*I).toFixed(3) + ')'); col.addColorStop(0.5, 'rgba(255,214,140,' + (0.10*I).toFixed(3) + ')'); col.addColorStop(1, 'rgba(255,205,130,0)');
+  col.addColorStop(0, 'rgba(255,226,160,' + (0.13*I).toFixed(3) + ')'); col.addColorStop(0.45, 'rgba(255,214,140,' + (0.05*I).toFixed(3) + ')'); col.addColorStop(1, 'rgba(255,205,130,0)');
   ctx.globalAlpha = 1; ctx.fillStyle = col; ctx.fillRect(cxL - 10, yStart, (cxR - cxL) + 20, y1 - yStart);
   const bloom = ctx.createRadialGradient(holeMid, yCeil + 8, 4, holeMid, yCeil + 8, shaftW * 1.2);
-  bloom.addColorStop(0, 'rgba(255,244,208,' + (0.34*I).toFixed(3) + ')'); bloom.addColorStop(1, 'rgba(255,232,180,0)');
+  bloom.addColorStop(0, 'rgba(255,244,208,' + (0.26*I).toFixed(3) + ')'); bloom.addColorStop(1, 'rgba(255,232,180,0)');
   ctx.fillStyle = bloom; ctx.fillRect(0, yStart, W, y1 - yStart);                              // the pool of daylight at the hole
   const beams = reduceMotion ? 5 : 7;
   for (let b = 0; b < beams; b++) {
     const bw = shaftW * (0.12 + (b % 3) * 0.07), bx0 = holeMid + (b - (beams - 1) / 2) * shaftW * 0.17;
     const slant = (b - (beams - 1) / 2) * 0.15, flick = reduceMotion ? 1 : (0.78 + 0.22 * Math.sin(ph*0.02 + b*1.7));
     for (let yy = yStart; yy < y1; yy += 4) {
-      const t = (yy - yCeil) / reach, cx0 = bx0 + (yy - yCeil) * slant, wNow = bw * (1 + t * 1.6);
-      ctx.globalAlpha = 0.14 * (1 - t) * (1 - t) * flick * I;                                  // quadratic falloff into the dark, scaled by the fade-in
+      const t = (yy - yCeil) / reach, f = 1 - t, cx0 = bx0 + (yy - yCeil) * slant, wNow = bw * (1 + t * 1.6);
+      ctx.globalAlpha = 0.10 * f * f * f * flick * I;                                          // cubic falloff into the dark, scaled by the fade-in
       ctx.fillStyle = 'rgba(255,232,175,1)';                                                   // warm gold beam
       ctx.fillRect(Math.round(cx0 - wNow/2), yy, Math.round(wNow), 4);
     }
@@ -4261,7 +4235,7 @@ function drawSunShafts(ph, yCeil) {
       const drift = Math.sin(ph*0.012 + k*1.7) * shaftW*0.4 + Math.sin(ph*0.05 + k)*3;
       const dx2 = holeMid + drift * (0.5 + (dy2 - yCeil)/reach);
       const tw = 0.5 + 0.5 * Math.sin(ph*0.09 + k*2.3), depth = 1 - (dy2 - yCeil)/reach;
-      ctx.globalAlpha = (0.28 + 0.4*tw) * depth * depth * I;
+      ctx.globalAlpha = (0.22 + 0.34*tw) * depth * depth * I;
       ctx.fillStyle = k % 4 === 0 ? 'rgba(255,250,210,1)' : 'rgba(255,224,150,1)';
       const s2 = k % 5 === 0 ? 2 : 1; ctx.fillRect(Math.round(dx2), Math.round(dy2), s2, s2);
     }
@@ -4277,8 +4251,8 @@ function drawDaylightBlend(ph, yCeil) {
   const { cxL, cxR } = caveMouth(), mid = (cxL + cxR) / 2, shaftW = cxR - cxL;
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
   const g = ctx.createRadialGradient(mid, yCeil, 4, mid, yCeil, shaftW * 1.35);               // centred on the surface line: lifts the grass above AND the shaft below
-  g.addColorStop(0, 'rgba(255,247,216,' + (0.5*I).toFixed(3) + ')');
-  g.addColorStop(0.5, 'rgba(255,238,186,' + (0.24*I).toFixed(3) + ')');
+  g.addColorStop(0, 'rgba(255,247,216,' + (0.40*I).toFixed(3) + ')');                          // v147: eased so the surface reads bright but not blown out
+  g.addColorStop(0.5, 'rgba(255,238,186,' + (0.19*I).toFixed(3) + ')');
   g.addColorStop(1, 'rgba(255,232,175,0)');
   ctx.globalAlpha = 1; ctx.fillStyle = g;
   ctx.fillRect(0, Math.max(0, yCeil - Math.round(shaftW*1.1)), W, Math.round(shaftW*2.4));
