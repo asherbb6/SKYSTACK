@@ -3593,6 +3593,45 @@ check('v152 the descent glance is bounded and respects reduced motion', () => {
   return deep.run('cameraY - cameraTarget <= PAST_GLANCE_MAX') ? true : 'glance exceeded the cap';
 });
 
+// v152 labels: txt is a top-level function declaration, so it can be swapped inside the vm to
+// capture what the past column writes. (A recording ctx cannot tell us the STRING, only pixels.)
+const pastLabelProbe = 'var __pl = []; var __t0 = txt;' +
+  ' txt = function(s,x,y,sc,c,al){ __pl.push([String(s), x, y]); return __t0(s,x,y,sc,c,al); };';
+check('v152 past bands are labelled with their level name', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col:"#fff"});');
+  g.run('recordPastRun(0); prog = 3; startLevel(1)');
+  g.run(pastLabelProbe);
+  // look at the BOTTOM of the column — that is where level 0's band starts
+  g.run('cameraY = GROUND_Y - 4*BH - (H - 100); drawPastColumn(cameraY); txt = __t0;');
+  const seen = JSON.parse(g.run('JSON.stringify(__pl)'));
+  const want = g.run('levelName(0)');
+  return seen.some(l => l[0] === want) ? true : 'no "' + want + '" label, saw ' + JSON.stringify(seen);
+});
+check('v152 past labels never collide with the seam or each other', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col:"#fff"});');
+  g.run('recordPastRun(0); prog = 4; startLevel(3)');
+  // sweep the camera down the whole column: EVERY frame must be collision-free, not just one
+  const si = g.run('blocks.findIndex(b => b.slab)');
+  let drew = 0;
+  for (let a = 2; a <= g.run('runLaunch'); a += 3) {
+    g.run(pastLabelProbe);
+    g.run('cameraY = GROUND_Y - ' + a + '*BH - (H - 100); drawPastColumn(cameraY); txt = __t0;');
+    const seen = JSON.parse(g.run('JSON.stringify(__pl)'));
+    drew += seen.length;
+    const ys = seen.map(l => l[2]).sort((x, y) => x - y);
+    for (let i = 1; i < ys.length; i++)
+      if (ys[i] - ys[i-1] < 9) return 'labels at ' + ys[i-1] + '/' + ys[i] + ' overlap with camera at A=' + a;
+    const sy = g.run('Math.round(GROUND_Y - ' + si + '*BH - cameraY)');
+    const onSeam = ys.find(y => Math.abs(y - sy) < 9);
+    if (onSeam !== undefined) return 'a label sits on the seam (y=' + onSeam + ' vs seam ' + sy + ') at A=' + a;
+  }
+  return drew > 0 ? true : 'the sweep never drew a label';
+});
+
 // ---------- report ----------
 let pass = 0, fail = 0;
 for (const [ok, name, detail] of results) {

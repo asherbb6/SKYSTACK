@@ -5301,6 +5301,23 @@ function drawPastColumn(cy) {
       ctx.fillRect(Math.round((W - BASE_W) / 2), sy, BASE_W, 1);
     }
   }
+  // v152: name the eras. Each past band gets its level's name where that band STARTS, fading on the
+  // same curve as the blocks — the column becomes a readable map of the journey.
+  // TEXT RULE: it HIDES rather than collides. A label within 9px of the seam or of the previous
+  // label is dropped, not nudged — the same rule the wider text audit will apply everywhere.
+  const seamY = si > 0 ? Math.round(GROUND_Y - si * BH - cy) : -999;
+  let lastY = -999;
+  for (let lv = 0; lv < LEVEL_COUNT; lv++) {
+    const a = levelStartA(lv);
+    if (a >= blocks.length - 1 || !blocks[a] || !blocks[a].past) continue;
+    const y = Math.round(GROUND_Y - (a + 1) * BH - cy) + 2;
+    if (y < 4 || y > H - 4) continue;
+    if (Math.abs(y - seamY) < 9 || Math.abs(y - lastY) < 9) continue;
+    ctx.globalAlpha = Math.min(1, pastFade(blocks.length - 1 - a) * 1.35);
+    txt(levelName(lv), 4, y, 1, 'rgba(255,246,232,0.75)', 'left');
+    ctx.globalAlpha = 1;
+    lastY = y;
+  }
 }
 function renderWorld(cy, shX) {
   ctx.save(); ctx.translate(Math.round(shX), 0);
