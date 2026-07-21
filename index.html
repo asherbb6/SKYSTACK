@@ -4464,16 +4464,25 @@ function drawSurfaceGround(ph, yCeil) {
 
 // deterministic instances rooted at the surface. Trees top out ~TREETOPS(22).
 // Fixed screen-X (the world never pans X). The forest is the only rooted structure set.
+// v150: three SPECIES, not four copies of one tree — four identical trees is what read as
+// "procedural". Species changes the silhouette (trunk width, branch spacing, crown size) and the
+// BARK TREATMENT, so they read apart at a glance even at phone scale.
+const TREE_SPECIES = {
+  oak:   { wMul:1,    pMul:1,    brMul:1,    crown:18, side:15, mid:12, bark:'nick', body:'#3A2616', lit:'rgba(96,66,36,0.55)',    shade:'rgba(0,0,0,0.32)',     fleck:'rgba(150,108,64,0.55)' },
+  birch: { wMul:0.70, pMul:1.55, brMul:0.78, crown:13, side:10, mid:8,  bark:'dash', body:'#C9C2AE', lit:'rgba(255,250,238,0.55)', shade:'rgba(96,92,78,0.35)',  fleck:'rgba(255,252,240,0.5)'  },
+  bushy: { wMul:1.28, pMul:0.60, brMul:1.18, crown:20, side:16, mid:14, bark:'nick', body:'#42301C', lit:'rgba(112,80,46,0.55)',   shade:'rgba(0,0,0,0.34)',     fleck:'rgba(160,116,70,0.55)' }
+};
 const TREES = [
-  { x:0.085, topA:57, s:1.05 }, { x:0.245, topA:47, s:0.82 },
-  { x:0.66,  topA:60, s:1.15 }, { x:0.93,  topA:50, s:0.95 }
+  { x:0.085, topA:57, s:1.05, kind:'oak'   }, { x:0.245, topA:47, s:0.82, kind:'birch' },
+  { x:0.66,  topA:60, s:1.15, kind:'oak'   }, { x:0.93,  topA:50, s:0.95, kind:'bushy' }
 ];
 // one whole tree rooted at the surface: tapering trunk + branches carrying connected canopy, top at topA
 function rootedTree(t, seed) {
   const baseY = worldY(SURF_A), topY = worldY(t.topA);
   if (topY > H || baseY < 0) return;
+  const sp = TREE_SPECIES[t.kind] || TREE_SPECIES.oak;                                         // v150: species drives silhouette + bark treatment
   const sway = reduceMotion ? 0 : Math.sin(tick*.018 + seed)*2, xs = Math.round(W * t.x), x = Math.round(W * t.x + sway);
-  const w = Math.max(6, Math.round(9 * t.s)), trunkTop = Math.max(topY + 6, -20), y1 = Math.min(baseY, H + 2);
+  const w = Math.max(5, Math.round(9 * t.s * sp.wMul)), trunkTop = Math.max(topY + 6, -20), y1 = Math.min(baseY, H + 2);
   ctx.globalAlpha = 1;
   // v149: the trunk is not a ruled rectangle — it TAPERS toward the crown and its edges wander a
   // pixel, so the silhouette reads as wood rather than a post. Drawn in short world-anchored bands.
@@ -4481,9 +4490,9 @@ function rootedTree(t, seed) {
   const leanAt  = d => Math.round(Math.sin(d*0.035 + seed)*1.2);                               // slow organic lean, same every frame at the same world height
   for (let yy = Math.max(trunkTop, -4); yy < y1; yy += 2) {
     const d = baseY - yy, tw = widthAt(d), tx = x + leanAt(d) + ((w - tw) >> 1), hh = Math.min(2, y1 - yy);
-    ctx.fillStyle = '#3A2616';            ctx.fillRect(tx, yy, tw, hh);                        // trunk body
-    ctx.fillStyle = 'rgba(96,66,36,0.55)';ctx.fillRect(tx + tw - 2, yy, 2, hh);                // lit right edge
-    ctx.fillStyle = 'rgba(0,0,0,0.32)';   ctx.fillRect(tx, yy, 2, hh);                         // shadow left edge
+    ctx.fillStyle = sp.body;  ctx.fillRect(tx, yy, tw, hh);                                    // trunk body
+    ctx.fillStyle = sp.lit;   ctx.fillRect(tx + tw - 2, yy, 2, hh);                            // lit right edge
+    ctx.fillStyle = sp.shade; ctx.fillRect(tx, yy, 2, hh);                                     // shadow left edge
   }
   // v101/v102: fine-grid bark — short nicks alternate sides down the trunk so the wood reads
   // grained (v102 doubled the density and contrast; each nick carries a lit ridge underneath)
@@ -4496,18 +4505,24 @@ function rootedTree(t, seed) {
     const ny = baseY - d; if (ny < -6 || ny > H + 6) continue;
     const nk = bhash(d*13 + xs*7 + seed); if (nk < .2) continue;
     const tw = widthAt(d), tx = x + leanAt(d) + ((w - tw) >> 1);
+    if (sp.bark === 'dash') {                                                                  // BIRCH: dark horizontal lenticel dashes across pale bark, not nicks
+      const dw = Math.max(2, Math.round(tw * (0.35 + nk*0.45))), dx0 = tx + Math.round((tw - dw) * nk);
+      ctx.fillStyle = 'rgba(38,34,28,0.72)'; ctx.fillRect(dx0, ny + Math.round(nk*3), dw, 1);
+      if (nk > .62) { ctx.fillStyle = 'rgba(38,34,28,0.45)'; ctx.fillRect(dx0 + 1, ny + Math.round(nk*3) + 2, Math.max(1, dw - 2), 1); }
+      continue;
+    }
     const nx = Math.round(((d/7 | 0) & 1) ? tx + 2 + nk*(tw-5) : tx + 1 + nk*(tw-5)), nw = tw > 7 ? 3 : 2;
     ctx.fillStyle = 'rgba(14,7,2,0.75)'; ctx.fillRect(nx, ny + Math.round(nk*4), nw, 1);
     if (nk > .5) { ctx.fillStyle = 'rgba(140,100,60,0.5)'; ctx.fillRect(nx, ny + Math.round(nk*4) + 1, nw - 1, 1); }   // lit ridge under the nick
   }
-  ctx.fillStyle = 'rgba(150,108,64,0.55)';                                                     // lit grain flecks near the sun edge
+  ctx.fillStyle = sp.fleck;                                                                    // lit grain flecks near the sun edge
   for (let d = 9; d < baseY - trunkTop; d += 11) { const ny = baseY - d; if (ny < -6 || ny > H + 6) continue;
     if (bhash(d*7 + xs*3 + seed) < .4) continue;
     const tw = widthAt(d); ctx.fillRect(x + leanAt(d) + ((w - tw) >> 1) + tw - 3, ny, 1, 2); }
-  const P = Math.max(20, Math.round(34 * t.s));
+  const P = Math.max(16, Math.round(34 * t.s * sp.pMul));                                      // birch branches sparsely, the bushy one densely
   for (let by = topY + 10; by < y1; by += P) {                                                 // branch nodes + connected foliage
     if (by < -20 || by > H + 20) continue;
-    const nd = Math.round((baseY - by) / P), side = (nd & 1) ? 1 : -1, br = Math.round(16 * t.s);
+    const nd = Math.round((baseY - by) / P), side = (nd & 1) ? 1 : -1, br = Math.max(6, Math.round(16 * t.s * sp.brMul));
     const tw = widthAt(baseY - by), tx = x + leanAt(baseY - by) + ((w - tw) >> 1);
     const bx0 = side > 0 ? tx + tw - 1 : tx + 1;
     // v149: limbs are not horizontal bars — they RISE and TAPER away from the trunk in short steps,
@@ -4516,16 +4531,16 @@ function rootedTree(t, seed) {
     for (let s2 = 0; s2 < br; s2 += 2) {
       const rise = Math.round(s2 * 0.42), tNow = Math.max(1, th - Math.round(s2 / Math.max(3, br * 0.45)));
       lx = bx0 + side * s2; ly = by - rise;
-      ctx.fillStyle = '#3A2616';             ctx.fillRect(side > 0 ? lx : lx - 2, ly, 2, tNow);
-      ctx.fillStyle = 'rgba(96,66,36,0.5)';  ctx.fillRect(side > 0 ? lx : lx - 2, ly, 2, 1);              // branch top catches light
+      ctx.fillStyle = sp.body; ctx.fillRect(side > 0 ? lx : lx - 2, ly, 2, tNow);
+      ctx.fillStyle = sp.lit;  ctx.fillRect(side > 0 ? lx : lx - 2, ly, 2, 1);                            // branch top catches light
       ctx.fillStyle = 'rgba(0,0,0,0.4)';     ctx.fillRect(side > 0 ? lx : lx - 2, ly + tNow - 1, 2, 1);   // branch underside shadow
     }
-    for (let f2 = 0; f2 < 4; f2++) { ctx.fillStyle = '#3A2616'; ctx.fillRect(lx + (side > 0 ? 0 : -1), ly - f2, 1, 1); }  // twig forking off the tip
-    foliageBlob(lx + side * 3, ly - 4, 15 * t.s, 1, nd*29 + seed*13 + (side > 0 ? 5 : 91));
-    foliageBlob(x + (w >> 1), by - 8 * t.s, 12 * t.s, 1, nd*17 + seed*7);
+    for (let f2 = 0; f2 < 4; f2++) { ctx.fillStyle = sp.body; ctx.fillRect(lx + (side > 0 ? 0 : -1), ly - f2, 1, 1); }  // twig forking off the tip
+    foliageBlob(lx + side * 3, ly - 4, sp.side * t.s, 1, nd*29 + seed*13 + (side > 0 ? 5 : 91));
+    foliageBlob(x + (w >> 1), by - 8 * t.s, sp.mid * t.s, 1, nd*17 + seed*7);
   }
-  if (topY < H + 20) { foliageBlob(x + (w >> 1), topY + 4, 18 * t.s, 1, seed*101 + 3);          // canopy crown at the top
-    foliageBlob(x + (w >> 1) - 6, topY + 2, 12 * t.s, 1, seed*57 + 19); foliageBlob(x + (w >> 1) + 6, topY + 7, 12 * t.s, 1, seed*23 + 61); }
+  if (topY < H + 20) { foliageBlob(x + (w >> 1), topY + 4, sp.crown * t.s, 1, seed*101 + 3);    // canopy crown at the top
+    foliageBlob(x + (w >> 1) - 6, topY + 2, sp.mid * t.s, 1, seed*57 + 19); foliageBlob(x + (w >> 1) + 6, topY + 7, sp.mid * t.s, 1, seed*23 + 61); }
   ctx.globalAlpha = 1;
 }
 
@@ -4636,12 +4651,12 @@ function drawTreeline(cy) {
     return Math.round((hL*(1 - fx) + hR*fx) * (0.55 + 0.45*hump) + (bhash(x*29 + salt) - .5)*2.2);
   };
   const far = crownLine(13, 11, 8, 3), near = crownLine(9, 7, 5, 11);
-  ctx.fillStyle = '#1E3A22';                                                                   // far canopy row
+  ctx.fillStyle = '#162C19';                                                                   // far canopy row (v150: darkened — the haze coat above it supplies the distance)
   for (let x = 0; x < W; x++) { const hgt = Math.max(2, far(x)); ctx.fillRect(x, yCeil - 2 - hgt, 1, hgt + 2); }
   for (let x = 0; x < W; x++) {                                                                // nearer, lighter row for depth
     const hgt = Math.max(2, near(x));
-    ctx.fillStyle = '#25482A'; ctx.fillRect(x, yCeil - 2 - hgt, 1, hgt + 2);
-    if (bhash(x*17) > .78) { ctx.fillStyle = '#3E6E38'; ctx.fillRect(x, yCeil - 2 - hgt, 1, 1); }   // v101/v102: sparse sunlit crown tips (full-pixel)
+    ctx.fillStyle = '#1D3A21'; ctx.fillRect(x, yCeil - 2 - hgt, 1, hgt + 2);
+    if (bhash(x*17) > .78) { ctx.fillStyle = '#356030'; ctx.fillRect(x, yCeil - 2 - hgt, 1, 1); }   // v101/v102: sparse sunlit crown tips (full-pixel)
   }
   ctx.fillStyle = '#16301C';                                                                   // hints of trunk under the near crowns
   for (let x = 4; x < W; x += 9) { if (bhash(x*23 + 5) < .45) continue; ctx.fillRect(x, yCeil - 2 - Math.round(near(x)*0.35), 1, Math.round(near(x)*0.35)); }
@@ -4716,18 +4731,69 @@ function drawForestBand(cy, ph) {
   ctx.globalAlpha = 1;
 }
 
+// v150: AERIAL PERSPECTIVE. The forest drew in three depths but in one flat tone, so it read as a
+// sticker sheet. A translucent sky-coloured veil now sits BETWEEN the depths — the far treeline gets
+// two coats, the background trunks one, the rooted trees none — so distance reads as haze. This is
+// TONE, not parallax: the world stays 1.0x world-locked (the v145/v146 anchoring rule). The veil
+// covers only the sky side of the surface line, so it never touches the cave.
+// GATING MATTERS: the veil must only exist while the FOREST is on screen. An ungated veil paints the
+// whole sky at every altitude above the surface line (I shipped that bug into a probe frame — the
+// entire upper atmosphere went milky), so it is skipped deep in the cave and FADED OUT as the canopy
+// drops off the bottom of the screen on the way up to TREETOPS. Never make this a global sky tint.
+const FOREST_HAZE = '#B4D8EC', HAZE_TOP_A = 66;
+function forestVeil(yCeil, a, cy) {
+  if (yCeil < -40) return;                                                                     // deep cave: nothing above ground to haze
+  const forestTop = worldY(HAZE_TOP_A, cy);                                                    // screen-y of the top of the canopy band
+  const out = clamp((H - forestTop) / 70, 0, 1); if (out <= 0.01) return;                      // climbed clear of the forest — fade off, no pop
+  const bot = Math.min(yCeil < 0 ? H : yCeil, H); if (bot <= 0) return;                        // sky side of the surface line only
+  ctx.globalAlpha = a * out; ctx.fillStyle = FOREST_HAZE; ctx.fillRect(0, 0, W, bot); ctx.globalAlpha = 1;
+}
+// v150: DAPPLED LIGHT — the sun finds gaps in the canopy and lays warm pools on the forest floor.
+// Pools are world-anchored in x (the world never pans x) and drift very slowly, and they arrive with
+// the same `sunShaftIntensity` ramp as the shafts, so daylight enters as ONE system.
+function drawDappledLight(ph, yCeil) {
+  const I = sunShaftIntensity(yCeil); if (I <= 0.01) return;
+  if (yCeil < -24 || yCeil > H + 12) return;
+  const { cxL, cxR } = caveMouth();
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  // the visible forest floor is only the two strips either side of the shaft (on a phone that is
+  // ~18px + ~31px wide), so pools are distributed INSIDE those strips — never over the opening.
+  const spots = [];
+  for (const seg of [[0, cxL], [cxR, W]]) {
+    const x0 = seg[0], x1 = seg[1], span = x1 - x0; if (span < 8) continue;
+    const n = Math.max(1, Math.round(span / 20));
+    for (let j = 0; j < n; j++) spots.push([x0 + span * ((j + 0.5 + (bhash(x0*13 + j*97) - .5) * 0.6) / n), spots.length]);
+  }
+  for (const sp2 of spots) {
+    const k = sp2[1];
+    const px2 = Math.round(sp2[0] + (reduceMotion ? 0 : Math.sin(ph*0.004 + k*1.9) * 4));
+    const rw = 4 + Math.round(bhash(k*29 + 3) * 7), br = 0.10 + bhash(k*17 + 11) * 0.10;
+    const flick = reduceMotion ? 1 : 0.82 + 0.18 * Math.sin(ph*0.012 + k*2.3);                 // leaves stirring overhead
+    for (let dy = -4; dy <= 2; dy++) {
+      const t2 = 1 - Math.abs(dy + 1) / 4, ww = Math.round(rw * t2); if (ww <= 0) continue;
+      ctx.globalAlpha = br * t2 * flick * I;
+      ctx.fillStyle = 'rgba(255,240,190,1)'; ctx.fillRect(px2 - ww, yCeil + dy, ww*2, 1);
+    }
+    ctx.globalAlpha = (br + 0.10) * flick * I; ctx.fillStyle = 'rgba(255,250,224,1)';           // brighter core on the grass
+    ctx.fillRect(px2 - Math.max(1, rw >> 2), yCeil - 2, Math.max(2, rw >> 1), 2);
+  }
+  ctx.restore(); ctx.globalAlpha = 1;
+}
 // draw the rooted low world for the current camera; each layer self-clips by altitude (no fade)
 function drawGroundWorld(cy, ph) {
   const yCeil = worldY(SURF_A, cy);
   drawTreeline(cy);                                                                            // distant forest wall (behind everything rooted)
+  forestVeil(yCeil, 0.26, cy);                                                                   // haze coat 1: pushes the horizon back
   for (let i = 0; i < BACK_TREES.length; i++) backTrunk(BACK_TREES[i], i + 5);                 // background trunks thicken the forest
+  forestVeil(yCeil, 0.13, cy);                                                                   // haze coat 2: the mid depth sits between horizon and foreground
   for (let i = 0; i < TREES.length; i++) rootedTree(TREES[i], i + 17);                         // rooted trees on the surface
   if (yCeil > 0) drawCave(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil, cy);              // the living cave below the ceiling
   else if (worldY(0, cy) > 0) drawCave(ph, 0, -999, cy);                                       // (transition safety) rock still below
   drawSunShafts(ph, yCeil);                                                                    // v146: daylight pouring in, faded in by surface proximity (no on/off pop) — beams from the true mouth even when it's still above the screen
   drawCaveCreatures(cy, ph);                                                                   // bats/beetles/worms (self-cull to the cave band)
   if (yCeil > -8 && yCeil < H + 8) drawSurfaceGround(ph, yCeil);
-  drawDaylightBlend(ph, yCeil);                                                                // v146: overexpose the surface line so grass + shafts read as one continuous daylight
+  drawDappledLight(ph, yCeil);                                                                 // v150: warm light pools where the canopy breaks
+  drawDaylightBlend(ph, yCeil);                                                              // v146: overexpose the surface line so grass + shafts read as one continuous daylight
   drawForestBand(cy, ph);                                                                      // canopy flanks, leaf-fall, first wisps (A 40..82)
 }
 

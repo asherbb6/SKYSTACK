@@ -3221,9 +3221,42 @@ check('v149 bark is world-anchored: the grain never slides along the trunk while
   return inSet(A, B) && inSet(A, C) ? true : 'grain moved: A=' + A.slice(0,6) + ' B=' + B.slice(0,6);
 });
 
+// ---------- v150 surface depth pass: aerial haze, dappled light, tree species ----------
+check('v150 the forest haze is GATED to the forest band (never a global sky tint)', () => {
+  if (!/GATING MATTERS/.test(src)) return false;
+  const { rec, g } = v149rec();
+  const hazeAt = A => {
+    rec.rects.length = 0;
+    g.run('(() => { const cy = GROUND_Y - ' + A + '*BH - (H - 100); forestVeil(worldY(SURF_A, cy), 0.26, cy); forestVeil(worldY(SURF_A, cy), 0.13, cy); })()');
+    return rec.rects.filter(r => r.style === FOREST_HAZE_HEX).length;
+  };
+  const FOREST_HAZE_HEX = (src.match(/const FOREST_HAZE = '(#[0-9A-Fa-f]{6})'/) || [])[1];
+  if (!FOREST_HAZE_HEX) return 'no FOREST_HAZE constant';
+  const inForest = hazeAt(45), deep = hazeAt(8), above = hazeAt(90), way = hazeAt(200);
+  return inForest > 0 && deep === 0 && above === 0 && way === 0
+    ? true : 'forest=' + inForest + ' cave=' + deep + ' aboveForest=' + above + ' high=' + way;
+});
+check('v150 dappled light lands on the forest floor strips, never over the shaft', () => {
+  const { rec, g } = v149rec();
+  rec.rects.length = 0;
+  g.run('(() => { const cy = GROUND_Y - SURF_A*BH - 250; cameraY = cy; drawDappledLight(40, worldY(SURF_A, cy)); })()');
+  const pools = rec.rects.filter(r => /255,\s*2[45][0-9]/.test(String(r.style)));
+  if (!pools.length) return 'no light pools drawn';
+  const m = g.run('JSON.stringify(caveMouth())'), mouth = JSON.parse(m);
+  const over = pools.filter(r => r.x + r.w > mouth.cxL + 2 && r.x < mouth.cxR - 2);
+  return over.length === 0 ? true : over.length + ' pool rects cross the shaft';
+});
+check('v150 the forest has three distinct species, all wired to a real profile', () => fresh.run(
+  '(() => { const kinds = TREES.map(t => t.kind);' +
+  'if (!kinds.every(k => TREE_SPECIES[k])) return "unknown kind";' +
+  'if (new Set(kinds).size < 3) return "only " + new Set(kinds).size + " species in the forest";' +
+  'const w = k => TREE_SPECIES[k].wMul, p = k => TREE_SPECIES[k].pMul;' +
+  'return w("birch") < w("oak") && w("oak") < w("bushy") && p("birch") > p("oak") && p("oak") > p("bushy")' +
+  ' && TREE_SPECIES.birch.bark === "dash"; })()') === true);
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v149', () => /const CACHE = 'skystack-v149'/.test(sw));
+check('sw.js cache bumped to v150', () => /const CACHE = 'skystack-v150'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
