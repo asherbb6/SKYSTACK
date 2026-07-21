@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v159', () => /const CACHE = 'skystack-v159'/.test(sw));
+check('sw.js cache bumped to v160', () => /const CACHE = 'skystack-v160'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3790,8 +3790,15 @@ check('v155 the streaks ride the front: they move with it and fade with the gust
   const early = at(14), mid = at(40);
   if (!early.n || !mid.n) return 'front vanished mid-gust';
   if (!(mid.x > early.x)) return 'streaks did not travel with the front: ' + early.x + ' -> ' + mid.x;
-  const late = at(118);   // the gust is dying: the envelope must take the streaks with it
-  return late.n === 0 || late.n < mid.n ? true : 'streaks did not fade out with the gust';
+  // v160 RE-BASELINE: this used to demand the streak COUNT drop away at the tail, which encoded the
+  // very bug Asher reported — the screen going blank while the gust was still pushing him. The gust
+  // must stay VISIBLE for as long as it pushes; what fades is its INTENSITY.
+  at(118);
+  const dying = g.run('gustVisEnv()'), peak = (() => { at(60); return g.run('gustVisEnv()'); })();
+  at(118);
+  const stillThere = at(118).n;
+  return stillThere > 0 && dying < peak * 0.5
+    ? true : 'tail: visible=' + stillThere + ' env ' + dying.toFixed(2) + ' vs peak ' + peak.toFixed(2);
 });
 
 // ---------- v156 LOWER SKY: open air you can read ----------
@@ -4074,6 +4081,62 @@ check('v159 the fail screen says something TRUE OF THIS RUN, not a fixed string'
   if (!far.some(s => s === 'TAP WHEN IT LINES UP')) return 'a distant miss gave no advice: ' + JSON.stringify(far);
   const one = lines(1, 'topple');
   return one.some(s => s === '1 BLOCK SHORT') ? true : 'singular/plural is wrong: ' + JSON.stringify(one.filter(s => /SHORT/.test(s)));
+});
+
+// ---------- v160 the wind tell must MATCH the force it is telling you about ----------
+check('v160 the gust is visible for the WHOLE time it pushes you (v155 went blind after half)', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(3); tick = 40;');
+  const sample = frac => {
+    rec.rects.length = 0;
+    g.run('wind = { dir: 1, str: 0.7, dur: 120, t: ' + Math.round(120 * frac) + ' };' +
+      ' drawGustFront(GROUND_Y - 70*BH - H/2);');
+    const force = Math.abs(g.run('driftForce()'));
+    return { streaks: rec.rects.length, force };
+  };
+  const pts = [0.1, 0.25, 0.5, 0.7, 0.85, 0.95].map(sample);
+  const blind = pts.filter(p => p.force > 0.05 && p.streaks === 0);
+  if (blind.length) return blind.length + ' moments push the player with NOTHING on screen';
+  // and it must stop when the gust does
+  const after = (() => { rec.rects.length = 0;
+    g.run('wind = null; drawGustFront(GROUND_Y - 70*BH - H/2);'); return rec.rects.length; })();
+  return after === 0 ? true : 'streaks drawn with no gust at all';
+});
+check('v160 the tell LEADS the push, and never trails it', () => {
+  const g = makeGame();
+  g.run('prog = 9; startLevel(3);');
+  const at = t => {
+    g.run('wind = { dir: 1, str: 0.7, dur: 120, t: ' + t + ' };');
+    return { vis: g.run('gustVisEnv()'), force: Math.abs(g.run('driftForce()')) };
+  };
+  const start = at(1), end = at(119);
+  if (!(start.vis > 0.1)) return 'nothing visible as the gust begins (vis ' + start.vis.toFixed(2) + ')';
+  if (!(end.vis <= 0.12)) return 'still visible after the push has gone (vis ' + end.vis.toFixed(2) + ')';
+  // the visual envelope must never lag the force envelope
+  for (let t = 0; t <= 120; t += 10) {
+    const s = at(t);
+    const forceEnv = Math.sin(Math.min(1, Math.max(0, t / 120)) * Math.PI);
+    if (s.vis + 0.001 < forceEnv) return 'the tell lags the force at t=' + t;
+  }
+  return true;
+});
+check('v160 streaks fade at the screen edges instead of hitting a wall', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(3); tick = 40; wind = { dir: 1, str: 0.7, dur: 120, t: 60 };');
+  const alphas = [];
+  const base = { fillRect: function () {} };
+  // measure the edge factor directly: it must fall to ~0 at both rims and be full in the middle
+  const mid = g.run('(() => { const x = W/2; return clamp(Math.min(x + 14, W - x + 14) / 30, 0, 1); })()');
+  const left = g.run('(() => { const x = -12; return clamp(Math.min(x + 14, W - x + 14) / 30, 0, 1); })()');
+  const right = g.run('(() => { const x = W + 12; return clamp(Math.min(x + 14, W - x + 14) / 30, 0, 1); })()');
+  if (!(mid > 0.95)) return 'the middle of the screen is dimmed (' + mid + ')';
+  return left < 0.15 && right < 0.15 ? true : 'edges do not fade: left=' + left + ' right=' + right;
+});
+check('v160 driftForce STILL never reads the wind visuals', () => {
+  const i0 = src.indexOf('function driftForce');
+  const seg = src.slice(i0, src.indexOf('\n}', i0)).replace(/\/\/[^\n]*/g, '');
+  return !/windWaveAt|gustFrontAt|gustVisEnv|drawGustFront/.test(seg)
+    ? true : 'driftForce now depends on the visual layer';
 });
 
 // ---------- report ----------

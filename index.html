@@ -1842,17 +1842,26 @@ function driftForce() {
 // biome-mechanic magnitude moved (that verdict is still pending). What changed is that the same
 // force is now announced before it peaks.
 const GUST_FRONT_W = 0.28;   // how wide the leading edge is, as a fraction of the screen
-function windWaveAt(x) {
+// v160: the FRONT PASSAGE alone — "has the gust reached this x yet", with no envelope in it. Kept
+// separate so the renderer can apply its own (slightly leading) envelope without squaring it.
+function gustFrontAt(x) {
   if (!wind || !wind.dur) return 0;
-  const t = clamp(wind.t / wind.dur, 0, 1);
-  const env = Math.sin(t * Math.PI);                       // the SAME envelope the force uses
-  // the front crosses during the gust's FIRST HALF, so it arrives before the force peaks
-  const p = clamp(wind.t / (wind.dur * 0.5), 0, 1);
+  // v160: the front used to take HALF the gust to cross, so for most of the ramp you were already
+  // being pushed while the front was still out over the edge of the screen — the push arrived
+  // before its own tell. It now crosses in the first 30%, so by the time the force is meaningful
+  // the air is visibly moving everywhere. Reading the wind is a learnable pattern: the front sweeps
+  // in, THEN it blows, then it eases off.
+  const p = clamp(wind.t / (wind.dur * 0.22), 0, 1);
   const xn = clamp(x / Math.max(1, W), 0, 1);
   const reach = wind.dir >= 0
     ? (-0.15 + p * 1.30) - xn                              // blowing right: front enters from the left
     : xn - (1.15 - p * 1.30);                              // blowing left: front enters from the right
-  return clamp(reach / GUST_FRONT_W, 0, 1) * env;
+  return clamp(reach / GUST_FRONT_W, 0, 1);
+}
+function windWaveAt(x) {
+  if (!wind || !wind.dur) return 0;
+  const env = Math.sin(clamp(wind.t / wind.dur, 0, 1) * Math.PI);   // the SAME envelope the force uses
+  return gustFrontAt(x) * env;
 }
 // Tree lean for a tree at normalised screen x. The ambient sway is PHASE-OFFSET BY X so even calm
 // air ripples across the forest instead of every trunk moving in unison, and the gust rides on top
@@ -5598,28 +5607,55 @@ function pastBuffer() {
 // Nothing here reads or writes physics: it is the telegraph, not the force.
 const GUST_STREAKS = 30;   // tuned on a real LOWER SKY frame: 16 faint dashes were invisible as a tell
 const GUST_STREAK_COL = '#EAF4FF';
+// v160 WHAT YOU SEE IS WHAT YOU FEEL. Two real bugs and a restyle, all from Asher's verdict on v155:
+//   (1) Every streak was pinned to the FRONT with a <=40px trail, and the front leaves the screen at
+//       t = dur/2. So for the ENTIRE SECOND HALF of a gust — while the force decays from its peak —
+//       nothing was drawn. That is exactly "the gameplay it affects lasts after it is visible".
+//   (2) A streak was culled the instant it passed the screen edge, so it read as a stick hitting a
+//       wall and vanishing. Streaks now travel continuously and FADE at both edges.
+//   (3) Restyle: a hard 1px bar read as a "clear stick". Each streak is now a tapered three-segment
+//       blur, brightest at its head, so it reads as moving air.
+// The visual intensity is the force envelope shifted 8% EARLIER, so the tell always leads the push
+// and dies exactly with it — never the other way round. driftForce() is still untouched.
+function gustVisEnv() {
+  if (!wind || !wind.dur) return 0;
+  const force = Math.sin(clamp(wind.t / wind.dur, 0, 1) * Math.PI);              // exactly the force curve
+  const lead  = Math.sin(clamp((wind.t + wind.dur * 0.08) / wind.dur, 0, 1) * Math.PI);
+  // MAX, not the shifted curve alone: the lead makes the tell appear before the push, but on its own
+  // it also ENDS 8% early, which would recreate the very bug this fixes at the other end of the gust.
+  return Math.max(force, lead);
+}
 function drawGustFront(cy) {
   if (!wind || reduceMotion) return;
-  const env = Math.sin(clamp(wind.t / Math.max(1, wind.dur), 0, 1) * Math.PI);
-  if (env <= 0.03) return;
+  const env = gustVisEnv();
+  if (env <= 0.02) return;
   const altMid = (GROUND_Y - (cy + H / 2)) / BH;                       // altitude at the middle of the screen
   const open = clamp((altMid - SURF_A) / 26, 0, 1);                    // sheltered below the surface, open above
   if (open <= 0) return;
-  const p = clamp(wind.t / (wind.dur * 0.5), 0, 1);
-  const fx = (wind.dir >= 0 ? -0.15 + p * 1.30 : 1.15 - p * 1.30) * W;
-  ctx.fillStyle = GUST_STREAK_COL;   // v157: pure white read as scratches on the sky; this sits in the sky's own family
+  ctx.fillStyle = GUST_STREAK_COL;
+  const span = W + 80;
   for (let k = 0; k < GUST_STREAKS; k++) {
     const hs = (k * 2654435761) >>> 0;                                 // stable per-streak hash: no RNG, DAILY unaffected
     const y = ((hs >>> 7) % Math.max(1, H | 0));
-    const trail = ((hs >>> 3) % 34) + 6;                               // how far this streak lags the front
-    const x = Math.round(fx - wind.dir * trail);
-    if (x < -20 || x > W + 20) continue;
-    const len = 8 + ((hs >>> 11) % 13) + Math.round(env * 12);
-    const near = 1 - clamp(trail / 40, 0, 1);              // brightest right at the leading edge
-    ctx.globalAlpha = env * open * (0.16 + near * 0.30 + ((hs >>> 17) % 7) * 0.02);
-    const sx = wind.dir >= 0 ? x - len : x;
-    ctx.fillRect(sx, y, len, 1);
-    if (near > 0.55) ctx.fillRect(sx + (wind.dir >= 0 ? 2 : -2), y + 1, Math.round(len * 0.6), 1);   // a little body on the front itself
+    const speed = 2.0 + ((hs >>> 13) % 9) * 0.5;
+    let x = (((hs >>> 5) % span) + wind.dir * wind.t * speed) % span;  // travels; never stops at a wall
+    if (x < 0) x += span;
+    x -= 40;
+    const local = gustFrontAt(x);                                      // still nothing AHEAD of the front (no env — see above)
+    if (local <= 0.02) continue;
+    const edge = clamp(Math.min(x + 14, W - x + 14) / 30, 0, 1);       // ease out at both edges
+    const a = env * open * local * edge * (0.55 + ((hs >>> 17) % 7) * 0.06);
+    if (a <= 0.012) continue;
+    const len = 6 + ((hs >>> 11) % 10) + Math.round(env * 8);
+    const seg = [0.46, 0.32, 0.22], al = [0.62, 0.34, 0.16];
+    let run = 0;
+    for (let s = 0; s < 3; s++) {                                      // head-to-tail taper = motion blur, not a bar
+      const sl = Math.max(1, Math.round(len * seg[s]));
+      const sx = wind.dir >= 0 ? x - run - sl : x + run;
+      ctx.globalAlpha = a * al[s];
+      ctx.fillRect(Math.round(sx), y, sl, 1);
+      run += sl + 1;
+    }
   }
   ctx.globalAlpha = 1;
 }
