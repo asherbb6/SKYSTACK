@@ -3134,10 +3134,9 @@ const v133render = (lvl) => '(() => { prog = 99; startLevel(' + lvl + ');' +
   ' drawLandmarkPlatform = function(){ landmark++; return rl.apply(this, arguments); };' +
   ' drawBaseCosmetic = function(){ cosmetic++; return rc.apply(this, arguments); };' +
   ' try { render(); } finally { drawBlock = rb; drawLandmarkPlatform = rl; drawBaseCosmetic = rc; }' +
-  // v152: the pre-stacked rows are now drawn by drawPastColumn (as the faded past) instead of by
-  // drawBlock, so counting drawBlock alone would say the tower vanished. It did not — it moved
-  // draw paths. pastDrawn is the past pass's own per-row counter.
-  ' return JSON.stringify({blocksDrawn: blocksDrawn + pastDrawn, live: blocksDrawn, past: pastDrawn,' +
+  // v152b: past rows go through drawBlock too (with a dimmed colour, so they wear the real skin),
+  // so blocksDrawn already counts them — do NOT add pastDrawn or every row counts twice.
+  ' return JSON.stringify({blocksDrawn, past: pastDrawn,' +
   ' landmark, cosmetic, total: blocks.length}); })()';
 check('v133 a checkpoint start draws the real tower, not a floating platform', () => {
   const r = JSON.parse(makeGame().run(v133render(4)));
@@ -3365,7 +3364,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v152', () => /const CACHE = 'skystack-v152'/.test(sw));
+check('sw.js cache bumped to v153', () => /const CACHE = 'skystack-v153'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3630,6 +3629,36 @@ check('v152 past labels never collide with the seam or each other', () => {
     if (onSeam !== undefined) return 'a label sits on the seam (y=' + onSeam + ' vs seam ' + sy + ') at A=' + a;
   }
   return drew > 0 ? true : 'the sweep never drew a label';
+});
+
+check('v152b past rows wear the REAL skin, dimmed — not a hand-drawn flat rectangle', () => {
+  const g = makeGame();
+  g.run('startLevel(0)');
+  g.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 20, w: 40, col: blockCol(blocks.length)});');
+  g.run('recordPastRun(0); prog = 3; startLevel(1)');
+  // every past row must go through drawBlock (the skin renderer), carrying the equipped skin style
+  const seen = JSON.parse(g.run('(() => { const calls = []; const rb = drawBlock;' +
+    ' drawBlock = function(x,y,w,h,col,isTop,glow,style){ calls.push({w, l: col && col.l, s: col && col.s, style, isTop});' +
+    '   return rb.apply(this, arguments); };' +
+    ' try { cameraY = GROUND_Y - runLaunch*BH - (H - 100); drawPastColumn(cameraY); } finally { drawBlock = rb; }' +
+    ' return JSON.stringify({calls, style: skin().style, drawn: pastDrawn}); })()'));
+  if (!seen.calls.length) return 'no past row went through drawBlock';
+  if (seen.calls.length !== seen.drawn) return 'drew ' + seen.drawn + ' rows but only ' + seen.calls.length + ' via drawBlock';
+  if (!seen.calls.every(c => c.style === seen.style)) return 'a past row ignored the equipped skin style';
+  if (seen.calls.some(c => c.isTop)) return 'a past row rendered as the TOP block';
+  // The colour handed in must be a DIMMED version of that row's own colour, dimming further with
+  // depth. Absolute lightness is not monotonic (each altitude has its own biome colour), and rows
+  // draw bottom-up, so compare each row's ratio against its own source.
+  const idx = JSON.parse(g.run('(() => { const out = [];' +
+    ' for (let i = 0; i < blocks.length; i++) { const b = blocks[i]; if (!b.past) continue;' +
+    '   const y = Math.round(GROUND_Y - (i+1)*BH - cameraY); if (y > H || y + BH < 0) continue; out.push(i); }' +
+    ' return JSON.stringify(out); })()'));
+  if (idx.length !== seen.calls.length) return 'row bookkeeping mismatch: ' + idx.length + ' vs ' + seen.calls.length;
+  const srcL = JSON.parse(g.run('JSON.stringify(' + JSON.stringify(idx) + '.map(i => blocks[i].col.l))'));
+  const ratios = seen.calls.map((c, k) => c.l / srcL[k]);
+  if (!ratios.every(r => r < 1)) return 'a past row was not dimmed at all';
+  return ratios[0] < ratios[ratios.length - 1]   // index 0 is the DEEPEST row (drawn bottom-up)
+    ? true : 'dimming does not deepen with depth: ' + ratios[0].toFixed(3) + ' -> ' + ratios[ratios.length-1].toFixed(3);
 });
 
 // ---------- report ----------

@@ -5269,14 +5269,17 @@ function drawBaseCosmetic(cx, topY, bw, id) {
 // the v133 "the tower under you is REAL" column vanish for anyone without recorded history.
 const PAST_SEAM = 'rgba(255,246,232,0.5)';
 const PAST_GLANCE_MAX = 260;   // v152: cap the descent glance — a long climb back up reads as a stall
-// Tuned against a real frame: the first pass (0.62 base, 0.55 dark veil) sank the column into a
-// near-black silhouette that read as an empty SHAFT in the cave, not as blocks. Asher asked for
-// "slightly darker/translucent", so the block keeps its own colour and each row keeps its lit top
-// edge — that edge is what makes a stack read as stacked.
+// Tuned against real frames. Pass 1 (flat fill, 0.62 base, 0.55 dark veil) sank the column into a
+// near-black silhouette that read as an empty SHAFT in the cave, not as blocks. Pass 2 added
+// hand-drawn top/bottom edges. Pass 3 (Asher: "show the actual skins of the previous levels blocks
+// but just make the brightness/transparency lower") threw the hand-drawn edges away and runs the
+// REAL skin renderer with a dimmed colour, so the past wears whatever skin the player has equipped.
+// `a` is the row's fade: ~0.78 at the seam, falling with depth.
 function pastFade(depth) { return 0.78 / (1 + depth * 0.055); }
 let pastDrawn = 0;   // v152: past rows drawn last frame — lets the v133 "the tower is REAL" guards see this pass
 function drawPastColumn(cy) {
   const top = blocks.length - 1;
+  const pastStyle = skin().style;   // the past wears the same skin finish the live tower does
   pastDrawn = 0;
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
@@ -5287,20 +5290,19 @@ function drawPastColumn(cy) {
     const bx = b.gw === undefined ? (W - BASE_W) / 2 : b.gx;
     const a = pastFade(top - i);
     pastDrawn++;
-    ctx.globalAlpha = a;
-    ctx.fillStyle = b.col;                                   // its own biome colour, dimmed by the veil below
-    ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
-    ctx.globalAlpha = a * 0.30;                              // pushed toward the dark: an old block, not a lit one
+    // v152b: draw the REAL SKIN. drawBlock resets globalAlpha internally (the per-skin finishes set
+    // and clear it), so wrapping the call in an alpha does not survive — but drawBlock takes its
+    // colour as an HSL object, so handing it a DIMMED colour runs the player's actual skin renderer
+    // (bevels, sheen, stripes, roots, stars) at a lower brightness for free. No canvas filter: a
+    // per-primitive opacity filter double-darkens every overlapping bevel and costs a layer per fill.
+    const c = b.col;
+    const dim = { h: c.h,
+                  s: clamp(c.s * (0.26 + 0.30 * a), 0, 100),
+                  l: clamp(c.l * (0.18 + 0.40 * a), 4, 96) };
+    drawBlock(Math.round(bx), y, Math.round(bw), BH, dim, false, 0, pastStyle);
+    ctx.globalAlpha = (1 - a) * 0.45;                        // the air between you and then, thickening with depth
     ctx.fillStyle = 'rgba(8,10,20,1)';
     ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
-    // the lit top edge + shaded underside: without these a column of flat rectangles reads as one
-    // dark VOID rather than as blocks you once stood on
-    ctx.globalAlpha = a * 0.34;
-    ctx.fillStyle = '#FFF6E8';
-    ctx.fillRect(Math.round(bx), y, Math.round(bw), 1);
-    ctx.globalAlpha = a * 0.40;
-    ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.fillRect(Math.round(bx), y + BH - 1, Math.round(bw), 1);
     ctx.globalAlpha = 1;
   }
   // the seam: above it is NOW, below it is THEN. Drawn under the slab row, which the live loop
