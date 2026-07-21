@@ -4154,28 +4154,53 @@ function drawCaveForeground(cy, ph) {
   // ground everywhere else. Vines trail off its underside.
   if (yCeil > -CEIL_THICK && yCeil < H) {
     const surfY = Math.round(yCeil);
-    for (let x = 0; x < W; x += 6) {
-      const hang = 9 + Math.round(bhash(x*5 + 3) * 7);                        // ragged dirt/rock underside
-      ctx.globalAlpha = fgAlpha(x, surfY - 5, x + 6, surfY + hang);           // translucent where the tower passes through
-      blitCaveTex(x, surfY, 6, hang, x*7 + 13, caveTex);                      // rock/dirt body from the one cave atlas
-      ctx.fillStyle = 'rgba(74,51,32,0.55)'; ctx.fillRect(x, surfY, 6, 3);    // warmer topsoil over the rock crown
-      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x, surfY + hang - 2, 6, 2);   // AO along the underside
-      ctx.fillStyle = '#3E8A32'; ctx.fillRect(x, surfY - 3, 6, 4);            // grass cap across the whole bridge
-      ctx.fillStyle = '#2E6E3A'; ctx.fillRect(x, surfY, 6, 1);               // grass roots shade into the dirt
-      for (let gx = 0; gx < 6; gx += 2) { const bh2 = 2 + (bhash((x+gx)*7) > .5 ? 1 : 0);
-        ctx.fillStyle = '#4EA344'; ctx.fillRect(x + gx, surfY - 3 - bh2, 1, bh2);
-        ctx.fillStyle = '#8EE87A'; ctx.fillRect(x + gx, surfY - 3 - bh2, 1, 1); }   // blades + sunlit tips
+    // v148: NATURAL uneven ground edge, NOT a straight bridge beam. The top grass line WANDERS
+    // (low-freq sine + per-cell hash) and the underside hang varies, so it reads as the ragged near
+    // lip of the forest floor the tower punches through — not a ruled plank. Per-3px column.
+    const topAt  = x => surfY - Math.round(Math.sin(x*0.075 + 1.3)*2.2 + (bhash(Math.floor(x/7)*13 + 2) - .5)*4);
+    const hangAt = x => 8 + Math.round(Math.sin(x*0.05 + 4)*3 + bhash(Math.floor(x/5)*7 + 1)*7);
+    for (let x = 0; x < W; x += 3) {
+      const ty = topAt(x), segBot = surfY + hangAt(x);
+      ctx.globalAlpha = fgAlpha(x, ty - 4, x + 3, segBot);                    // translucent where the tower passes through
+      blitCaveTex(x, ty, 3, segBot - ty, x*7 + 13, caveTex);                 // rock/dirt body from the one cave atlas
+      ctx.fillStyle = 'rgba(74,51,32,0.55)'; ctx.fillRect(x, ty, 3, 3);      // warm topsoil over the rock crown
+      ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x, segBot - 2, 3, 2);  // AO along the ragged underside
+      ctx.fillStyle = '#3E8A32'; ctx.fillRect(x, ty - 2, 3, 3);              // grass following the wavy top
+      ctx.fillStyle = '#2E6E3A'; ctx.fillRect(x, ty + 1, 3, 1);
+      const gv = bhash(x*7 + 5), gh = 2 + Math.round(gv*4), gxo = x + (bhash(x*3) > .5 ? 1 : 0);   // clumped uneven blades
+      ctx.fillStyle = gv > .55 ? '#4EA344' : '#3E8A32'; ctx.fillRect(gxo, ty - 2 - gh, 1, gh);
+      ctx.fillStyle = '#8EE87A'; ctx.fillRect(gxo, ty - 2 - gh, 1, 1);       // sunlit tip
+      if (bhash(x*11) > .74) { const th2 = gh + 2; ctx.fillStyle = '#4EA344'; ctx.fillRect(gxo + 1, ty - 2 - th2, 1, th2);
+        ctx.fillStyle = '#8EE87A'; ctx.fillRect(gxo + 1, ty - 2 - th2, 1, 1); }   // taller companion blade
       ctx.globalAlpha = 1;
     }
-    for (let k = 0; k < 6; k++) {                                             // vines trailing off the bridge underside
-      const vx0 = Math.round((bhash(k*23 + 3)*0.9 + 0.05) * W), vl = 12 + Math.round(bhash(k*7 + 1) * 18);
-      const vsway = reduceMotion ? 0 : Math.sin(ph*0.03 + k*1.6) * 2;
-      ctx.globalAlpha = fgAlpha(vx0 - 1, surfY, vx0 + 1, surfY + vl + 9);
-      for (let t = 0; t < vl; t++) { const vx = Math.round(vx0 + vsway * t / vl), vy = surfY + 8 + t;
+    for (let k = 0; k < 10; k++) {                                           // rock chunks + dirt clods break the straight underside
+      const rx = Math.round((bhash(k*23 + 9)*0.94 + 0.03) * W), rr = 2 + Math.round(bhash(k*7 + 4) * 3), ry = surfY + hangAt(rx) - 1;
+      ctx.globalAlpha = fgAlpha(rx - rr, surfY, rx + rr, ry + rr);
+      pixDisc(rx, ry, rr, bhash(k*13 + 1) > .5 ? '#3A2818' : '#241A10');
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(rx - rr, ry + rr - 1, rr*2, 1);
+      ctx.globalAlpha = 1;
+    }
+    // v148: MANY flowering vines dangling from the underside — pink 4-petal blossoms like the walls
+    for (let k = 0; k < 11; k++) {
+      const vx0 = Math.round((bhash(k*23 + 3)*0.92 + 0.04) * W), vl = 14 + Math.round(bhash(k*7 + 1) * 26);
+      const vy0 = surfY + hangAt(vx0) - 2, vsway = reduceMotion ? 0 : Math.sin(ph*0.03 + k*1.6) * 2.5;
+      ctx.globalAlpha = fgAlpha(vx0 - 2, surfY, vx0 + 2, vy0 + vl);
+      for (let t = 0; t < vl; t++) { const vx = Math.round(vx0 + vsway * t / vl), vy = vy0 + t;
         ctx.fillStyle = '#2E7D32'; ctx.fillRect(vx, vy, 1, 1);
         ctx.fillStyle = '#54C24A'; ctx.fillRect(vx, vy, 1, 1);
-        if (t % 4 === 2) { ctx.fillStyle = '#7BE06A'; ctx.fillRect(vx - 1, vy, 3, 1); } }
-      ctx.fillStyle = '#C6FF9E'; ctx.fillRect(Math.round(vx0 + vsway), surfY + 8 + vl, 1, 1);
+        if (t % 3 === 1) { ctx.fillStyle = '#7BE06A'; ctx.fillRect(vx - 1, vy, 3, 1); ctx.fillStyle = '#A8F57E'; ctx.fillRect(vx + (t & 1 ? 1 : -1), vy, 1, 1); } }
+      if (bhash(k*29 + 7) > 0.35) {                                          // a bloom or two on most vines
+        for (let fI = 0; fI < 1 + (bhash(k*61) > 0.55 ? 1 : 0); fI++) {
+          const ft = Math.round((0.45 + fI*0.32 + bhash(k*13 + fI*7)*0.12) * vl);
+          const fx = Math.round(vx0 + vsway * ft / vl), fy = vy0 + ft;
+          const pink = bhash(k*47 + fI*5) > 0.5 ? '#E86A9E' : '#D2568A';
+          ctx.fillStyle = pink; ctx.fillRect(fx - 1, fy, 3, 1); ctx.fillRect(fx, fy - 1, 1, 3);
+          ctx.fillStyle = '#F7C948'; ctx.fillRect(fx, fy, 1, 1);
+          ctx.fillStyle = '#FBD9E8'; ctx.fillRect(fx - 1, fy - 1, 1, 1);
+        }
+      }
+      ctx.fillStyle = '#C6FF9E'; ctx.fillRect(Math.round(vx0 + vsway), vy0 + vl, 1, 1);
       ctx.globalAlpha = 1;
     }
     ctx.globalAlpha = 1;
