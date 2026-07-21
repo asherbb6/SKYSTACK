@@ -106,7 +106,12 @@ const results = [];
 function check(name, fn) {
   try {
     const v = fn();
-    results.push([!!v, name, v === true ? '' : String(v)]);
+    // v152 HARNESS FIX: pass requires EXACTLY true. This suite's dominant idiom is
+    // `cond ? true : 'why it failed'`, and the old `!!v` counted that diagnostic STRING as a pass —
+    // so a failing check reported PASS and printed nothing. Three real failures were hiding behind
+    // it (a level-win text overlap, a star-award bug, and one of this feature's own guards).
+    // A check must return the boolean true; anything else is a failure and its value is the reason.
+    results.push([v === true, name, v === true ? '' : String(v)]);
   } catch (e) {
     results.push([false, name, 'THREW: ' + e.message]);
   }
@@ -129,7 +134,7 @@ check('fresh profile: prog=0, no active level', () => fresh.run('prog === 0 && r
 check('extras picker excludes the campaign mode', () => fresh.run(
   `EXTRAS.length === 5 && !EXTRAS.some(m => m.id === 'level') && EXTRAS.some(m => m.id === 'practice')`));
 check('skyMapNodes: one pt per LEVEL + start + gate', () => fresh.run(
-  '(() => { const L = skyMapNodes(); return L.pts.length === LEVEL_COUNT && LEVEL_COUNT === 10 && L.start && L.gate; })()'));
+  '(() => { const L = skyMapNodes(); return L.pts.length === LEVEL_COUNT && LEVEL_COUNT === 10 && !!L.start && !!L.gate; })()'));
 check('skyMapNodes: badge rows evenly spaced in altitude', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.gate.y === L.pts[LEVEL_COUNT-1].y - MAP_ROW; })()'));
 check('v110 skyMapNodes: cards centered on midX (weave removed)', () => fresh.run(
@@ -2748,12 +2753,24 @@ check('v126 stars are awarded from the level objectives, and ★1 is always just
     ' state="playing"; wind=null;' +
     ' for (const p of ' + JSON.stringify(seq) + ') trackStarOutcome({perfect:!!p, cut:!p, miss:false});' +
     ' levelComplete(); return winStars; })()');
-  const none = stars(2, [1,0,1,0,1,0]);
-  const two  = stars(2, [1,1,1,1,0,1]);
-  const three= stars(2, [1,1,1,1,1,1,1]);
+  // v152 RE-BASELINE: this check drove streaks for both stars, but the v151 level merge renumbered
+  // the campaign and level 2 (LOWER SKY) now wants windLands:1 for ★2 and streak:5 for ★3. The old
+  // sequences could never take ★2, and the harness's `!!v` pass rule hid it. Pin the objectives so
+  // a future renumber fails HERE, loudly, instead of silently testing the wrong thing.
+  const O = JSON.parse(g.run('JSON.stringify(LEVEL_REGISTRY[2].starObjectives)'));
+  if (O.two.type !== 'windLands' || O.three.type !== 'streak' || O.three.n !== 5)
+    return 'level 2 objectives changed to ' + JSON.stringify(O) + ' — re-baseline this check';
+  // ★2 is windLands, so the wind must be blowing when the block lands
+  const starsInWind = (levelIdx, seq) => g.run('(() => { mode="level"; pendingLevel=' + levelIdx + '; resetRun();' +
+    ' state="playing"; wind={};' +
+    ' for (const p of ' + JSON.stringify(seq) + ') trackStarOutcome({perfect:!!p, cut:!p, miss:false});' +
+    ' levelComplete(); return winStars; })()');
+  const none = stars(2, [1,0,1,0,1,0]);          // no wind landings, best streak 1 → clear only
+  const two  = starsInWind(2, [1,0,1,0,1,0]);    // perfects in wind → ★2, streak still short of 5
+  const three= starsInWind(2, [1,1,1,1,1,1,1]);  // wind perfects AND a 7-streak → ★3
   if (none !== 1) return 'clear-only should be 1 star, got ' + none;
-  if (two !== 2) return 'streak 4 should be 2 stars, got ' + two;
-  if (three !== 3) return 'streak 7 should be 3 stars, got ' + three;
+  if (two !== 2) return 'wind landings should be 2 stars, got ' + two;
+  if (three !== 3) return 'wind + streak 7 should be 3 stars, got ' + three;
   return true;
 });
 check('v126 winStarMet reports which stars were taken, for the result screen', () => {
@@ -3117,7 +3134,11 @@ const v133render = (lvl) => '(() => { prog = 99; startLevel(' + lvl + ');' +
   ' drawLandmarkPlatform = function(){ landmark++; return rl.apply(this, arguments); };' +
   ' drawBaseCosmetic = function(){ cosmetic++; return rc.apply(this, arguments); };' +
   ' try { render(); } finally { drawBlock = rb; drawLandmarkPlatform = rl; drawBaseCosmetic = rc; }' +
-  ' return JSON.stringify({blocksDrawn, landmark, cosmetic, total: blocks.length}); })()';
+  // v152: the pre-stacked rows are now drawn by drawPastColumn (as the faded past) instead of by
+  // drawBlock, so counting drawBlock alone would say the tower vanished. It did not — it moved
+  // draw paths. pastDrawn is the past pass's own per-row counter.
+  ' return JSON.stringify({blocksDrawn: blocksDrawn + pastDrawn, live: blocksDrawn, past: pastDrawn,' +
+  ' landmark, cosmetic, total: blocks.length}); })()';
 check('v133 a checkpoint start draws the real tower, not a floating platform', () => {
   const r = JSON.parse(makeGame().run(v133render(4)));
   if (r.landmark !== 0) return 'landmark platform still drawn';
@@ -3388,8 +3409,9 @@ check('v152 pastRowsForLaunch stitches history and leaves gaps null', () => {
   g.run('recordPastRun(0)');
   const goal = g.run('levelGoalA(0)');
   const out = JSON.parse(g.run('JSON.stringify(pastRowsForLaunch(levelGoalA(0) + 6))'));
-  const covered = out.slice(g.run('levelStartA(0)'), goal);
-  return out.length === goal + 6 && covered.every(r => r && r.gw === 33)
+  // row 0 is the run's own first block (full width), so the pushed w:33 rows start at index 1
+  const covered = out.slice(g.run('levelStartA(0)') + 1, goal);
+  return out.length === goal + 6 && covered.length > 0 && covered.every(r => r && r.gw === 33)
     && out.slice(goal).every(r => r === null)
     ? true : 'covered=' + covered.filter(Boolean).length + ' tail=' + JSON.stringify(out.slice(goal));
 });
@@ -3447,10 +3469,16 @@ check('v152 altitude math is untouched by history', () => {
   b.run('startLevel(0)');
   b.run('while (blocks.length < levelGoalA(0)) blocks.push({x: 3, w: 18, col:"#fff"});');
   b.run('recordPastRun(0); prog = 3; startLevel(2)');
+  // the PHYSICS column must be byte-identical with and without history. (nextPickupRow is
+  // deliberately excluded: schedulePickups draws from a Math.random()-derived seed, so it differs
+  // between any two runs — that is RNG, not history.)
+  const colA = a.run('JSON.stringify(blocks.map(b => [b.x, b.w]))');
+  const colB = b.run('JSON.stringify(blocks.map(b => [b.x, b.w]))');
+  if (colA !== colB) return 'the physics column changed when history was present';
   return a.run('blocks.length') === b.run('blocks.length')
     && a.run('tier') === b.run('tier')
     && a.run('runLaunch') === b.run('runLaunch')
-    && a.run('nextPickupRow') === b.run('nextPickupRow') ? true : 'run state diverged with history present';
+    && b.run('pastDepth') > 0 ? true : 'run state diverged with history present';
 });
 
 check('v152 past fade decreases monotonically with depth', () => fresh.run(
@@ -3495,6 +3523,52 @@ check('v152 with NO history the launch column still renders (v133 tower never va
   g.run('cameraY = GROUND_Y - runLaunch*BH - (H - 100); drawPastColumn(cameraY)');
   const bh = g.run('BH');
   return rec.rects.filter(r => r.h === bh).length > 0 ? true : 'the pre-stacked tower drew nothing';
+});
+
+check('v152 a seam line marks now-from-then, and only when you launch above ground', () => {
+  const PAST_SEAM_HEX = (src.match(/const PAST_SEAM = '([^']+)'/) || [])[1];
+  if (!PAST_SEAM_HEX) return 'no PAST_SEAM constant';
+  const { rec, g } = v149rec();
+  const seamCount = () => {
+    rec.rects.length = 0;
+    g.run('cameraY = GROUND_Y - Math.max(1,runLaunch)*BH - (H - 100); drawPastColumn(cameraY)');
+    return rec.rects.filter(r => String(r.style) === PAST_SEAM_HEX).length;
+  };
+  g.run('startLevel(0)');                     // level 1 launches from the ground: no past, no seam
+  const ground = seamCount();
+  g.run('prog = 3; startLevel(1)');           // launches above ground: seam
+  const above = seamCount();
+  return above > 0 && ground === 0 ? true : 'aboveGround=' + above + ' fromGround=' + ground;
+});
+
+check('v152 the win screen never uses TIERS.length (biomes) as a level count', () => {
+  const i0 = src.indexOf('function renderLevelWin');
+  // strip // comments first — this guard's own explanation names TIERS.length
+  const seg = src.slice(i0, src.indexOf('function ', i0 + 40)).replace(/\/\/[^\n]*/g, '');
+  return !/TIERS\.length/.test(seg) ? true : 'renderLevelWin still counts levels with TIERS.length';
+});
+check('v152 the final level says BACK TO MAP, matching what the button actually does', () => {
+  const g = makeGame();
+  g.run('W=320;H=480; prog=LEVEL_COUNT; startLevel(LEVEL_COUNT-1);' +
+    ' while(blocks.length<levelGoalA(LEVEL_COUNT-1)) blocks.push({x:0,w:96,col:"#fff"});' +
+    ' afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80;');
+  const labels = g.run('(() => { relayout(); const seen=[]; const orig=txt;' +
+    ' txt=(t)=>{seen.push(String(t));}; try { renderLevelWin(); } finally { txt=orig; }' +
+    ' return JSON.stringify(seen); })()');
+  const seen = JSON.parse(labels);
+  return seen.includes('BACK TO MAP') && !seen.includes('NEXT LEVEL')
+    ? true : 'final level shows ' + JSON.stringify(seen.filter(s => /NEXT|BACK/.test(s)));
+});
+check('v152 SKY CONQUERED! is reachable on the last first-clear', () => {
+  const g = makeGame();
+  g.run('W=320;H=480; prog=LEVEL_COUNT-1; startLevel(LEVEL_COUNT-1);' +
+    ' while(blocks.length<levelGoalA(LEVEL_COUNT-1)) blocks.push({x:0,w:96,col:"#fff"});' +
+    ' afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80;');
+  if (g.run('winFirst') !== true) return 'not a first clear';
+  const seen = JSON.parse(g.run('(() => { relayout(); const s=[]; const orig=txt;' +
+    ' txt=(t)=>{s.push(String(t));}; try { renderLevelWin(); } finally { txt=orig; }' +
+    ' return JSON.stringify(s); })()'));
+  return seen.includes('SKY CONQUERED!') ? true : 'still says ' + JSON.stringify(seen.filter(s => /UNLOCK|CONQUER/.test(s)));
 });
 
 // ---------- report ----------

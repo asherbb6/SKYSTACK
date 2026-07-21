@@ -5263,8 +5263,10 @@ function drawBaseCosmetic(cx, topY, bw, id) {
 // the v133 "the tower under you is REAL" column vanish for anyone without recorded history.
 const PAST_SEAM = 'rgba(255,246,232,0.5)';
 function pastFade(depth) { return 0.62 / (1 + depth * 0.085); }
+let pastDrawn = 0;   // v152: past rows drawn last frame — lets the v133 "the tower is REAL" guards see this pass
 function drawPastColumn(cy) {
   const top = blocks.length - 1;
+  pastDrawn = 0;
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     if (!b.past) continue;
@@ -5273,6 +5275,7 @@ function drawPastColumn(cy) {
     const bw = b.gw === undefined ? BASE_W : b.gw;
     const bx = b.gw === undefined ? (W - BASE_W) / 2 : b.gx;
     const a = pastFade(top - i);
+    pastDrawn++;
     ctx.globalAlpha = a;
     ctx.fillStyle = b.col;                                   // its own biome colour, dimmed by the veil below
     ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
@@ -5280,6 +5283,16 @@ function drawPastColumn(cy) {
     ctx.fillStyle = 'rgba(8,10,20,1)';
     ctx.fillRect(Math.round(bx), y, Math.round(bw), BH);
     ctx.globalAlpha = 1;
+  }
+  // the seam: above it is NOW, below it is THEN. Drawn under the slab row, which the live loop
+  // still renders full and lit, so the fresh block reads as the thing you actually stand on.
+  const si = blocks.findIndex(b => b.slab);
+  if (si > 0) {
+    const sy = Math.round(GROUND_Y - si * BH - cy);
+    if (sy > -2 && sy < H) {
+      ctx.fillStyle = PAST_SEAM;
+      ctx.fillRect(Math.round((W - BASE_W) / 2), sy, BASE_W, 1);
+    }
   }
 }
 function renderWorld(cy, shX) {
@@ -6635,11 +6648,29 @@ function renderLevelWin() {
   }
   const placed = Math.max(1, blocks.length - runLaunch);
   let sy = starY + 18;
-  txt('PERFECTS '+runPerfects+'/'+placed, W/2, sy, 1, 'rgba(255,246,232,0.55)', 'center'); sy += 11;
   // v126: name each star's objective so the next attempt has a target the moment this one ends.
   // Rides the running `sy` flow — a fixed offset here collided with this very stats block.
+  // v152 TEXT RULE — HIDE, NEVER COLLIDE. This column FLOWS downward while the buttons are PINNED
+  // by relayout, so on a short screen the flow ran straight into the NEXT LEVEL plate (measured:
+  // the reward line and the button label both at y=181 on 242x300). Rather than let it spill, the
+  // column BUDGETS itself against the button top and drops rows in reverse priority:
+  //   payoff (+coins)  >  star objectives  >  the perfects summary  >  the unlock banner.
+  // The payoff always keeps its seat; the objective list is the thing that tells you what to aim at
+  // next, so it outranks the summary line above it.
   const OBJ = LEVEL_REGISTRY[runLevel] ? LEVEL_REGISTRY[runLevel].starObjectives : null;
-  if (OBJ && winT > 60) {
+  const flowBot = WIN_ROWS.length ? WIN_ROWS[0].y - 3 : H;
+  let showObj = !!(OBJ && winT > 60), showBonus = modifierResults.length > 0,
+      showPerf = true, showUnlock = !!winFirst;
+  {
+    const budget = flowBot - sy;
+    let need = 11 + (showObj ? 32 : 0) + (showBonus ? 11 : 0) + 13 + (showUnlock ? 10 : 0);
+    if (need > budget && showUnlock) { need -= 10; showUnlock = false; }
+    if (need > budget && showBonus)  { need -= 11; showBonus = false; }
+    if (need > budget && showPerf)   { need -= 11; showPerf = false; }
+    if (need > budget && showObj)    { need -= 32; showObj = false; }   // last resort, never the payoff
+  }
+  if (showPerf) { txt('PERFECTS '+runPerfects+'/'+placed, W/2, sy, 1, 'rgba(255,246,232,0.55)', 'center'); sy += 11; }
+  if (showObj) {
     const rows = [['CLEARED', winStarMet[0]], [objectiveLabel(OBJ.two), winStarMet[1]], [objectiveLabel(OBJ.three), winStarMet[2]]];
     for (const [label, got] of rows) {
       txt((got ? '* ' : '- ') + label, W/2, sy, 1, got ? UI_HEX() : 'rgba(255,246,232,0.45)', 'center');
@@ -6647,7 +6678,7 @@ function renderLevelWin() {
     }
     sy += 2;
   }
-  if (modifierResults.length) {   // optional bonus challenge result — plain wording, own row
+  if (showBonus) {   // optional bonus challenge result — plain wording, own row
     const allWon = modifierWins === modifierResults.length;
     const bt = (allWon ? 'BONUS DONE' : modifierWins+' OF '+modifierResults.length+' BONUS') + (modifierBonusCoins > 0 ? ' +'+modifierBonusCoins : '');
     txt(bt, W/2, sy, 1, allWon ? '#62E8B5' : 'rgba(255,246,232,0.55)', 'center'); sy += 11;
@@ -6656,10 +6687,14 @@ function renderLevelWin() {
     const shown = Math.min(winReward, Math.floor((winT - 48) * 1.5));
     drawCoin(W/2 - 20, sy + 1.5);
     txt('+' + shown, W/2 - 9, sy + 1, 1, '#FFD75E', 'left'); sy += 13;
-    if (winFirst) txt(prog === TIERS.length ? 'SKY CONQUERED!' : 'NEW STAGE UNLOCKED!', W/2, sy, 1, '#62E8B5', 'center');
+    // v152: prog counts LEVELS, so it can never reach TIERS.length (11 biomes) — SKY CONQUERED! was
+    // unreachable. A level is a BAND of biomes since v151; never use TIERS.length as a level count.
+    if (showUnlock) txt(prog >= LEVEL_COUNT ? 'SKY CONQUERED!' : 'NEW STAGE UNLOCKED!', W/2, sy, 1, '#62E8B5', 'center');
   }
   if (winT > 24) {
-    const last = runLevel + 1 >= TIERS.length;
+    // v152: was TIERS.length — on the FINAL level the button read NEXT LEVEL while the handler
+    // (correctly using LEVEL_COUNT) actually returned you to the map. The label was lying.
+    const last = runLevel + 1 >= LEVEL_COUNT;
     const labels = { next: last ? 'BACK TO MAP' : 'NEXT LEVEL', retry: 'RETRY' };
     for (const rw of WIN_ROWS) {
       if (rw.id === 'nav') { drawNavSplit(rw, t.color); continue; }
