@@ -99,7 +99,30 @@ function deepFreeze(v) {
 // First boot migrates every v1 key into data (existing players keep all progress); the v1
 // keys are left untouched as a frozen backup so rolling back to v63 stays safe.
 const SAVE_KEY = 'skystack-save';
-const SAVE_VER = 2;
+const SAVE_VER = 3;
+// v151 SAVE MIGRATION (schema 2 -> 3): merging SURFACE + TREETOPS took the campaign from ELEVEN
+// level slots to TEN, so every saved array indexed BY LEVEL has to fold. Stars for the merged level
+// are the MINIMUM of the two halves - you keep only what you earned on BOTH - and `prog` (levels
+// cleared) only counts the merged level as cleared if TREETOPS had been cleared. Difficulty records
+// (skystack-diffrecords) hold their own star arrays and fold identically.
+function foldMergedStars(a) {
+  if (!Array.isArray(a)) return a;
+  const o = a.map(v => v | 0), out = [o[0] | 0, Math.min(o[1] | 0, o[2] | 0)];
+  for (let i = 3; i < o.length; i++) out.push(o[i] | 0);
+  while (out.length && out[out.length - 1] === 0) out.pop();
+  return out;
+}
+function foldMergedProg(p) { p = p | 0; return p >= 3 ? p - 1 : Math.min(p, 1); }
+function migrateLevelMergeV3(data) {
+  const d = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  if (Array.isArray(d['skystack-levelstars'])) d['skystack-levelstars'] = foldMergedStars(d['skystack-levelstars']);
+  if (typeof d['skystack-tiers'] === 'number') d['skystack-tiers'] = foldMergedProg(d['skystack-tiers']);
+  const dr = d['skystack-diffrecords'];
+  if (dr && typeof dr === 'object' && !Array.isArray(dr)) {
+    for (const k of Object.keys(dr)) if (dr[k] && typeof dr[k] === 'object' && Array.isArray(dr[k].stars)) dr[k].stars = foldMergedStars(dr[k].stars);
+  }
+  return d;
+}
 // Dormant S0 contracts for later systems. Missing fields stay missing, so v75 saves remain byte-for-
 // byte compatible until a future feature explicitly adopts one of these optional v2 fields.
 const FUTURE_SAVE_CONTRACTS = deepFreeze({
@@ -132,13 +155,20 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw !== null) {
       const s = JSON.parse(raw);
-      if (s && typeof s === 'object' && typeof s.version === 'number' && s.data && typeof s.data === 'object') return s;
+      if (s && typeof s === 'object' && typeof s.version === 'number' && s.data && typeof s.data === 'object') {
+        if (s.version < 3) {                                            // v151: fold the merged level's slots, then stamp the new schema
+          s.data = migrateLevelMergeV3(s.data); s.version = SAVE_VER;
+          try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) {}
+        }
+        return s;
+      }
     }
   } catch (e) {}
   const s = { version: SAVE_VER, data: {} };
   for (const k of V1_KEYS) {
     try { const v = localStorage.getItem(k); if (v !== null) s.data[k] = JSON.parse(v); } catch (e) {}
   }
+  s.data = migrateLevelMergeV3(s.data);                                 // v1 keys predate the merge too
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) {}
   return s;
 }
@@ -869,7 +899,7 @@ const ACH = deepFreeze([
   achievement('block5000','STACK 5K','gold',()=>stats.blocks>=5000),
   achievement('streak3','3 DAY STREAK','silver',()=>stats.streakBest>=3),
   achievement('climb5','CLEAR 5 BIOMES','silver',()=>prog>=5),
-  achievement('summit','SKY CONQUERED','gold',()=>prog>=TIERS.length)
+  achievement('summit','SKY CONQUERED','gold',()=>prog>=LEVEL_COUNT)
 ]);
 let achDone = store.get('skystack-ach', []);
 
@@ -926,6 +956,33 @@ const TIERS = [
 // above), never Math.random() — colour identifies place (ART_BIBLE), and no deliberate game
 // rolls its palette on load. Blocks, previews and the splash tower all draw from this table.
 const TIER_HUES = [216, 99, 157, 24, 202, 197, 274, 157, 227, 45, 37];
+// v151 - LEVELS ARE NO LONGER 1:1 WITH BIOMES (Decision #82). Asher: "can we do something to maybe
+// merge the two levels surface and treetops so that one level is longer?" SURFACE targeted 24s and
+// TREETOPS 31s - the two shortest levels in the game, landing straight after the 110s CAVES. They
+// are now ONE level, THE FOREST (33 -> 60 blocks), which climbs from the forest floor up through the
+// canopy. The eleven ART BIOMES are untouched: TIERS/TIER_HUES/MATERIALS/SKY_STOPS and every
+// `ti === n` art switch still see eleven places, and the biome still visibly changes MID-LEVEL -
+// that is the point, the level reads as a journey. A level is a BAND of biomes [t0..t1].
+const LEVEL_BANDS = deepFreeze([
+  { t0:0,  t1:0,  name:null,         cover:'caves'        },
+  { t0:1,  t1:2,  name:'THE FOREST', cover:'surface'      },   // SURFACE + TREETOPS merged
+  { t0:3,  t1:3,  name:null,         cover:'lowersky'     },
+  { t0:4,  t1:4,  name:null,         cover:'cloudnine'    },
+  { t0:5,  t1:5,  name:null,         cover:'jetstream'    },
+  { t0:6,  t1:6,  name:null,         cover:'stratosphere' },
+  { t0:7,  t1:7,  name:null,         cover:'aurora'       },
+  { t0:8,  t1:8,  name:null,         cover:'space'        },
+  { t0:9,  t1:9,  name:null,         cover:'orbit'        },
+  { t0:10, t1:10, name:null,         cover:'thestars'     }
+]);
+const LEVEL_COUNT = LEVEL_BANDS.length;
+const TIER_LEVEL = deepFreeze((() => { const m = []; LEVEL_BANDS.forEach((L, i) => { for (let t = L.t0; t <= L.t1; t++) m[t] = i; }); return m; })());
+const levelBand   = i => LEVEL_BANDS[clamp(i | 0, 0, LEVEL_COUNT - 1)];
+const levelGoalA  = i => TIERS[levelBand(i).t1].n;                                             // the altitude that WINS the level
+const levelStartA = i => { const L = levelBand(i); return L.t0 <= 0 ? 0 : TIERS[L.t0 - 1].n; };
+const levelName   = i => levelBand(i).name || TIERS[levelBand(i).t1].name;
+const levelColor  = i => TIERS[levelBand(i).t0].c;                                             // a level wears its OPENING biome's colour
+const levelArtTier = i => levelBand(i).t0;                                                     // which biome's art represents the level on cards/HUD
 function tierHueAt(a) { for (let i = 0; i < TIERS.length; i++) if (a < TIERS[i].n) return TIER_HUES[i]; return TIER_HUES[TIER_HUES.length - 1]; }
 
 // v124: the PLAYER-facing difficulty. A pure multiplier layer over the raw knobs — the adaptive
@@ -998,7 +1055,7 @@ function reconcileCollections(payRewards) {
   return finished;
 }
 reconcileCollections(true);
-prog = Math.max(prog, TIERS.filter(t => bestHeight >= t.n).length);   // seed unlocks from lifetime best
+prog = Math.max(prog, LEVEL_BANDS.filter((L, i) => bestHeight >= levelGoalA(i)).length);   // seed unlocks from lifetime best (v151: LEVEL goals, not biome lines)
 // per-region block material — affects FEEL (fair + subtle, tune freely):
 // spd = slider-speed multiplier, wob = drift-wobble amount, wind = local wind exposure.
 // v117: wob is 0 everywhere — the high-altitude sin() drift wobble ("slower/fast/slower/fast") is
@@ -1049,16 +1106,17 @@ const DIFFICULTY_LANES = deepFreeze({
 });
 const LEVEL_BLUEPRINTS = deepFreeze([
   { identity:'FOUNDATION',      focus:'STEADY STONE',       duration:{min:90,target:110,max:130}, difficulty:1,  pace:'INTRO',    speedScale:1 },
-  { identity:'FIRST LIGHT',     focus:'OPENING WIND',       duration:{min:18,target:24,max:32},   difficulty:2,  pace:'QUICK',    speedScale:1 },
-  { identity:'CANOPY RHYTHM',   focus:'WOOD PRECISION',     duration:{min:25,target:31,max:40},   difficulty:3,  pace:'QUICK',    speedScale:1 },
-  { identity:'OPEN AIR',        focus:'READABLE DRIFT',     duration:{min:27,target:33,max:42},   difficulty:4,  pace:'QUICK',    speedScale:1 },
-  { identity:'SOFT FOOTING',    focus:'CLOUD WOBBLE',       duration:{min:32,target:40,max:50},   difficulty:5,  pace:'QUICK',    speedScale:1 },
-  { identity:'CROSSWIND',       focus:'FAST STEEL + WIND',  duration:{min:36,target:44,max:55},   difficulty:6,  pace:'QUICK',    speedScale:1 },
-  { identity:'THIN AIR',        focus:'GLASS CONTROL',      duration:{min:38,target:47,max:58},   difficulty:7,  pace:'QUICK',    speedScale:1 },
-  { identity:'ICE TEMPO',       focus:'QUICK RECOVERY',     duration:{min:43,target:52,max:65},   difficulty:8,  pace:'QUICK',    speedScale:1 },
-  { identity:'LOW GRAVITY',     focus:'COSMIC WOBBLE',      duration:{min:80,target:95,max:115},  difficulty:9,  pace:'STANDARD', speedScale:1 },
-  { identity:'ORBITAL ENDURANCE',focus:'LONG-FORM CONTROL', duration:{min:150,target:175,max:210},difficulty:10, pace:'LONG',     speedScale:1 },
-  { identity:'SUMMIT RUN',      focus:'FINAL PRECISION',    duration:{min:210,target:240,max:270},difficulty:11, pace:'SUMMIT',   speedScale:1.25 }
+  // v151: FIRST LIGHT and CANOPY RHYTHM are ONE level now - out of the cave, across the forest
+  // floor, up into the canopy. Its duration band is the two old bands added together.
+  { identity:'FIRST LIGHT',     focus:'WIND INTO THE CANOPY',duration:{min:44,target:55,max:72}, difficulty:2,  pace:'STANDARD', speedScale:1 },
+  { identity:'OPEN AIR',        focus:'READABLE DRIFT',     duration:{min:27,target:33,max:42},   difficulty:3,  pace:'QUICK',    speedScale:1 },
+  { identity:'SOFT FOOTING',    focus:'CLOUD WOBBLE',       duration:{min:32,target:40,max:50},   difficulty:4,  pace:'QUICK',    speedScale:1 },
+  { identity:'CROSSWIND',       focus:'FAST STEEL + WIND',  duration:{min:36,target:44,max:55},   difficulty:5,  pace:'QUICK',    speedScale:1 },
+  { identity:'THIN AIR',        focus:'GLASS CONTROL',      duration:{min:38,target:47,max:58},   difficulty:6,  pace:'QUICK',    speedScale:1 },
+  { identity:'ICE TEMPO',       focus:'QUICK RECOVERY',     duration:{min:43,target:52,max:65},   difficulty:7,  pace:'QUICK',    speedScale:1 },
+  { identity:'LOW GRAVITY',     focus:'COSMIC WOBBLE',      duration:{min:80,target:95,max:115},  difficulty:8,  pace:'STANDARD', speedScale:1 },
+  { identity:'ORBITAL ENDURANCE',focus:'LONG-FORM CONTROL', duration:{min:150,target:175,max:210},difficulty:9,  pace:'LONG',     speedScale:1 },
+  { identity:'SUMMIT RUN',      focus:'FINAL PRECISION',    duration:{min:210,target:240,max:270},difficulty:10, pace:'SUMMIT',   speedScale:1.25 }
 ]);
 // v126: each level's stars test that level's own declared identity/focus, instead of all 11 levels
 // asking for the same perfect ratio. ★1 is always "cleared" (so unlocks can never be gated by skill);
@@ -1067,16 +1125,15 @@ const LEVEL_BLUEPRINTS = deepFreeze([
 // would be satisfied by every clear and would measure nothing.
 const STAR_OBJECTIVES = deepFreeze([
   { two:{type:'perfects',n:14},   three:{type:'streak',n:5} },        // 0  FOUNDATION  - steady stone
-  { two:{type:'perfects',n:4},    three:{type:'streak',n:4} },        // 1  FIRST LIGHT - opening wind
-  { two:{type:'streak',n:3},      three:{type:'streak',n:6} },        // 2  CANOPY RHYTHM - wood precision
-  { two:{type:'windLands',n:1},   three:{type:'streak',n:5} },        // 3  OPEN AIR - readable drift
-  { two:{type:'perfects',n:10},   three:{type:'streak',n:6} },        // 4  SOFT FOOTING - cloud wobble
-  { two:{type:'windLands',n:2},   three:{type:'streak',n:6} },        // 5  CROSSWIND - fast steel + wind
-  { two:{type:'perfects',n:13},   three:{type:'streak',n:6} },        // 6  THIN AIR - glass control
-  { two:{type:'recover',n:6},     three:{type:'streak',n:7} },        // 7  ICE TEMPO (v131: 8->6, the stronger slide cuts recovery chances)
-  { two:{type:'perfects',n:22},   three:{type:'streak',n:8} },        // 8  LOW GRAVITY - cosmic wobble
-  { two:{type:'perfects',n:40},   three:{type:'streak',n:10} },       // 9  ORBITAL ENDURANCE
-  { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:4} }    // 10 SUMMIT RUN - final precision
+  { two:{type:'perfects',n:9},    three:{type:'streak',n:6} },        // 1  FIRST LIGHT - v151 merged forest climb (was 4 perfects/streak 4 + streak 3/streak 6 over 27 blocks)
+  { two:{type:'windLands',n:1},   three:{type:'streak',n:5} },        // 2  OPEN AIR - readable drift
+  { two:{type:'perfects',n:10},   three:{type:'streak',n:6} },        // 3  SOFT FOOTING - cloud wobble
+  { two:{type:'windLands',n:2},   three:{type:'streak',n:6} },        // 4  CROSSWIND - fast steel + wind
+  { two:{type:'perfects',n:13},   three:{type:'streak',n:6} },        // 5  THIN AIR - glass control
+  { two:{type:'recover',n:6},     three:{type:'streak',n:7} },        // 6  ICE TEMPO (v131: 8->6, the stronger slide cuts recovery chances)
+  { two:{type:'perfects',n:22},   three:{type:'streak',n:8} },        // 7  LOW GRAVITY - cosmic wobble
+  { two:{type:'perfects',n:40},   three:{type:'streak',n:10} },       // 8  ORBITAL ENDURANCE
+  { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:4} }    // 9  SUMMIT RUN - final precision
 ]);
 // v129: `short` gives a compact form for tight cards — txtFit bottoms out at scale 1, so a long
 // label still spills a narrow sky-map row no matter how it is scaled.
@@ -1106,10 +1163,11 @@ function objectiveMet(o, R) {
   }
   return false;
 }
-const LEVEL_REGISTRY = deepFreeze(TIERS.map((t, i) => {
-  const b=LEVEL_BLUEPRINTS[i], start=i <= 0 ? 0 : TIERS[i-1].n, mat=MATERIALS[i];
-  return { id:i, tier:i, name:t.name, color:t.c, identity:b.identity, focus:b.focus,
-    startAltitude:start, goalAltitude:t.n, blocksRequired:t.n-start,
+const LEVEL_REGISTRY = deepFreeze(LEVEL_BANDS.map((L, i) => {
+  const b=LEVEL_BLUEPRINTS[i], start=levelStartA(i), mat=MATERIALS[L.t0];
+  return { id:i, tier:L.t0, biomes:Array.from({length:L.t1-L.t0+1}, (_,k)=>TIERS[L.t0+k].name),
+    name:levelName(i), color:levelColor(i), identity:b.identity, focus:b.focus,
+    startAltitude:start, goalAltitude:levelGoalA(i), blocksRequired:levelGoalA(i)-start,
     targetDurationSeconds:b.duration, difficultyRating:b.difficulty, pace:b.pace,
     assistEnvelope:{ lane:'assisted', policy:'adaptive', min:0, max:BALANCE_REGISTRY.assist.max },
     speedCurve:{ campaignScale:b.speedScale, base:BALANCE_REGISTRY.slider.base, perBlock:BALANCE_REGISTRY.slider.perBlock, max:BALANCE_REGISTRY.slider.campaignMax },
@@ -1167,12 +1225,14 @@ function buildModifierSchedule(seed, modeId, campaignLevel, startingAltitude) {
 const CHECKPOINT_SCORE_MULTIPLIER = 0.75;
 const CHECKPOINT_REGISTRY = deepFreeze([
   { id:'ground', name:'GROUND', short:'GROUND', startAltitude:0, region:0, unlock:{requiresClearedLevel:null}, scoreMultiplier:1, rewardScope:'full-climb', recordScope:'ground-up' },
+  // v151: still ONE checkpoint per biome (they are landmarks), but the gate is the LEVEL that
+  // contains the biome, not the biome index - those stopped being the same number at the merge.
   ...TIERS.map((t,i)=>({ id:'checkpoint-'+i, name:t.name, short:t.name.split(' ')[0], startAltitude:t.n, region:i,
-    unlock:{requiresClearedLevel:i}, scoreMultiplier:CHECKPOINT_SCORE_MULTIPLIER, rewardScope:'campaign-segment', recordScope:'checkpoint' }))
+    unlock:{requiresClearedLevel:TIER_LEVEL[i]}, scoreMultiplier:CHECKPOINT_SCORE_MULTIPLIER, rewardScope:'campaign-segment', recordScope:'checkpoint' }))
 ]);
 function checkpointById(id) { return CHECKPOINT_REGISTRY.find(c=>c.id===id) || CHECKPOINT_REGISTRY[0]; }
 function checkpointAtAltitude(a) { return CHECKPOINT_REGISTRY.find(c=>c.startAltitude===(a|0)) || CHECKPOINT_REGISTRY[0]; }
-function checkpointForLevel(i) { return i > 0 ? CHECKPOINT_REGISTRY[clamp(i,1,CHECKPOINT_REGISTRY.length-1)] : CHECKPOINT_REGISTRY[0]; }
+function checkpointForLevel(i) { return i > 0 ? CHECKPOINT_REGISTRY[clamp(levelBand(i).t0,1,CHECKPOINT_REGISTRY.length-1)] : CHECKPOINT_REGISTRY[0]; }
 function checkpointUnlocked(cp, cleared) { return cp.unlock.requiresClearedLevel===null || (cleared===undefined?prog:cleared)>cp.unlock.requiresClearedLevel; }
 function startingStructureFor(cp) { return cp.startAltitude > 0 ? { id:'landmark-'+cp.region, kind:'landmark', region:cp.region } : { id:'natural-cave-ground', kind:'ground', region:0 }; }
 function startLevel(i, checkpointId, retrySeed) { pendingLevel=i; pendingCheckpointId=checkpointId||checkpointForLevel(i).id; pendingRunSeed=Number.isInteger(retrySeed)?retrySeed>>>0:null; mode='level'; startRun(); }
@@ -1989,14 +2049,17 @@ function afterPlace(f, updateBalance, placedCenter, outcome) {
   const placedOutcome=outcome||{perfect:false,cut:false,miss:false,center:placedCenter};
   updateModifiersForPlacement(h,placedOutcome);
   if (updateChallengeForPlacement(placedOutcome)) return;
-  if (runLevel >= 0 && h >= TIERS[runLevel].n) { levelComplete(); return; }   // campaign goal reached
+  if (runLevel >= 0 && h >= levelGoalA(runLevel)) { levelComplete(); return; }   // campaign goal reached
   if (tier < TIERS.length && h >= TIERS[tier].n) {
     const t = TIERS[tier]; let bTxt = t.n*METERS_PER + 'M - ' + t.name;
     let reward = 5 + tier * 3;
-    if (runContext.rewardPermissions.progress && tier + 1 > prog) {
-      prog = tier + 1; store.set('skystack-tiers', prog);
-      bTxt = 'LEVEL CLEAR - ' + t.name; reward += 15;
-      if (prog === TIERS.length) { bTxt = 'SKY CONQUERED!'; reward += 200; }   // beat the game
+    // v151: crossing a BIOME line is a milestone; it only CLEARS A LEVEL when that biome is the last
+    // one in its level band (SURFACE now sits mid-level, so passing it must not bank a level).
+    const lvOfTier = TIER_LEVEL[tier], endsLevel = LEVEL_BANDS[lvOfTier].t1 === tier;
+    if (runContext.rewardPermissions.progress && endsLevel && lvOfTier + 1 > prog) {
+      prog = lvOfTier + 1; store.set('skystack-tiers', prog);
+      bTxt = 'LEVEL CLEAR - ' + levelName(lvOfTier); reward += 15;
+      if (prog === LEVEL_COUNT) { bTxt = 'SKY CONQUERED!'; reward += 200; }   // beat the game
     }
     note(bTxt, '#FFD75E', 1, 140);
     if (canEarnRewards(runContext)) {
@@ -2064,7 +2127,7 @@ function levelComplete() {
   if (winFirst) { prog = i + 1; store.set('skystack-tiers', prog); }
   const starDiff = activeDifficulty().id, SR = recordsFor(starDiff);     // v124: stars are per-difficulty
   if (winStars > (SR.stars[i] || 0)) { SR.stars[i] = winStars; saveRecords(starDiff, SR); }
-  winReward = 15 + i * 10 + winStars * 5 + (winFirst ? 25 : 0) + (winFirst && prog === TIERS.length ? 200 : 0);
+  winReward = 15 + i * 10 + winStars * 5 + (winFirst ? 25 : 0) + (winFirst && prog === LEVEL_COUNT ? 200 : 0);
   transactCoins(winReward,true);
   runSettled = true; reviveOffered = false;   // wins settle on the spot
   stats.games++;
@@ -2384,7 +2447,7 @@ function pressDown(e) {
   }
   if (state === 'splash') { state = 'home'; fadeT = 1; musicNext = 0; sfx.tap(); tryFullscreen(); return; }
   if (state === 'home') {
-    if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker&&!challengePicker) startLevel(Math.min(prog, TIERS.length - 1)); return; }
+    if (!p) { if (skyMap) { skyMap = false; sfx.tap(); } else if (!modePicker&&!challengePicker) startLevel(Math.min(prog, LEVEL_COUNT - 1)); return; }
     if (missionsOpen) { missionsOpen=false; sfx.tap(); return; }
     if (skyMap) {
       // the map scrolls: a press starts a drag, selection happens on release (pressUp)
@@ -2414,12 +2477,12 @@ function pressDown(e) {
     if (difficultyPickable(mode) && inR(p, DIFF_BTN, 4)) { diffPicker = true; modePicker = false; challengePicker = false; sfx.tap(); return; }
     if (inR(p, MAP_BTN, 4)) { openSkyMap(); sfx.tap(); return; }
     if (inR(p, MISS_PANEL, 3)) { missionsOpen=true; sfx.tap(); return; }
-    if (inR(p, PLAY_BTN, 4) || inR(p, HERO_CARD, 2)) { startLevel(Math.min(prog, TIERS.length - 1)); return; }
+    if (inR(p, PLAY_BTN, 4) || inR(p, HERO_CARD, 2)) { startLevel(Math.min(prog, LEVEL_COUNT - 1)); return; }
   } else if (state === 'levelwin') {
     if (winT < 24) return;                             // let the celebration land before taps count
-    if (!p) { if (runLevel + 1 < TIERS.length) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; } return; }
+    if (!p) { if (runLevel + 1 < LEVEL_COUNT) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; } return; }
     for (const rw of WIN_ROWS) if (inR(p, rw, 3)) {
-      if (rw.id === 'next') { if (runLevel + 1 < TIERS.length) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; openSkyMap(); } }
+      if (rw.id === 'next') { if (runLevel + 1 < LEVEL_COUNT) startLevel(runLevel + 1); else { state = 'home'; fadeT = 1; openSkyMap(); } }
       else if (rw.id === 'retry') startLevel(runLevel,runContext.checkpointSnapshot.id,runContext.seed);
       else { state = 'home'; fadeT = 1; if (p.x >= rw.x + rw.w/2) openSkyMap(); }   // nav split: left HOME, right SKY MAP
       sfx.tap(); return;
@@ -3020,14 +3083,14 @@ function drawNavGlyph(id,cx,y,col) {
   }
 }
 function drawJourneyProgress(active,x,y,w) {
-  const gap=2,segW=Math.max(3,Math.floor((w-gap*(TIERS.length-1))/TIERS.length));
-  const total=segW*TIERS.length+gap*(TIERS.length-1),sx=Math.round(x+(w-total)/2);
+  const gap=2,segW=Math.max(3,Math.floor((w-gap*(LEVEL_COUNT-1))/LEVEL_COUNT));
+  const total=segW*LEVEL_COUNT+gap*(LEVEL_COUNT-1),sx=Math.round(x+(w-total)/2);
   ctx.fillStyle='rgba(11,14,26,0.72)';ctx.fillRect(sx-3,y-2,total+6,7);
   ctx.fillStyle='rgba(255,246,232,0.10)';ctx.fillRect(sx-3,y-2,total+6,.5);   // fine lit rim
   ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(sx-3,y+4.5,total+6,.5);      // fine base shade
-  for(let i=0;i<TIERS.length;i++){
+  for(let i=0;i<LEVEL_COUNT;i++){
     const on=i===active,done=i<active,gx=sx+i*(segW+gap);
-    ctx.globalAlpha=on?1:(done?.58:.18);ctx.fillStyle=TIERS[i].c;
+    ctx.globalAlpha=on?1:(done?.58:.18);ctx.fillStyle=levelColor(i);
     ctx.fillRect(gx,y+(on?0:1),segW,on?3:2);
     if(on){ctx.fillStyle='rgba(255,246,232,0.5)';ctx.fillRect(gx,y,segW,.5);} // active crest
   }
@@ -5257,9 +5320,9 @@ function titleShine(str, y, scale) {
 function renderHome() {
   const shadow = 'rgba(0,0,0,0.35)';
   topBar('');
-  const nl = Math.min(prog, TIERS.length - 1), nt = TIERS[nl], conquered = prog >= TIERS.length;
+  const nl = Math.min(prog, LEVEL_COUNT - 1), nt = LEVEL_REGISTRY[nl], conquered = prog >= LEVEL_COUNT;
   const bob = reduceMotion?0:Math.sin(tick*.04)*1.5,titleScale=3,titleY=16;
-  ctx.fillStyle=nt.c;ctx.fillRect(Math.round(W/2-18),titleY-8,36,1);
+  ctx.fillStyle=nt.color;ctx.fillRect(Math.round(W/2-18),titleY-8,36,1);
   txt('SKYSTACK', W/2+1, titleY+1+bob, titleScale, shadow, 'center');
   txt('SKYSTACK', W/2, titleY+bob, titleScale, VISUAL_SYSTEM.palette.paper, 'center');
   titleShine('SKYSTACK', titleY+bob, titleScale);
@@ -5278,23 +5341,23 @@ function renderHome() {
   const nameY = hc.y + 28 + Math.round(heroExtra*.375);
   const goalY = hc.y + 47 + Math.round(heroExtra*.625);
   const starsY = hc.y + 59 + Math.round(heroExtra*.875);
-  pixelFrame(hc.x,hc.y,hc.w,hc.h,'rgba(17,17,25,0.82)',nt.c,true);
-  ctx.fillStyle=nt.c;ctx.globalAlpha=.10;ctx.fillRect(hc.x+3,hc.y+3,hc.w-6,23);ctx.globalAlpha=1;
+  pixelFrame(hc.x,hc.y,hc.w,hc.h,'rgba(17,17,25,0.82)',nt.color,true);
+  ctx.fillStyle=nt.color;ctx.globalAlpha=.10;ctx.fillRect(hc.x+3,hc.y+3,hc.w-6,23);ctx.globalAlpha=1;
   drawJourneyProgress(nl,hc.x+12,hc.y+5,hc.w-24);
   txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, chapterY, 1, 'rgba(255,246,232,0.55)', 'left');
-  txt((nl+1)+' / '+TIERS.length,hc.x+hc.w-8,chapterY,1,nt.c,'right');
+  txt((nl+1)+' / '+LEVEL_COUNT,hc.x+hc.w-8,chapterY,1,nt.color,'right');
   if (conquered) {
     txtFit('SKY CONQUERED!', W/2, nameY + 5, 2, VISUAL_SYSTEM.palette.gold, 'center', hc.w - 16);   // v131: sits low in its band, clear of the chapter row
     txt('REPLAY THE JOURNEY', W/2, goalY, 1, 'rgba(255,246,232,0.6)', 'center');
   } else {
-    txtFit(nt.name, W/2, nameY, 2, nt.c, 'center', hc.w - 16);
+    txtFit(nt.name, W/2, nameY, 2, nt.color, 'center', hc.w - 16);
     const starSum = shownStars().reduce((a,b)=>a+(b||0),0);
-    txt('GOAL ' + nt.n*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + TIERS.length*3 : ''), W/2, goalY, 1, 'rgba(255,246,232,0.62)', 'center');
+    txt('GOAL ' + nt.goalAltitude*METERS_PER + 'M' + (starSum > 0 ? '  STARS ' + starSum + '/' + LEVEL_COUNT*3 : ''), W/2, goalY, 1, 'rgba(255,246,232,0.62)', 'center');
   }
   // this level's stars flanked by its biome art
   for (let k = 0; k < 3; k++) drawStarPix(W/2 + (k-1)*14, starsY, 1, k < (shownStars()[nl] || 0));
-  drawStageDecoScaled(nl, hc.x + 18, starsY-1, 1);
-  drawStageDecoScaled(nl, hc.x + hc.w - 18, starsY-1, 1);
+  drawStageDecoScaled(levelArtTier(nl), hc.x + 18, starsY-1, 1);
+  drawStageDecoScaled(levelArtTier(nl), hc.x + hc.w - 18, starsY-1, 1);
 
   pixelButton(PLAY_BTN,conquered?'REPLAY':'BEGIN CLIMB',true);
 
@@ -5423,7 +5486,7 @@ const ISLES = [
 function skyMapNodes() {
   const viewTop = MAP_HEAD + 4, viewBot = H - 4;   // v118: no footer band — the first card sits ~flush at the very bottom
   const colW = Math.min(W - 8, 300), colX = Math.round((W - colW) / 2);
-  const n = TIERS.length, midX = Math.round(W / 2);
+  const n = LEVEL_COUNT, midX = Math.round(W / 2);
   const contentH = (n + 1) * MAP_ROW;                       // levels + gate — the first card owns the very bottom now
   mapScrollMax = Math.max(0, contentH - (viewBot - viewTop));
   mapScroll = clamp(mapScroll, 0, mapScrollMax);
@@ -5439,9 +5502,9 @@ function skyMapNodes() {
 }
 function openSkyMap() {   // focus the view on the next goal
   skyMap = true; mapDrag = null; mapScroll = 0;
-  selLevel = Math.min(prog, TIERS.length - 1);
+  selLevel = Math.min(prog, LEVEL_COUNT - 1);
   const L = skyMapNodes();                                  // computes mapScrollMax
-  const k = Math.min(prog, TIERS.length);                   // row index of the next goal / gate (first card owns the bottom)
+  const k = Math.min(prog, LEVEL_COUNT);                    // row index of the next goal / gate (first card owns the bottom)
   mapScroll = clamp(k * MAP_ROW - (L.viewBot - L.viewTop) / 2 + MAP_ROW, 0, mapScrollMax);
 }
 // a tap (pointerup without drag) on the open map: header/X closes; a badge selects,
@@ -5451,7 +5514,7 @@ function mapTapAt(p) {
   if (p.y <= MAP_HEAD) { skyMap = false; sfx.tap(); return; }               // header / X closes
   const inView = y2 => y2 > L.viewTop - 6 && y2 < L.viewBot + 6;
   const onCard = pt => Math.abs(p.x - pt.x) <= L.colW/2 && Math.abs(p.y - pt.y) <= MAP_CARD_H/2;   // v110: the full card is the target
-  for (let i = 0; i < TIERS.length; i++) {
+  for (let i = 0; i < LEVEL_COUNT; i++) {
     const pt = L.pts[i];
     if (!inView(pt.y)) continue;
     if (onCard(pt)) {
@@ -5720,7 +5783,9 @@ function mapBadge(num, x, y, cleared, isNext, unlocked, sel) {
 // the map and drift behind the islands (birds, balloons, plane, aurora, galaxy, moon, planet)
 function drawMapDecor(L, ph) {
   const on = y2 => y2 > -34 && y2 < H + 34;
-  const P = L.pts;
+  // v151: the map has one row per LEVEL, but this decor is authored per BIOME — so look each biome's
+  // row up through TIER_LEVEL. SURFACE's butterflies and TREETOPS' flock now share THE FOREST row.
+  const P = TIERS.map((_, t) => L.pts[TIER_LEVEL[t]] || L.pts[L.pts.length - 1]);
   if (on(P[0].y)) {   // CAVES — bats flit through the dark
     ctx.fillStyle = 'rgba(20,14,30,0.75)';
     for (let k = 0; k < 2; k++) { const span = W+40, bx = Math.round(((k*140+60+ph*.35)%span+span)%span-20), by = P[0].y-20+k*8 + Math.round(Math.sin(ph*.09+k*2)*3), up = Math.floor(ph*.25+k)%2;
@@ -5899,6 +5964,9 @@ function mapScene(k, isGate, champ, x, y, w, h, ph) {
 // lazily created only in a real DOM (headless has no Image) — until one loads, and always in the
 // test harness, the card falls back to the procedural mapScene postcard, so nothing ever goes blank.
 const COVERS = ['caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'];
+// v151: covers are BIOME art, so the list stays eleven long (sw.js still precaches all eleven);
+// this maps each LEVEL card to the cover it wears. THE FOREST wears the surface cover.
+const LEVEL_COVER_I = deepFreeze(LEVEL_BANDS.map(L => COVERS.indexOf(L.cover)));
 let coverImg = null;
 function ensureCovers() {
   if (coverImg || typeof Image === 'undefined') return;
@@ -5909,7 +5977,7 @@ function renderSkyMap() {
   const L = skyMapNodes();
   const ph = reduceMotion ? 0 : tick;
   // altitude at a screen y follows the rows, so the real stage skies scroll with the list
-  const bl = j => j <= 0 ? 0 : j <= TIERS.length ? TIERS[j-1].n : TIERS[TIERS.length-1].n + (j - TIERS.length) * 140;
+  const bl = j => j <= 0 ? 0 : j <= LEVEL_COUNT ? levelGoalA(j-1) : levelGoalA(LEVEL_COUNT-1) + (j - LEVEL_COUNT) * 140;
   const blocksAt = y2 => {
     const k = (L.start.y - y2) / MAP_ROW;
     if (k <= 0) return 0;
@@ -5966,18 +6034,18 @@ function renderSkyMap() {
   // the themed sky, so nothing floats.
   // v110: Extra Modes-style level cards over the themed sky. v100 rule kept: while a stage
   // is SELECTED its second line becomes the start-condition caption.
-  const champ = prog >= TIERS.length;
-  const nextByHeight = bestHeight > 0 ? TIERS.findIndex(t => bestHeight < t.n) : -1;
-  const bestCard = bestHeight <= 0 ? -1 : nextByHeight === -1 ? TIERS.length : nextByHeight;
-  for (let k = TIERS.length; k >= 0; k--) {
-    const isGate = k === TIERS.length;
+  const champ = prog >= LEVEL_COUNT;
+  const nextByHeight = bestHeight > 0 ? LEVEL_REGISTRY.findIndex(l => bestHeight < l.goalAltitude) : -1;
+  const bestCard = bestHeight <= 0 ? -1 : nextByHeight === -1 ? LEVEL_COUNT : nextByHeight;
+  for (let k = LEVEL_COUNT; k >= 0; k--) {
+    const isGate = k === LEVEL_COUNT;
     const pt = isGate ? L.gate : L.pts[k];
     const cy2 = Math.round(pt.y - MAP_CARD_H/2), cx2 = L.colX, cw2 = L.colW;
     if (cy2 + MAP_CARD_H < L.viewTop - 2 || cy2 > L.viewBot + 2) continue;
-    const t = isGate ? null : TIERS[k];
+    const t = isGate ? null : LEVEL_REGISTRY[k];
     const cleared = !isGate && k < prog, isNext = !isGate && k === prog, unlocked = !isGate && k <= prog;
     const sel = !isGate && selLevel === k && unlocked;
-    const accent = isGate ? VISUAL_SYSTEM.palette.gold : unlocked ? t.c : 'rgba(255,246,232,0.24)';
+    const accent = isGate ? VISUAL_SYSTEM.palette.gold : unlocked ? t.color : 'rgba(255,246,232,0.24)';
     pixelFrame(cx2, cy2, cw2, MAP_CARD_H, sel ? uiA(.16) : 'rgba(17,17,25,0.88)', accent, sel || (isGate && champ));
     ctx.fillStyle = accent; ctx.globalAlpha = sel || isNext || isGate ? 1 : .36;
     ctx.fillRect(cx2+4, cy2+5, 2, MAP_CARD_H-10); ctx.globalAlpha = 1;
@@ -5986,7 +6054,7 @@ function renderSkyMap() {
     // Until the cover loads (and in the headless harness), the procedural mapScene postcard shows.
     const thW = 34, thH = 44, thX = cx2+8, thY = cy2+5;
     ctx.save(); ctx.beginPath(); ctx.rect(thX, thY, thW, thH); ctx.clip();
-    const cover = isGate ? null : (coverImg && coverImg[k]);
+    const cover = isGate ? null : (coverImg && coverImg[LEVEL_COVER_I[k]]);
     if (cover && cover.complete && cover.naturalWidth > 0) {   // cover-fit the square art into the box
       const bA = thW/thH, iA = cover.naturalWidth/cover.naturalHeight;
       let sw2, sh2, sx2, sy2;
@@ -5994,7 +6062,7 @@ function renderSkyMap() {
       else { sw2 = cover.naturalWidth; sh2 = sw2/bA; sx2 = 0; sy2 = (cover.naturalHeight-sh2)/2; }
       ctx.drawImage(cover, sx2, sy2, sw2, sh2, thX, thY, thW, thH);
     } else {
-      mapScene(isGate ? -1 : k, isGate, champ, thX, thY, thW, thH, ph);   // fallback: gate, pre-load, headless
+      mapScene(isGate ? -1 : levelArtTier(k), isGate, champ, thX, thY, thW, thH, ph);   // fallback: gate, pre-load, headless
     }
     ctx.restore();
     ctx.fillStyle = 'rgba(0,0,0,0.35)';                        // picture-frame: dark inset...
@@ -6006,27 +6074,31 @@ function renderSkyMap() {
     const tx0 = thX + thW + 6, txR = cx2 + cw2 - 7, dimTxt = 'rgba(255,246,232,0.45)';
     if (isGate) {
       txt(champ ? 'SKY CHAMPION' : '? ? ?', tx0, cy2+11, 1, '#FFD75E', 'left');
-      txt(champ ? 'THE GATE IS OPEN' : 'SEALED - ' + TIERS[TIERS.length-1].n*METERS_PER + 'M', tx0, cy2+27, 1, 'rgba(255,246,232,0.55)', 'left');
+      txt(champ ? 'THE GATE IS OPEN' : 'SEALED - ' + levelGoalA(LEVEL_COUNT-1)*METERS_PER + 'M', tx0, cy2+27, 1, 'rgba(255,246,232,0.55)', 'left');
     } else {
-      txt((k+1) + '. ' + t.name, tx0, cy2+11, 1, unlocked ? t.c : dimTxt, 'left');
-      txt(t.n*METERS_PER + 'M', txR, cy2+11, 1, unlocked ? 'rgba(255,246,232,0.7)' : dimTxt, 'right');
+      txt((k+1) + '. ' + t.name, tx0, cy2+11, 1, unlocked ? t.color : dimTxt, 'left');
+      txt(t.goalAltitude*METERS_PER + 'M', txR, cy2+11, 1, unlocked ? 'rgba(255,246,232,0.7)' : dimTxt, 'right');
       if (sel) {
         const cp = checkpointForLevel(k);
         txt(cp.startAltitude ? cp.name.split(' ')[0]+' CP - '+(cp.scoreMultiplier+'X').replace('0.','.') : 'GROUND - FULL SCORE',
             tx0, cy2+27, 1, 'rgba(255,246,232,0.75)', 'left');
         const pw2 = 44, px2 = cx2 + cw2 - pw2 - 6, py2 = cy2 + MAP_CARD_H - 17;   // dedicated PLAY band
-        plate3D(px2, py2, pw2, 12, playA(.8 + .12*Math.sin(tick*.1)), t.c);
+        plate3D(px2, py2, pw2, 12, playA(.8 + .12*Math.sin(tick*.1)), t.color);
         txt('PLAY', px2 + pw2/2, py2 + 3, 1, '#08301F', 'center');
       } else {
         for (let s2 = 0; s2 < 3; s2++) drawStarPix(tx0 + s2*8, cy2 + 27, 1, unlocked && s2 < (shownStars()[k] || 0));
         txt(cleared ? 'CLEARED' : isNext ? 'NEXT' : 'LOCKED', txR, cy2+27, 1,
-            cleared ? '#62E8B5' : isNext ? t.c : dimTxt, 'right');
+            cleared ? '#62E8B5' : isNext ? t.color : dimTxt, 'right');
         // v126: show the NEXT star this level wants, so picking a replay has a visible goal
         const so = LEVEL_REGISTRY[k] && LEVEL_REGISTRY[k].starObjectives, got = shownStars()[k] || 0;
-        if (so && unlocked && got < 3)
-          // v129: fit it into the gap between the stars and the CLEARED/NEXT/LOCKED label
-          txtFit(objectiveLabel(got < 2 ? so.two : so.three, true), tx0 + 26, cy2 + 27, 1,
-                 'rgba(255,246,232,0.5)', 'left', Math.max(18, txR - (tx0 + 26) - ('CLEARED'.length*6) - 4));
+        if (so && unlocked && got < 3) {
+          // v129 fitted it into the gap between the stars and the CLEARED/NEXT/LOCKED label — but
+          // txtFit bottoms out at scale 1, so on a phone a long objective ("6 IN A ROW") still ran
+          // straight under CLEARED. v151: if it does not FIT the gap, it is not drawn at all.
+          const lbl = objectiveLabel(got < 2 ? so.two : so.three, true);
+          const avail = txR - (tx0 + 26) - ('CLEARED'.length*6 - 1) - 6;
+          if (lbl.length*6 - 1 <= avail) txtFit(lbl, tx0 + 26, cy2 + 27, 1, 'rgba(255,246,232,0.5)', 'left', avail);
+        }
       }
     }
     // mascot perches ON TOP of the card holding your best height, in the gap above it
@@ -6041,7 +6113,7 @@ function renderSkyMap() {
   txt('SKY MAP', W/2, 5, 2, '#FFF6E8', 'center');
   // campaign mastery at a glance: total stars earned across the climb
   const starTot = shownStars().reduce((a,b)=>a+(b||0),0);
-  const starLbl = 'STARS ' + starTot + '/' + TIERS.length*3;
+  const starLbl = 'STARS ' + starTot + '/' + LEVEL_COUNT*3;
   drawStarPix(9, 25, 1, true);
   txt(starLbl, 17, 23, 1, 'rgba(0,0,0,0.5)', 'left');
   txt(starLbl, 16, 22, 1, '#FFD75E', 'left');
@@ -6394,10 +6466,10 @@ function drawNavSplit(rw, accent) {   // one plate, two tap targets: left HOME, 
   txt(('SKY MAP'.length*6-1 > half-8) ? 'MAP' : 'SKY MAP', Math.round(rw.x + rw.w*3/4), rw.y + 7, 1, '#FFF6E8', 'center');
 }
 function renderLevelWin() {
-  const t = TIERS[runLevel], num = runLevel + 1;
+  const t = LEVEL_REGISTRY[runLevel], num = runLevel + 1;
   // full themed backdrop: the exact slice of sky you just climbed — launch pad at the
   // bottom of the screen, the stage goal at the top (same trick as the SKY MAP)
-  const goal = TIERS[runLevel].n, from = runLaunch;
+  const goal = levelGoalA(runLevel), from = runLaunch;
   for (let y2 = 0; y2 < H; y2 += 3) {
     const sky = skyColor(from + (1 - y2/H) * (goal - from));
     ctx.fillStyle = 'rgb('+sky[0]+','+sky[1]+','+sky[2]+')'; ctx.fillRect(0, y2, W, 3);
@@ -6421,7 +6493,7 @@ function renderLevelWin() {
       ctx.globalAlpha = 1 - cyc/26;
       for (let k = 0; k < 8; k++) {
         const ang = k/8*6.283 + f*.7;
-        ctx.fillStyle = k % 2 ? '#FFD75E' : t.c;
+        ctx.fillStyle = k % 2 ? '#FFD75E' : t.color;
         ctx.fillRect(Math.round(fx + Math.cos(ang)*r), Math.round(fy + Math.sin(ang)*r), 2, 2);
       }
       ctx.globalAlpha = 1;
@@ -6432,14 +6504,14 @@ function renderLevelWin() {
     const cx2 = (i*61 + 17) % W;
     const cy2 = ((winT * (1.1 + (i%4)*.35) + i*47) % (H + 20)) - 10;
     ctx.globalAlpha = .5 + .4*Math.sin(winT*.2 + i);
-    ctx.fillStyle = [t.c, '#FFD75E', '#FFF6E8', '#62E8B5', dkHex(t.c, .72)][i % 5];
+    ctx.fillStyle = [t.color, '#FFD75E', '#FFF6E8', '#62E8B5', dkHex(t.color, .72)][i % 5];
     ctx.fillRect(Math.round(cx2 + Math.sin(winT*.08 + i)*4), Math.round(cy2), 2, 3);
   }
   ctx.globalAlpha = 1;
   const topY = Math.round(H*.13);
   txt('LEVEL ' + num, W/2, topY, 1, 'rgba(255,246,232,0.7)', 'center');
   txt(t.name, W/2+1, topY + 12, 2, 'rgba(0,0,0,0.5)', 'center');
-  txt(t.name, W/2, topY + 11, 2, t.c, 'center');
+  txt(t.name, W/2, topY + 11, 2, t.color, 'center');
   if (winT > 8) {   // COMPLETE! stamps in with a two-frame pop
     const sc = winT < 14 ? 3 : 2;
     txt('COMPLETE!', W/2+1, topY + 33, sc, 'rgba(0,0,0,0.5)', 'center');
@@ -6450,7 +6522,7 @@ function renderLevelWin() {
   const gap = starY - (topY + 50);
   if (gap > 30 && winT > 16) {
     const ey = topY + 48 + Math.round((gap - 10) / 2), es = gap > 44 ? 3 : 2;
-    ctx.fillStyle = t.c;
+    ctx.fillStyle = t.color;
     ctx.globalAlpha = .1; ctx.fillRect(W/2 - es*9, ey - es*9, es*18, es*18);
     ctx.globalAlpha = .16; ctx.fillRect(W/2 - es*7, ey - es*7, es*14, es*14);
     ctx.globalAlpha = 1;
@@ -6497,25 +6569,25 @@ function renderLevelWin() {
     const last = runLevel + 1 >= TIERS.length;
     const labels = { next: last ? 'BACK TO MAP' : 'NEXT LEVEL', retry: 'RETRY' };
     for (const rw of WIN_ROWS) {
-      if (rw.id === 'nav') { drawNavSplit(rw, t.c); continue; }
+      if (rw.id === 'nav') { drawNavSplit(rw, t.color); continue; }
       const main = rw.id === 'next';
-      plate3D(rw.x, rw.y, rw.w, rw.h, main ? playA(.85) : 'rgba(255,246,232,0.12)', main ? null : t.c);
+      plate3D(rw.x, rw.y, rw.w, rw.h, main ? playA(.85) : 'rgba(255,246,232,0.12)', main ? null : t.color);
       txt(labels[rw.id], W/2, rw.y + 7, 1, main ? '#08301F' : '#FFF6E8', 'center');
     }
     // the mascot celebrates on a mini tower below the buttons when there's room
     const btnBot = WIN_ROWS[2].y + WIN_ROWS[2].h;
     if (H - btnBot > 44) {
       const my = H - 12;
-      for (let k = 0; k < 2; k++) { ctx.fillStyle = k ? t.c : dkHex(t.c, .7); ctx.fillRect(W/2 - 13, my - 7*(k+1), 26, 7); }
+      for (let k = 0; k < 2; k++) { ctx.fillStyle = k ? t.color : dkHex(t.color, .7); ctx.fillRect(W/2 - 13, my - 7*(k+1), 26, 7); }
       const hop = reduceMotion ? 0 : Math.round(Math.abs(Math.sin(winT*.09))*4);
       drawMascot(W/2, my - 14 - hop);
     }
   }
 }
 function renderLevelFail() {
-  const t = TIERS[runLevel], num = runLevel + 1;
+  const t = LEVEL_REGISTRY[runLevel], num = runLevel + 1;
   ctx.fillStyle = 'rgba(11,14,26,0.74)'; ctx.fillRect(0, 0, W, H);
-  const goal = TIERS[runLevel].n, from = runLaunch;
+  const goal = levelGoalA(runLevel), from = runLaunch;
   const pct = clamp((blocks.length - from) / (goal - from), 0, 1);
   const topY = Math.round(H*.14);
   txt('LEVEL ' + num + ' - ' + t.name, W/2, topY, 1, 'rgba(255,246,232,0.7)', 'center');
@@ -6526,7 +6598,7 @@ function renderLevelFail() {
   const bw = Math.min(W - 60, 180), bx = Math.round(W/2 - bw/2), by = Math.round(H*.33);
   const fillW = Math.round(bw * pct * Math.min(1, failT/30));
   plate3D(bx, by, bw, 8, 'rgba(0,0,0,0.5)');
-  ctx.fillStyle = t.c; ctx.fillRect(bx, by + 1, fillW, 6);
+  ctx.fillStyle = t.color; ctx.fillRect(bx, by + 1, fillW, 6);
   txt('REACHED ' + blocks.length*METERS_PER + 'M / ' + goal*METERS_PER + 'M', W/2, by + 14, 1, 'rgba(255,246,232,0.75)', 'center');
   if (runCoins > 0) { drawCoin(W/2 - 16, by + 27.5); txt('+' + runCoins, W/2 - 5, by + 27, 1, '#FFD75E', 'left'); }
   if (failT > 24) {
@@ -6593,7 +6665,7 @@ function renderHUD(h) {
     if(lives)txt(lives,7,33,1,'#62E8B5','left');
   }
   if (runLevel >= 0) {   // campaign HUD: the goal + a slim progress bar
-    const goal = TIERS[runLevel].n, from = runLaunch;
+    const goal = levelGoalA(runLevel), from = runLaunch;
     const cp=runContext.checkpointSnapshot;
     let lft=cp.startAltitude?cp.name.split(' ')[0]+' CP':'GROUND',
         mid='L'+(runLevel+1)+' GOAL '+goal*METERS_PER+'M',
@@ -6602,12 +6674,12 @@ function renderHUD(h) {
       lft=cp.startAltitude?'CP':'GROUND'; mid='GOAL '+goal*METERS_PER+'M'; rgt=(cp.scoreMultiplier+'X').replace('0.','.');
     }
     txt(lft,7,33,1,'rgba(255,246,232,0.62)','left');
-    txt(mid, W/2, 33, 1, TIERS[runLevel].c, 'center');
+    txt(mid, W/2, 33, 1, levelColor(runLevel), 'center');
     txt(rgt,W-7,33,1,'rgba(255,246,232,0.62)','right');
     const bw = Math.min(W - 80, 120), bx = Math.round(W/2 - bw/2);
     const pct = clamp((h - from) / (goal - from), 0, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx, 43, bw, 3);
-    ctx.fillStyle = TIERS[runLevel].c; ctx.fillRect(bx, 43, Math.round(bw*pct), 3);
+    ctx.fillStyle = levelColor(runLevel); ctx.fillRect(bx, 43, Math.round(bw*pct), 3);
   }
   let ix = 4;
   for (let i=0;i<shield;i++) { drawIcon('shield', ix, 20); ix += 10; }

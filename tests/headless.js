@@ -128,10 +128,10 @@ check('every tier has a theme color', () => fresh.run(`TIERS.every(t => /^#[0-9A
 check('fresh profile: prog=0, no active level', () => fresh.run('prog === 0 && runLevel === -1'));
 check('extras picker excludes the campaign mode', () => fresh.run(
   `EXTRAS.length === 5 && !EXTRAS.some(m => m.id === 'level') && EXTRAS.some(m => m.id === 'practice')`));
-check('skyMapNodes: 11 pts + start + gate', () => fresh.run(
-  '(() => { const L = skyMapNodes(); return L.pts.length === 11 && L.start && L.gate; })()'));
+check('skyMapNodes: one pt per LEVEL + start + gate', () => fresh.run(
+  '(() => { const L = skyMapNodes(); return L.pts.length === LEVEL_COUNT && LEVEL_COUNT === 10 && L.start && L.gate; })()'));
 check('skyMapNodes: badge rows evenly spaced in altitude', () => fresh.run(
-  '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.gate.y === L.pts[10].y - MAP_ROW; })()'));
+  '(() => { const L = skyMapNodes(); return L.pts.every((p,i) => (i===0 ? L.start.y - p.y === MAP_ROW : L.pts[i-1].y - p.y === MAP_ROW)) && L.gate.y === L.pts[LEVEL_COUNT-1].y - MAP_ROW; })()'));
 check('v110 skyMapNodes: cards centered on midX (weave removed)', () => fresh.run(
   '(() => { const L = skyMapNodes(); return L.pts.every(p => p.x === L.midX) && L.colX >= 0 && L.colX + L.colW <= W; })()'));
 check('skyMapNodes: column centered and inside canvas', () => fresh.run(
@@ -184,12 +184,12 @@ const vet = makeGame({
   'skystack-height': '60',
   'skystack-best': '900'
 });
-check('prog seeded from lifetime best (60 blocks)', () => vet.run('prog === TIERS.filter(t => 60 >= t.n).length'));
+check('prog seeded from lifetime best (60 blocks)', () => vet.run('prog === LEVEL_BANDS.filter((L,i) => 60 >= levelGoalA(i)).length && prog === 2'));   // v151: CAVES + THE FOREST
 
 // level runs pre-stack to the previous stage
 vet.run('startLevel(2)');
-check('level 3 pre-stacks to the previous stage', () => vet.run('runLaunch === TIERS[1].n && blocks.length === TIERS[1].n'));
-check('level 3 skips pre-stacked tiers (tier=2)', () => vet.run('tier === 2'));
+check('level 3 pre-stacks to the previous level goal', () => vet.run('runLaunch === levelStartA(2) && runLaunch === 60 && blocks.length === runLaunch'));
+check('level 3 skips pre-stacked biomes (tier=3, LOWER SKY)', () => vet.run('tier === 3 && TIERS[tier].name === "LOWER SKY"'));
 check('level run: pickups pushed above the pre-stack', () => vet.run('nextPickupRow >= blocks.length + 4'));
 check('level run: score starts at 0', () => vet.run('score === 0'));
 
@@ -231,12 +231,12 @@ lc.run('resetRun(); while (blocks.length < TIERS[0].n) blocks.push({x:0,w:96,col
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
 check('endless re-reaching a cleared stage: plain milestone note', () => lc.run(
   'notes.concat(curNote?[curNote]:[]).some(n=>n.text===(TIERS[0].n*METERS_PER)+"M - "+TIERS[0].name)'));
-lc.run('prog = TIERS.length - 1; resetRun(); tier = TIERS.length - 1;');
+lc.run('prog = LEVEL_COUNT - 1; resetRun(); tier = TIERS.length - 1;');
 lc.run('while (blocks.length < TIERS[TIERS.length-1].n) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
 check('endless reaching THE STARS first time: SKY CONQUERED note queued', () => lc.run(
   'notes.concat(curNote?[curNote]:[]).some(n=>n.text==="SKY CONQUERED!")'));
-check('game beaten: prog = all stages', () => lc.run('prog === TIERS.length'));
+check('game beaten: prog = all LEVELS', () => lc.run('prog === LEVEL_COUNT'));
 check('renderSkyMap champion state runs (crown/gate)', () => { lc.run('renderSkyMap()'); return true; });
 check('renderHome conquered state runs', () => { lc.run('state = "home"; renderHome()'); return true; });
 
@@ -252,12 +252,12 @@ check('openSkyMap pre-selects the next level', () => tap.run('selLevel === prog'
 check('map tap: first tap on a cleared badge selects it', () => tap.run(
   '(() => { const L = __C(1); __T(L.pts[1].x, L.pts[1].y); return selLevel === 1 && skyMap === true && state === "home"; })()'));
 check('map tap: second tap on the selected badge launches it', () => tap.run(
-  '(() => { const L = __C(1); __T(L.pts[1].x, L.pts[1].y); return state === "playing" && runLevel === 1 && runLaunch === TIERS[0].n && skyMap === false; })()'));
+  '(() => { const L = __C(1); __T(L.pts[1].x, L.pts[1].y); return state === "playing" && runLevel === 1 && runLaunch === levelStartA(1) && skyMap === false; })()'));
 tap.run('gameOver("fall"); failT = 60; state = "home"; openSkyMap();');
 check('map tap: locked badge refuses', () => tap.run(
-  '(() => { const li = TIERS.length - 2; const L = __C(li); __T(L.pts[li].x, L.pts[li].y); return selLevel === prog && skyMap === true; })()'));
+  '(() => { const li = LEVEL_COUNT - 2; const L = __C(li); __T(L.pts[li].x, L.pts[li].y); return selLevel === prog && skyMap === true; })()'));
 check('map tap: tapping the pre-selected next badge plays it', () => tap.run(
-  '(() => { const L = __C(prog); __T(L.pts[prog].x, L.pts[prog].y); return state === "playing" && runLevel === prog && runLaunch === TIERS[prog-1].n; })()'));
+  '(() => { const L = __C(prog); __T(L.pts[prog].x, L.pts[prog].y); return state === "playing" && runLevel === prog && runLaunch === levelStartA(prog); })()'));
 tap.run('gameOver("fall"); failT = 60; state = "home"; openSkyMap();');
 check('map tap: sealed gate refuses, map stays open', () => tap.run(
   '(() => { mapScroll = mapScrollMax; const L = skyMapNodes(); __T(L.gate.x, L.gate.y); return skyMap === true && state === "home"; })()'));
@@ -268,7 +268,7 @@ check('map tap: header tap closes the map', () => tap.run(
 check('map drag: scrolls without selecting or launching', () => tap.run(
   '(() => { openSkyMap(); const s0 = mapScroll; const L = skyMapNodes(); __p = {x:L.colX+3, y:L.pts[1].y}; pressDown({}); __p = {x:L.colX+3, y:L.pts[1].y + 40}; pressMove({}); pressUp({}); return mapScroll !== s0 && selLevel === prog && state === "home" && skyMap === true; })()'));
 check('map renders the level-card list at every scroll', () => {
-  const r = makeGame({ 'skystack-height': '900', 'skystack-tiers': '11' });   // champion: gate open
+  const r = makeGame({ 'skystack-height': '900', 'skystack-tiers': '10' });   // champion: gate open (v151: ten levels)
   r.run('state = "home"; openSkyMap();');
   r.run('for (let s = 0; s <= mapScrollMax; s += 40) { mapScroll = s; renderSkyMap(); }');
   return true;
@@ -341,8 +341,8 @@ check('fail RETRY starts a fresh run with the revive back', () => lr.run(
 // ---------- stage clear celebration screen ----------
 const cel = makeGame();
 cel.run('winStars = 3; winReward = 40; winFirst = true; runLaunch = 0; runPerfects = 5; state = "levelwin";');
-check('themed win screen renders for all 11 stages at every phase', () => {
-  cel.run('for (let i = 0; i < TIERS.length; i++) { runLevel = i; for (const t of [5, 20, 40, 70, 120]) { winT = t; renderLevelWin(); } }');
+check('themed win screen renders for every LEVEL at every phase', () => {
+  cel.run('for (let i = 0; i < LEVEL_COUNT; i++) { runLevel = i; for (const t of [5, 20, 40, 70, 120]) { winT = t; renderLevelWin(); } }');
   return true;
 });
 check('drawStageDecoScaled helper exists', () => cel.run('typeof drawStageDecoScaled === "function"'));
@@ -403,10 +403,10 @@ check('home: next-level card shows the next level', () => {
   home.run('mode = "endless"; state = "home";');
   home.run('var __texts = []; var __txt0 = txt; txt = function(t,...a){ __texts.push(String(t)); return __txt0(t,...a); };');
   home.run('renderHome()');
-  return home.run('__texts.some(t => t === ("CHAPTER " + (prog+1))) && __texts.some(t => t === TIERS[prog].name) && __texts.some(t => t === "EXTRA MODES")');
+  return home.run('__texts.some(t => t === ("CHAPTER " + (prog+1))) && __texts.some(t => t === levelName(prog)) && __texts.some(t => t === "EXTRA MODES")');
 });
 check('home PLAY starts the next level', () => home.run(
-  '(() => { const p = {x: PLAY_BTN.x + 5, y: PLAY_BTN.y + 5}; pos = () => p; pressDown({}); return state === "playing" && runLevel === prog && runLaunch === TIERS[prog-1].n; })()'));
+  '(() => { const p = {x: PLAY_BTN.x + 5, y: PLAY_BTN.y + 5}; pos = () => p; pressDown({}); return state === "playing" && runLevel === prog && runLaunch === levelStartA(prog); })()'));
 
 // ---------- dynamic difficulty (skill-adaptive assist) ----------
 const dd = makeGame();   // fresh profile: skill defaults to 0.35
@@ -740,9 +740,9 @@ check('drawBlock renders every skin style without throwing', () => {
 });
 check('every skin base() yields a valid HSL colour drawBlock can use', () => bio.run(
   'SKINS.every(sk => { const c = sk.base(3, 120); return typeof c.h === "number" && c.s >= 0 && c.s <= 100 && c.l >= 0 && c.l <= 100; })'));
-check('a campaign level starts in its tier biome (level 8 -> AURORA band)', () => {
+check('a campaign level starts in its biome band (level 7 -> AURORA)', () => {
   const bl = makeGame({ 'skystack-height': '900' });   // everything unlocked
-  bl.run('startLevel(7)');   // level 8 = AURORA (index 7)
+  bl.run('startLevel(6)');   // v151: AURORA is level 7 (index 6) since the forest merge
   return bl.run('(() => { const A = blocks.length; const ti = TIERS.findIndex(t => A < t.n); return TIERS[ti].name === "AURORA"; })()');
 });
 
@@ -754,7 +754,7 @@ check('hero card contains the PLAY button', () => h65.run(
 check('MAP + EXTRAS are demoted below the hero card', () => h65.run(
   'MAP_BTN.y >= HERO_CARD.y + HERO_CARD.h && MODE_BTN.y === MAP_BTN.y && MAP_BTN.x < MODE_BTN.x'));
 check('tapping the hero card itself starts the next level', () => h65.run(
-  '(() => { const p = {x: HERO_CARD.x + 6, y: HERO_CARD.y + 6}; pos = () => p; pressDown({}); return state === "playing" && runLevel === prog && runLaunch === TIERS[prog-1].n; })()'));
+  '(() => { const p = {x: HERO_CARD.x + 6, y: HERO_CARD.y + 6}; pos = () => p; pressDown({}); return state === "playing" && runLevel === prog && runLaunch === levelStartA(prog); })()'));
 h65.run('gameOver("fall"); failT = 60; state = "home";');
 check('SKY MAP button opens the map', () => h65.run(
   '(() => { const p = {x: MAP_BTN.x + 4, y: MAP_BTN.y + 4}; pos = () => p; pressDown({}); return skyMap === true && state === "home"; })()'));
@@ -762,11 +762,11 @@ h65.run('skyMap = false;');
 check('EXTRA MODES button opens the picker', () => h65.run(
   '(() => { const p = {x: MODE_BTN.x + 4, y: MODE_BTN.y + 4}; pos = () => p; pressDown({}); return modePicker === true && state === "home"; })()'));
 check('map header shows the campaign star total', () => {
-  const g = makeGame({ 'skystack-height': '60', 'skystack-levelstars': '[3,2,1]' });
+  const g = makeGame({ 'skystack-height': '60', 'skystack-levelstars': '[3,2,1,3]' });   // v151: folds to [3,1,3] = 7
   g.run('state = "home"; openSkyMap();');
   g.run('var __mt = []; var __mt0 = txt; txt = function(t,...a){ __mt.push(String(t)); return __mt0(t,...a); };');
   g.run('renderSkyMap()');
-  return g.run('__mt.some(t => t === "STARS 6/" + TIERS.length*3)');
+  return g.run('__mt.some(t => t === "STARS 7/" + LEVEL_COUNT*3)');
 });
 check('home layout stays inside the canvas on a narrow portrait screen', () => {
   const g = makeGame();
@@ -897,9 +897,9 @@ check('Orbit Earth no longer uses a repeating camera modulo', () =>
 // ---------- save schema v2 + migration (v64) ----------
 // fresh profile: a valid v2 container is created, and nothing is ever written to v1 keys
 const sv = makeGame();
-check('fresh boot creates a valid v2 save container', () => {
+check('fresh boot creates a valid save container at the current schema', () => {
   const s = JSON.parse(sv.mem.get('skystack-save'));
-  return s.version === 2 && s.data && typeof s.data === 'object';
+  return s.version === 3 && s.data && typeof s.data === 'object';
 });
 check('fresh boot writes nothing to the v1 keys', () =>
   [...sv.mem.keys()].every(k => k === 'skystack-save'));
@@ -931,14 +931,16 @@ const V1 = {
   'skystack-hapt': 'false'
 };
 const mig = makeGame(V1);
-check('v1 migration: every v1 key lands in the v2 save', () => {
+check('v1 migration: every v1 key lands in the versioned save', () => {
   const s = JSON.parse(mig.mem.get('skystack-save'));
-  return s.version === 2 && Object.keys(V1).every(k => s.data[k] !== undefined);
+  return s.version === 3 && Object.keys(V1).every(k => s.data[k] !== undefined);
 });
 check('migrated: economy + cosmetics intact', () => mig.run(
   'coins === 345 && owned.length === 3 && owned.indexOf("void") >= 0 && skinId === "void"'));
-check('migrated: records + campaign intact', () => mig.run(
-  'best === 4321 && bestHeight === 123 && prog === Math.max(5, TIERS.filter(t => 123 >= t.n).length) && levelStars.length === 5 && levelStars[0] === 3'));
+check('migrated: records + campaign intact, level slots folded by the merge', () => mig.run(
+  'best === 4321 && bestHeight === 123 && ' +
+  'prog === Math.max(4, LEVEL_BANDS.filter((L,i) => 123 >= levelGoalA(i)).length) && ' +   // v151: 5 cleared levels folds to 4
+  'levelStars.length === 4 && levelStars[0] === 3 && levelStars[1] === 2 && levelStars[2] === 1 && levelStars[3] === 2'));
 check('migrated: mode/daily/stats/player level intact', () => mig.run(
   'mode === "pure" && daily.streak === 4 && daily.lastPlayed === "20260713" && stats.games === 58 && stats.maxCombo === 14 && lvl.level === 7 && lvl.xp === 40'));
 check('migrated: skill/achievements/tutorial/settings intact', () => mig.run(
@@ -974,8 +976,18 @@ check('S0 mode registry preserves every v75 mode and adds the hidden S6 challeng
   `JSON.stringify(Object.keys(MODE_REGISTRY)) === JSON.stringify(['level','practice','endless','time','challenge','pure','daily']) &&
    JSON.stringify(MODES.map(m=>m.id)) === JSON.stringify(['level','practice','endless','time','challenge','pure','daily']) &&
    MODES.every(m => MODE_REGISTRY[m.id] === m) && EXTRAS.length === 5 && EXTRAS.map(m=>m.id).join(',') === 'practice,endless,pure,daily,challenges'`));
-check('S0 level registry is index-aligned with every v75 tier boundary', () => fresh.run(
-  'LEVEL_REGISTRY.length === TIERS.length && LEVEL_REGISTRY.every((l,i) => l.id === i && l.goalAltitude === TIERS[i].n && l.startAltitude === (i ? TIERS[i-1].n : 0) && l.name === TIERS[i].name && l.color === TIERS[i].c)'));
+// v151: levels are BANDS of biomes, so alignment is now against LEVEL_BANDS. Every level still
+// begins exactly where the previous one ended, and still ends ON a real biome boundary.
+check('S0 level registry is index-aligned with every level band', () => fresh.run(
+  'LEVEL_REGISTRY.length === LEVEL_COUNT && LEVEL_REGISTRY.every((l,i) => l.id === i && l.goalAltitude === TIERS[LEVEL_BANDS[i].t1].n && l.startAltitude === (i ? LEVEL_REGISTRY[i-1].goalAltitude : 0) && l.name === levelName(i) && l.color === levelColor(i))'));
+check('v151 the bands cover every biome exactly once, in order, with no gaps', () => fresh.run(
+  '(() => { let want = 0; for (const L of LEVEL_BANDS) { if (L.t0 !== want || L.t1 < L.t0) return false; want = L.t1 + 1; } return want === TIERS.length && LEVEL_COUNT === TIERS.length - 1; })()'));
+check('v151 SURFACE and TREETOPS are ONE level, and it is no longer the shortest in the game', () => fresh.run(
+  '(() => { const f = LEVEL_REGISTRY[1]; if (f.name !== "THE FOREST") return "name=" + f.name;' +
+  'if (f.biomes.join("+") !== "SURFACE+TREETOPS") return "biomes=" + f.biomes.join("+");' +
+  'if (f.startAltitude !== 33 || f.goalAltitude !== 60 || f.blocksRequired !== 27) return "band=" + f.startAltitude + ".." + f.goalAltitude;' +
+  'const d = levelBalanceReport(1, "assisted", .35).durationSeconds;' +
+  'return d.ordinary > 45 && d.ordinary >= d.range[0] && d.ordinary <= d.range[1]; })()') === true);
 check('S0 balance registry aliases the live v75 physics constants', () => fresh.run(
   'BALANCE_REGISTRY.physics.blockHeight === BH && BALANCE_REGISTRY.physics.baseWidth === BASE_W && BALANCE_REGISTRY.physics.metersPerBlock === METERS_PER && BALANCE_REGISTRY.physics.topple === TOPPLE && BALANCE_REGISTRY.physics.perfectPx === PERFECT_PX'));
 // v133: Bases are switched OFF (kept for a later project), so this asserts the flag SET is still
@@ -1014,27 +1026,27 @@ check('three consecutive start/play/fail/restart cycles fully scrub run state', 
   '(() => { mode="endless"; startRun(); let prev=null; for(let i=0;i<3;i++){ prev=runContext; state="playing"; blocks.push({x:10,w:40,col:"#fff"}); debris.push({x:1}); particles.push({x:1}); floaters.push({x:1}); trails.push({x:1}); coinFx.push({x:1}); pickups.push({row:999}); balloon={x:1}; wind={dir:1}; balance=20; swayX=8; paused=true; dropPending=3; shield=2; widenNext=true; slowBlocks=3; auraBlocks=2; goldenNext=true; fever=true; nova=true; score=500; runCoins=12; gameOver("quit"); state="home"; startRun(); if(runContext===prev || !Object.isFrozen(runContext) || state!=="playing" || blocks.length!==1 || debris.length || particles.length || floaters.length || trails.length || coinFx.length || balloon!==null || wind!==null || balance!==0 || swayX!==0 || paused || dropPending!==0 || shield!==0 || widenNext || slowBlocks!==0 || auraBlocks!==0 || goldenNext || fever || nova || score!==0 || runCoins!==0 || reviveUsed || reviveOffered || runSettled) return false; } return stats.games===3 && slider!==null; })()'));
 
 // ---------- S1 level specification + deterministic balance harness ----------
-check('S1 defines eleven frozen LevelSpecs with unique identities and focuses', () => fresh.run(
-  'LEVEL_REGISTRY.length===11 && Object.isFrozen(LEVEL_REGISTRY) && LEVEL_REGISTRY.every((l,i)=>Object.isFrozen(l) && l.id===i && l.identity && l.focus) && new Set(LEVEL_REGISTRY.map(l=>l.identity)).size===11 && new Set(LEVEL_REGISTRY.map(l=>l.focus)).size===11'));
+check('S1 defines ten frozen LevelSpecs with unique identities and focuses', () => fresh.run(
+  'LEVEL_REGISTRY.length===10 && Object.isFrozen(LEVEL_REGISTRY) && LEVEL_REGISTRY.every((l,i)=>Object.isFrozen(l) && l.id===i && l.identity && l.focus) && new Set(LEVEL_REGISTRY.map(l=>l.identity)).size===10 && new Set(LEVEL_REGISTRY.map(l=>l.focus)).size===10'));
 check('S1 LevelSpecs preserve every campaign threshold, start, segment size, and material', () => fresh.run(
-  'LEVEL_REGISTRY.every((l,i)=>l.goalAltitude===TIERS[i].n && l.startAltitude===(i?TIERS[i-1].n:0) && l.blocksRequired===l.goalAltitude-l.startAltitude && l.name===TIERS[i].name && l.color===TIERS[i].c && l.material.name===MATERIALS[i].name && l.material.speed===MATERIALS[i].spd && l.material.wobble===MATERIALS[i].wob && l.material.wind===MATERIALS[i].wind)'));
+  'LEVEL_REGISTRY.every((l,i)=>{ const b=LEVEL_BANDS[i]; return l.goalAltitude===TIERS[b.t1].n && l.startAltitude===(i?LEVEL_REGISTRY[i-1].goalAltitude:0) && l.blocksRequired===l.goalAltitude-l.startAltitude && l.name===levelName(i) && l.color===levelColor(i) && l.material.name===MATERIALS[b.t0].name && l.material.speed===MATERIALS[b.t0].spd && l.material.wobble===MATERIALS[b.t0].wob && l.material.wind===MATERIALS[b.t0].wind; })'));
 check('S1 campaign progression is explicit, ordered, and has no unlock gaps', () => fresh.run(
   'LEVEL_REGISTRY.every((l,i)=>l.difficultyRating===i+1 && l.unlock.requiresLevel===(i?i-1:null) && l.targetDurationSeconds.min<l.targetDurationSeconds.target && l.targetDurationSeconds.target<l.targetDurationSeconds.max)'));
 check('S1 difficulty lanes map all seven modes without changing their fail or assist policy', () => fresh.run(
   'laneForMode("practice").id==="practice" && laneForMode("level").id==="assisted" && laneForMode("endless").id==="assisted" && laneForMode("time").id==="assisted" && laneForMode("challenge").id==="assisted" && laneForMode("pure").id==="unassisted" && laneForMode("daily").id==="unassisted" && !DIFFICULTY_LANES.practice.fail && DIFFICULTY_LANES.assisted.fail && DIFFICULTY_LANES.unassisted.fail'));
 check('S1 RunContext owns the selected lane, assist envelope, and campaign speed scale', () => fresh.run(
-  '(() => { const p=createRunContext({mode:"practice",campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},modifiers:[]}), s=createRunContext({mode:"level",campaignLevel:10,startingAltitude:360,seed:1,skill:.35,loadout:{},modifiers:[]}), d=createRunContext({mode:"daily",campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},modifiers:[]}); return p.difficultyProfile.lane==="practice" && p.difficultyProfile.assistEnvelope.min===.85 && Object.isFrozen(p.difficultyProfile.assistEnvelope) && s.difficultyProfile.lane==="assisted" && s.difficultyProfile.levelSpeedScale===1.25 && d.difficultyProfile.lane==="unassisted" && d.difficultyProfile.levelSpeedScale===1; })()'));
+  '(() => { const p=createRunContext({mode:"practice",campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},modifiers:[]}), s=createRunContext({mode:"level",campaignLevel:9,startingAltitude:360,seed:1,skill:.35,loadout:{},modifiers:[]}), d=createRunContext({mode:"daily",campaignLevel:-1,startingAltitude:0,seed:1,skill:.35,loadout:{},modifiers:[]}); return p.difficultyProfile.lane==="practice" && p.difficultyProfile.assistEnvelope.min===.85 && Object.isFrozen(p.difficultyProfile.assistEnvelope) && s.difficultyProfile.lane==="assisted" && s.difficultyProfile.levelSpeedScale===1.25 && d.difficultyProfile.lane==="unassisted" && d.difficultyProfile.levelSpeedScale===1; })()'));
 
 check('S1 balance harness is pure and deterministic for identical inputs', () => fresh.run(
-  'JSON.stringify(levelBalanceReport(10,"assisted",.35))===JSON.stringify(levelBalanceReport(10,"assisted",.35))'));
+  'JSON.stringify(levelBalanceReport(9,"assisted",.35))===JSON.stringify(levelBalanceReport(9,"assisted",.35))'));
 check('S1 harness reports duration, speed, precision, assist, wind, material, topple, recovery, and stars', () => fresh.run(
-  '(() => { const r=levelBalanceReport(4,"assisted",.35); return r.blocks===26 && r.durationSeconds.ideal>0 && r.durationSeconds.ordinary>r.durationSeconds.ideal && r.sliderSpeed.min>0 && r.sliderSpeed.max>=r.sliderSpeed.average && r.perfectWindowPx>PERFECT_PX && r.assist.start>0 && r.assist.max<=.85 && r.windExposure===MATERIALS[4].wind && r.materials.join(",")===MATERIALS[4].name && r.toppleTolerance===TOPPLE && r.recovery===DIFFICULTY_LANES.assisted.recovery && r.starObjectives.complete===true && r.starObjectives.two.type==="perfects" && r.starObjectives.two.n===10 && r.starObjectives.three.type==="streak" && r.starObjectives.three.n===6; })()'));
+  '(() => { const r=levelBalanceReport(3,"assisted",.35); return r.blocks===26 && r.durationSeconds.ideal>0 && r.durationSeconds.ordinary>r.durationSeconds.ideal && r.sliderSpeed.min>0 && r.sliderSpeed.max>=r.sliderSpeed.average && r.perfectWindowPx>PERFECT_PX && r.assist.start>0 && r.assist.max<=.85 && r.windExposure===MATERIALS[4].wind && r.materials.join(",")===MATERIALS[4].name && r.toppleTolerance===TOPPLE && r.recovery===DIFFICULTY_LANES.assisted.recovery && r.starObjectives.complete===true && r.starObjectives.two.type==="perfects" && r.starObjectives.two.n===10 && r.starObjectives.three.type==="streak" && r.starObjectives.three.n===6; })()'));
 check('S1 modeled ordinary completion times stay inside every specified target range', () => fresh.run(
   'LEVEL_REGISTRY.every((l,i)=>{ const r=levelBalanceReport(i,"assisted",.35), d=r.durationSeconds; return d.ordinary>=d.range[0] && d.ordinary<=d.range[1]; })'));
 check('S1 lanes expose fixed Practice, adaptive Assisted, and zero Unassisted help', () => fresh.run(
   '(() => { const p=levelBalanceReport(5,"practice",.35), a=levelBalanceReport(5,"assisted",.35), u=levelBalanceReport(5,"unassisted",.35); return p.assist.start===.85 && p.assist.end===.85 && p.recovery==="AUTO SAVE" && a.assist.start>0 && a.assist.max>a.assist.min && a.recovery==="ASSIST + SHIELD/REVIVE" && u.assist.start===0 && u.assist.end===0 && u.recovery==="NONE"; })()'));
 check('S1 final pace scale is campaign-only and leaves all free modes at v76 speed', () => fresh.run(
-  '(() => { const mk=(m,l,a)=>createRunContext({mode:m,campaignLevel:l,startingAltitude:a,seed:1,skill:.35,loadout:{},modifiers:[]}), summit=mk("level",10,360), legacy={difficultyProfile:{startingAssist:summit.difficultyProfile.startingAssist,campaignLevel:10,levelSpeedScale:1,slider:BALANCE_REGISTRY.slider}}; return LEVEL_REGISTRY.slice(0,10).every(l=>l.speedCurve.campaignScale===1) && LEVEL_REGISTRY[10].speedCurve.campaignScale===1.25 && difficultyAt(summit,400,.2,10).sliderSpeed>difficultyAt(legacy,400,.2,10).sliderSpeed && ["endless","time","pure","daily","practice"].every(m=>mk(m,-1,0).difficultyProfile.levelSpeedScale===1); })()'));
+  '(() => { const mk=(m,l,a)=>createRunContext({mode:m,campaignLevel:l,startingAltitude:a,seed:1,skill:.35,loadout:{},modifiers:[]}), summit=mk("level",9,360), legacy={difficultyProfile:{startingAssist:summit.difficultyProfile.startingAssist,campaignLevel:10,levelSpeedScale:1,slider:BALANCE_REGISTRY.slider}}; return LEVEL_REGISTRY.slice(0,9).every(l=>l.speedCurve.campaignScale===1) && LEVEL_REGISTRY[9].speedCurve.campaignScale===1.25 && difficultyAt(summit,400,.2,10).sliderSpeed>difficultyAt(legacy,400,.2,10).sliderSpeed && ["endless","time","pure","daily","practice"].every(m=>mk(m,-1,0).difficultyProfile.levelSpeedScale===1); })()'));
 check('S1 physics registry preserves the live drop, balance, wind, and star constants', () => fresh.run(
   'BALANCE_REGISTRY.drop.graceFrames===5 && BALANCE_REGISTRY.drop.spawnGap===24 && BALANCE_REGISTRY.drop.initialVelocity===2.6 && BALANCE_REGISTRY.drop.gravity===.9 && fallFramesFor()===5 && BALANCE_REGISTRY.placement.balanceMemory===.5 && BALANCE_REGISTRY.placement.balanceOffset===.5 && BALANCE_REGISTRY.wind.firstDelayFrames===260 && BALANCE_REGISTRY.wind.minStartBlocks===25 && LEVEL_REGISTRY.every((l,i)=>l.starObjectives.complete===true && l.starObjectives.two===STAR_OBJECTIVES[i].two && l.starObjectives.three===STAR_OBJECTIVES[i].three)'));
 
@@ -1093,11 +1105,11 @@ check('S2 Character Select renders and keeps controls above navigation on a 242x
 
 // ---------- S3 checkpoints, starting structures + cosmetic Bases ----------
 check('S3 defines frozen ground plus one checkpoint per cleared biome with explicit unlock and score scope', () => fresh.run(
-  'CHECKPOINT_REGISTRY.length===TIERS.length+1 && Object.isFrozen(CHECKPOINT_REGISTRY) && CHECKPOINT_REGISTRY[0].id==="ground" && CHECKPOINT_REGISTRY[0].scoreMultiplier===1 && CHECKPOINT_REGISTRY.slice(1).every((c,i)=>Object.isFrozen(c)&&c.startAltitude===TIERS[i].n&&c.region===i&&c.unlock.requiresClearedLevel===i&&c.scoreMultiplier===.75&&c.rewardScope==="campaign-segment"&&c.recordScope==="checkpoint")'));
+  'CHECKPOINT_REGISTRY.length===TIERS.length+1 && Object.isFrozen(CHECKPOINT_REGISTRY) && CHECKPOINT_REGISTRY[0].id==="ground" && CHECKPOINT_REGISTRY[0].scoreMultiplier===1 && CHECKPOINT_REGISTRY.slice(1).every((c,i)=>Object.isFrozen(c)&&c.startAltitude===TIERS[i].n&&c.region===i&&c.unlock.requiresClearedLevel===TIER_LEVEL[i]&&c.scoreMultiplier===.75&&c.rewardScope==="campaign-segment"&&c.recordScope==="checkpoint")'));
 check('S3 clearing a biome unlocks its checkpoint and campaign level starts map to the previous cleared biome', () => fresh.run(
-  '(() => { const cave=CHECKPOINT_REGISTRY[1],surface=CHECKPOINT_REGISTRY[2]; return !checkpointUnlocked(cave,0)&&checkpointUnlocked(cave,1)&&!checkpointUnlocked(surface,1)&&checkpointUnlocked(surface,2)&&checkpointForLevel(0).id==="ground"&&checkpointForLevel(1).id==="checkpoint-0"&&checkpointForLevel(10).startAltitude===TIERS[9].n; })()'));
+  '(() => { const cave=CHECKPOINT_REGISTRY[1],surface=CHECKPOINT_REGISTRY[2]; return !checkpointUnlocked(cave,0)&&checkpointUnlocked(cave,1)&&!checkpointUnlocked(surface,1)&&checkpointUnlocked(surface,2)&&checkpointForLevel(0).id==="ground"&&checkpointForLevel(1).id==="checkpoint-0"&&checkpointForLevel(LEVEL_COUNT-1).startAltitude===TIERS[9].n; })()'));
 check('S3 checkpoint launch snapshots reduced scoring, campaign rewards, landmark identity, and no records', () => fresh.run(
-  '(() => { prog=3; startLevel(2); const c=runContext; return runLaunch===TIERS[1].n&&blocks.length===runLaunch&&c.checkpointSnapshot.id==="checkpoint-1"&&c.checkpointSnapshot.scoreMultiplier===.75&&c.rewardPermissions.scope==="campaign-segment"&&c.rewardPermissions.scoreMultiplier===.75&&!c.recordPermissions.write&&c.recordPermissions.reason==="campaign-level"&&c.startingStructureSnapshot.kind==="landmark"&&c.startingStructureSnapshot.region===1; })()'));
+  '(() => { prog=3; startLevel(2); const c=runContext; return runLaunch===levelStartA(2)&&blocks.length===runLaunch&&c.checkpointSnapshot.id==="checkpoint-2"&&c.checkpointSnapshot.scoreMultiplier===.75&&c.rewardPermissions.scope==="campaign-segment"&&c.rewardPermissions.scoreMultiplier===.75&&!c.recordPermissions.write&&c.recordPermissions.reason==="campaign-level"&&c.startingStructureSnapshot.kind==="landmark"&&c.startingStructureSnapshot.region===2; })()'));
 check('S3 ground campaign start preserves full scoring and the natural cave-ground structure', () => fresh.run(
   '(() => { startLevel(0); const c=runContext; return runLaunch===0&&blocks.length===1&&c.checkpointSnapshot.id==="ground"&&c.rewardPermissions.scoreMultiplier===1&&!c.recordPermissions.write&&c.startingStructureSnapshot.id==="natural-cave-ground"&&c.startingStructureSnapshot.kind==="ground"; })()'));
 check('S3 checkpoint score reduction composes with Character trade-offs without changing rewards or records', () => fresh.run(
@@ -1149,7 +1161,7 @@ check('S4 gold rush and recovery use live placement outcomes with explicit coin 
 check('S4 limited-miss failure only forfeits its reward and never kills or changes score', () => fresh.run(
   '(() => { runContext=createRunContext({mode:"level",campaignLevel:6,startingAltitude:136,seed:3,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();const m=runContext.modifiers.find(x=>x.id==="thin-air");coins=0;runCoins=0;score=321;state="playing";for(let h=m.startAltitude,i=0;h<=m.endAltitude;h++,i++)updateModifiersForPlacement(h,{perfect:i>1,cut:i<2,miss:false,center:W/2});const p=modifierRuntime(m);return p.status==="failed"&&!p.success&&runCoins===0&&score===321&&state==="playing"&&modifierWins===0; })()'));
 check('S4 clear-lane and optional-target windows use visible safe bounds with no collision state', () => fresh.run(
-  '(() => { const before=JSON.stringify(blocks),run=(level,id,target)=>{runContext=createRunContext({mode:"level",campaignLevel:level,startingAltitude:LEVEL_REGISTRY[level].startAltitude,seed:2,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();const m=runContext.modifiers.find(x=>x.id===id),b=modifierLaneBounds(m,target);for(let h=m.startAltitude;h<=m.endAltitude;h++)updateModifiersForPlacement(h,{perfect:true,cut:false,miss:false,center:b.center});return modifierRuntime(m).status;};return run(4,"cloud-window",false)==="complete"&&run(8,"space-target",true)==="complete"&&JSON.stringify(blocks)===before; })()'));
+  '(() => { const before=JSON.stringify(blocks),run=(level,id,target)=>{runContext=createRunContext({mode:"level",campaignLevel:level,startingAltitude:LEVEL_REGISTRY[level].startAltitude,seed:2,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();const m=runContext.modifiers.find(x=>x.id===id),b=modifierLaneBounds(m,target);for(let h=m.startAltitude;h<=m.endAltitude;h++)updateModifiersForPlacement(h,{perfect:true,cut:false,miss:false,center:b.center});return modifierRuntime(m).status;};return run(3,"cloud-window",false)==="complete"&&run(7,"space-target",true)==="complete"&&JSON.stringify(blocks)===before; })()'));
 check('S4 gust windows use the seeded warned direction and existing wind physics', () => fresh.run(
   '(() => { runContext=createRunContext({mode:"level",campaignLevel:3,startingAltitude:60,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();const m=runContext.modifiers.find(x=>x.id==="lower-gust");blocks=Array.from({length:m.startAltitude},()=>({x:0,w:96,col:"#fff"}));tier=3;state="playing";wind=null;slider=null;updateModifiersForPlacement(m.startAltitude,{perfect:true,cut:false,miss:false,center:W/2});update(1);return wind&&wind.modifierId===m.id&&wind.dir===m.direction&&wind.str>0&&modifierRuntime(m).status==="active"; })()'));
 check('S4 reset scrubs mutable modifier progress while preserving the immutable schedule contract', () => fresh.run(
@@ -1197,7 +1209,7 @@ check('S5 Collection normalization preserves unknown future ids and removes dupl
 check('S5 owning every Base pays no withdrawn collection, and Bases stay cosmetic', () => fresh.run(
   '(() => { coins=500;ownedBases=["natural","runestone","rootbound"];collectionState={unlocked:[],completed:[]};persistCollections();const b=BASE_REGISTRY.find(x=>x.id==="starforge"),buy=purchaseUnlock(b,ownedBases),paid=reconcileCollections(true);return buy.charged===260&&coins===240&&paid.every(c=>c.id!=="base-gallery")&&baseById("starforge").identity&&BASE_REGISTRY.every(x=>!x.effect&&!x.effects); })()'));
 check('S5 star-chart completion survives reboot and cannot pay twice', () => {
-  const g=makeGame({'skystack-levelstars':JSON.stringify([3,3,3,3,3,3,3,1])});
+  const g=makeGame({'skystack-levelstars':JSON.stringify([3,3,3,3,3,3,3,3,1])});   // v151: folds to [3,3,3,3,3,3,3,1] = 22
   const first=saved(g,'skystack-coins'),save=g.mem.get('skystack-save'),c=saved(g,'skystack-collections');
   const again=makeGame({'skystack-save':save});
   return first===125&&c.completed.includes('star-chart')&&saved(again,'skystack-coins')===125&&saved(again,'skystack-collections').completed.includes('star-chart');
@@ -1712,9 +1724,9 @@ function resultSweep(renderName, setup) {
   return true;
 }
 const winFixtures = [
-  'prog=10; startLevel(0); score=500; runPerfects=TIERS[0].n; while(blocks.length<TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80;',
-  'prog=10; startLevel(7); score=800; runPerfects=5; while(blocks.length<TIERS[7].n) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); modifierResults=[{name:"X",success:true,rewardCoins:8}]; modifierWins=1; modifierBonusCoins=8; winT=80;',
-  'prog=10; startLevel(TIERS.length-1); score=900; runPerfects=2; while(blocks.length<TIERS[TIERS.length-1].n) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80;',
+  'prog=LEVEL_COUNT; startLevel(0); score=500; runPerfects=levelGoalA(0); while(blocks.length<levelGoalA(0)) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80;',
+  'prog=LEVEL_COUNT; startLevel(1); score=800; runPerfects=5; while(blocks.length<levelGoalA(1)) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); modifierResults=[{name:"X",success:true,rewardCoins:8}]; modifierWins=1; modifierBonusCoins=8; winT=80;',   // v151: THE FOREST, the merged level
+  'prog=LEVEL_COUNT; startLevel(LEVEL_COUNT-1); score=900; runPerfects=2; while(blocks.length<levelGoalA(LEVEL_COUNT-1)) blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2); winT=80;',
 ];
 check('v107 level-win: no text/button overlaps or leaves the screen at any aspect ratio', () =>
   resultSweep('renderLevelWin', winFixtures));
@@ -1821,9 +1833,9 @@ check('v109 campaign unlock gates: L1 good-only, L3 duds, L7 gas', () => { const
     ' runLevel=6; w=balloonKindWeights(); const l7 = w.dud>0 && w.trap>0 && w.gas>0;' +
     ' return l1 && l3 && l7; })()'); });
 check('v109 bad share scales with the level difficulty rating', () => { const g=makeGame();
-  g.run('prog=10; startLevel(0); state="playing";');
+  g.run('prog=LEVEL_COUNT; startLevel(0); state="playing";');
   return g.run('(() => { blocks.length=0; for(let i=0;i<30;i++) blocks.push({x:0,w:50,col:blockCol(i)});' +
-    ' runLevel=6; const a=balloonKindWeights(); runLevel=10; const b=balloonKindWeights();' +
+    ' runLevel=5; const a=balloonKindWeights(); runLevel=LEVEL_COUNT-1; const b=balloonKindWeights();' +
     ' return b.dud>a.dud && b.trap>a.trap && b.gas>a.gas && Math.abs(b.gift-a.gift)<1e-9; })()'); });
 check('v109 endless: gas locked below gasAltBlocks, live above', () => { const g=makeGame();
   g.run('mode="endless"; resetRun(); state="playing";');
@@ -1949,7 +1961,7 @@ check('v110 skin finishes never draw outside the block (all 7 styles, all sizes,
 
 // ---------- v110: sky map level cards ----------
 check('v110 card hit-test spans the full card width', () => tap.run(
-  '(() => { const L = __C(2); __T(L.colX + 3, L.pts[2].y); return selLevel === 2 && skyMap === true; })()'));
+  '(() => { const i2 = 1; const L = __C(i2); __T(L.colX + 3, L.pts[i2].y); return selLevel === i2 && skyMap === true; })()'));
 check('v110 map cards stay inside the column and never overlap', () => fresh.run(
   '(() => { const W0=W,H0=H; try { for (const [w,hh] of [[180,390],[180,520],[242,300],[320,480],[480,270]]) { W=w;H=hh;relayout();' +
   'skyMap=true; const L=skyMapNodes();' +
@@ -2098,9 +2110,9 @@ check('v119 biome covers: 11 index-aligned slugs + an Image-guarded lazy loader'
   /im\.src = 'covers\/' \+ nm \+ '\.png'/.test(src) && /ensureCovers\(\);\s*\n\s*const L = skyMapNodes\(\)/.test(src));
 check('v119 the card draws the cover image (cover-fit) with a mapScene fallback', () =>
   /ctx\.drawImage\(cover, sx2, sy2, sw2, sh2, thX, thY, thW, thH\)/.test(src) &&
-  /const cover = isGate \? null : \(coverImg && coverImg\[k\]\)/.test(src) &&
+  /const cover = isGate \? null : \(coverImg && coverImg\[LEVEL_COVER_I\[k\]\]\)/.test(src) &&
   /cover\.complete && cover\.naturalWidth > 0/.test(src) &&
-  /mapScene\(isGate \? -1 : k, isGate, champ, thX, thY, thW, thH, ph\);   \/\/ fallback/.test(src));
+  /mapScene\(isGate \? -1 : levelArtTier\(k\), isGate, champ, thX, thY, thW, thH, ph\);   \/\/ fallback/.test(src));
 check('v119 enlarged thumbnail keeps the pinned text start (tx0 = cx2+48)', () =>
   /const thW = 34, thH = 44, thX = cx2\+8, thY = cy2\+5;/.test(src) &&
   /const tx0 = thX \+ thW \+ 6/.test(src));   // 8 + 34 + 6 = 48, identical to the old 10 + 32 + 6
@@ -2217,12 +2229,12 @@ check('v123 the duration model is biome-aware: low-g levels are modelled longer,
   // measured re-audit numbers. blind model (v122): L8 ideal 80.0, L9 146.7, L0 93.7, L10 206.1.
   // low-g adds (12-10) impact frames/block: L8 +55*2/60 = +1.8s, L9 +100*2/60 = +3.3s.
   const r = g.run('(() => { const ideal = i => levelBalanceReport(i,"assisted",.35).durationSeconds.ideal;' +
-    ' if (!(ideal(8) > 81.4 && ideal(8) < 82.2)) return "L8 not lengthened by low-g: " + ideal(8) + " (blind was 80.0)";' +
-    ' if (!(ideal(9) > 149.6 && ideal(9) < 150.4)) return "L9 not lengthened by low-g: " + ideal(9) + " (blind was 146.7)";' +
+    ' if (!(ideal(7) > 81.4 && ideal(7) < 82.2)) return "SPACE not lengthened by low-g: " + ideal(7) + " (blind was 80.0)";' +
+    ' if (!(ideal(8) > 149.6 && ideal(8) < 150.4)) return "ORBIT not lengthened by low-g: " + ideal(8) + " (blind was 146.7)";' +
     // v132: L0 was 93.7 until CAVES got its cramped lane. That is a REAL pacing change (a narrower
     // corridor is genuinely quicker to cross), not model drift, so the baseline moves once, here.
     ' if (ideal(0) !== 81.4) return "normal-g L0 drifted: " + ideal(0);' +
-    ' if (ideal(10) !== 206.1) return "normal-g L10 drifted: " + ideal(10);' +
+    ' if (ideal(9) !== 206.1) return "normal-g SUMMIT drifted: " + ideal(9);' +
     ' return true; })()');
   return r === true;
 });
@@ -2440,8 +2452,12 @@ check('v124 shownStars() is cached for the render loop but never goes stale afte
 check('v124 RE-AUDIT: MEDIUM reports are byte-identical to v123 and every level stays in range', () =>
   // v132: L0 moved 93.7 → 81.4 when CAVES got its cramped lane. Every other level is untouched,
   // which is exactly what this guard is for — it caught the one intended change and nothing else.
-  fresh.run('(() => { const v123 = { 0:81.4, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
-    '   8:81.8, 9:150.1, 10:206.1 };' +
+// v151 RE-BASELINE: the SURFACE+TREETOPS merge renumbered the levels, and difficultyAt()
+// scales with campaignLevel, so every level above the merge shifts a few tenths of a second.
+// The merged level (index 1) is a genuinely new number: 48.0s ideal over 27 blocks. Every
+// level still models INSIDE its own target range - the S1 range guard proves that separately.
+  fresh.run('(() => { const v123 = { 0:81.4, 1:48, 2:27.8, 3:32.9, 4:35.7, 5:38.5, 6:43,' +
+    '   7:81.8, 8:150.1, 9:206.1 };' +
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
     '   if (d.ideal !== v123[i]) return false;' +
@@ -2619,8 +2635,8 @@ check('v125 reduceMotion does NOT change where a block lands (drift is simulatio
   return land(false) === land(true);
 });
 check('v125 RE-AUDIT: level durations are untouched (drift moves WHERE a block lands, not how long)', () =>
-  fresh.run('(() => { const pinned = { 0:81.4, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
-    '   8:81.8, 9:150.1, 10:206.1 };' +      // v132: L0 81.4 — CAVES' cramped lane, see the v123 guard
+  fresh.run('(() => { const pinned = { 0:81.4, 1:48, 2:27.8, 3:32.9, 4:35.7, 5:38.5, 6:43,' +
+    '   7:81.8, 8:150.1, 9:206.1 };' +       // v132: L0 81.4 — CAVES' cramped lane; v151: re-indexed by the forest merge
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
     '   if (d.ideal !== pinned[i]) return false;' +
@@ -2742,8 +2758,10 @@ check('v126 stars are awarded from the level objectives, and ★1 is always just
 });
 check('v126 winStarMet reports which stars were taken, for the result screen', () => {
   const g = makeGame();
-  return g.run('(() => { mode="level"; pendingLevel=2; resetRun(); state="playing"; wind=null;' +
-    ' for (const p of [1,1,1,1,0]) trackStarOutcome({perfect:!!p, cut:!p, miss:false});' +
+  return g.run('(() => { mode="level"; pendingLevel=1; resetRun(); state="playing"; wind=null;' +
+    // v151: THE FOREST wants 9 perfects for two stars and a 6-streak for three - this run takes
+    // the second star (9 perfects) but breaks the streak at 5, so exactly two stars are met.
+    ' for (const p of [1,1,1,1,1,0,1,1,1,1]) trackStarOutcome({perfect:!!p, cut:!p, miss:false});' +
     ' levelComplete();' +
     ' return winStarMet.join(",") === "true,true,false" ? true : "winStarMet " + winStarMet.join(","); })()') === true;
 });
@@ -2758,9 +2776,9 @@ check('v126 an already-earned star count is never reduced by a worse later run',
     '   recordsFor("medium").stars[2]; })()') === true;
 });
 check('v126 the level report exposes the new per-level objectives', () =>
-  fresh.run('(() => { const r = levelBalanceReport(2,"assisted",.35);' +
-    ' return r.starObjectives.complete === true && r.starObjectives.two.type === "streak" &&' +
-    '   r.starObjectives.three.type === "streak" && r.starObjectives.two.n === 3; })()'));
+  fresh.run('(() => { const r = levelBalanceReport(1,"assisted",.35);' +
+    ' return r.starObjectives.complete === true && r.starObjectives.two.type === "perfects" &&' +
+    '   r.starObjectives.three.type === "streak" && r.starObjectives.two.n === 9; })()'));
 
 check('v126 the win screen names each star objective and marks which were taken', () => {
   const g = makeGame();
@@ -2898,8 +2916,8 @@ check('v128 reduceMotion may shorten the slide animation but not move the restin
   return rest(false) === rest(true);
 });
 check('v128 RE-AUDIT: level durations are untouched (landing changes cannot alter fall time)', () =>
-  fresh.run('(() => { const pinned = { 0:81.4, 1:19.7, 2:25.6, 3:27.1, 4:32.4, 5:35.7, 6:38.5, 7:43,' +
-    '   8:81.8, 9:150.1, 10:206.1 };' +      // v132: L0 81.4 — CAVES' cramped lane, see the v123 guard
+  fresh.run('(() => { const pinned = { 0:81.4, 1:48, 2:27.8, 3:32.9, 4:35.7, 5:38.5, 6:43,' +
+    '   7:81.8, 8:150.1, 9:206.1 };' +       // v132: L0 81.4 — CAVES' cramped lane; v151: re-indexed by the forest merge
     ' for (let i=0;i<LEVEL_REGISTRY.length;i++) {' +
     '   const d = levelBalanceReport(i,"assisted",.35,"medium").durationSeconds;' +
     '   if (d.ideal !== pinned[i]) return false;' +
@@ -3254,9 +3272,79 @@ check('v150 the forest has three distinct species, all wired to a real profile',
   'return w("birch") < w("oak") && w("oak") < w("bushy") && p("birch") > p("oak") && p("oak") > p("bushy")' +
   ' && TREE_SPECIES.birch.bark === "dash"; })()') === true);
 
+// ---------- v151 SURFACE + TREETOPS merged into THE FOREST ----------
+check('v151 the save migration folds eleven level slots into ten, keeping only earned stars', () => {
+  const pre = JSON.stringify({ version: 2, data: {
+    'skystack-tiers': 4,                                   // cleared CAVES, SURFACE, TREETOPS, LOWER SKY
+    'skystack-levelstars': [3, 1, 2, 3],                    // TREETOPS was 2, SURFACE only 1
+    'skystack-diffrecords': { hard: { best: 10, height: 5, modes: {}, stars: [2, 3, 1, 2] } }
+  }});
+  const g = makeGame({ 'skystack-save': pre });
+  const after = JSON.parse(g.mem.get('skystack-save'));
+  if (after.version !== 3) return 'version ' + after.version;
+  const st = after.data['skystack-levelstars'], pr = after.data['skystack-tiers'];
+  const hard = after.data['skystack-diffrecords'].hard.stars;
+  if (JSON.stringify(st) !== '[3,1,3]') return 'stars ' + JSON.stringify(st);   // min(1,2) = 1 on the merged level
+  if (pr !== 3) return 'prog ' + pr;                                            // 4 levels cleared -> 3
+  if (JSON.stringify(hard) !== '[2,1,2]') return 'hard stars ' + JSON.stringify(hard);
+  return g.run('prog === 3 && levelStars.length === 3 && levelStars[1] === 1');
+});
+check('v151 a player mid-way through the old pair keeps only CAVES cleared', () => {
+  const g = makeGame({ 'skystack-save': JSON.stringify({ version: 2, data: { 'skystack-tiers': 2, 'skystack-levelstars': [3, 2] } }) });
+  return g.run('prog === 1');            // had cleared CAVES + SURFACE; the merged level is NOT cleared
+});
+check('v151 crossing SURFACE mid-level does not bank a level; reaching TREETOPS does', () => {
+  const g = makeGame();
+  const at = a => g.run('(() => { prog = 1; mode = "endless"; resetRun(); state = "playing";' +
+    ' blocks.length = 0; for (let i = 0; i < ' + a + ' - 1; i++) blocks.push({x:0,w:96,col:"#fff"});' +
+    ' tier = TIERS.findIndex(t => t.n > blocks.length); if (tier < 0) tier = TIERS.length;' +
+    ' blocks.push({x:0,w:96,col:"#fff"});' +
+    ' afterPlace({x:0,w:96,col:"#fff"}, false, W/2); return prog; })()');
+  const surf = at(44), tops = at(60);
+  return surf === 1 && tops === 2 ? true : 'after SURFACE prog=' + surf + ', after TREETOPS prog=' + tops;
+});
+check('v151 the campaign wins on the LEVEL goal, not the next biome line', () => {
+  const g = makeGame({ 'skystack-height': '900' });
+  g.run('startLevel(1); while (blocks.length < 44) blocks.push({x:0,w:96,col:"#fff"});');
+  g.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
+  const midLevel = g.run('state');
+  g.run('while (blocks.length < levelGoalA(1) - 1) blocks.push({x:0,w:96,col:"#fff"});');
+  g.run('blocks.push({x:0,w:96,col:"#fff"}); afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
+  const done = g.run('state');
+  return midLevel === 'playing' && done === 'levelwin' ? true : 'mid=' + midLevel + ' end=' + done;
+});
+
+check('v151 a cleared card never runs its star objective under the CLEARED label', () => {
+  // txtFit bottoms out at scale 1, so a long objective ("6 IN A ROW") used to print straight under
+  // the CLEARED badge on a phone. Records every drawn string's box per FRAME and proves nothing
+  // shares a row with the CLEARED / NEXT / LOCKED marker.
+  const g = makeGame({ 'skystack-height': '900', 'skystack-levelstars': JSON.stringify([3,2,2,2,2,2,2,2,2,2,2]) });
+  return g.run('(() => { const W0=W,H0=H, boxes=[]; const t0 = txt, tf0 = txtFit;' +
+    ' const grab = (fn) => function(str, x, y) { const w = String(str).length*6-1, al = arguments[5];' +
+    '   const x0 = al === "right" ? x - w : al === "center" ? x - w/2 : x;' +
+    '   boxes.push({s:String(str), x0:x0, x1:x0 + w, y:y}); return fn.apply(null, arguments); };' +
+    ' let bad = null;' +
+    ' try {' +
+    '   for (const size of [[180,390],[242,300],[320,480]]) {' +
+    '     W = size[0]; H = size[1]; relayout(); skyMap = true; mapScroll = 0;' +
+    '     txt = grab(t0); txtFit = grab(tf0);' +
+    '     for (let sc = 0; sc <= mapScrollMax && !bad; sc += 40) {' +
+    '       mapScroll = sc; boxes.length = 0; renderSkyMap();' +
+    '       const marks = boxes.filter(b => b.s === "CLEARED" || b.s === "NEXT" || b.s === "LOCKED");' +
+    '       for (const m of marks) for (const b of boxes) {' +
+    '         if (b === m || Math.abs(b.y - m.y) > 1) continue;' +
+    '         if (b.x1 > m.x0 && b.x0 < m.x1) { bad = W + "x" + H + " sc" + sc + ": " + b.s + " overlaps " + m.s; break; }' +
+    '       }' +
+    '     }' +
+    '     txt = t0; txtFit = tf0; if (bad) break;' +
+    '   }' +
+    ' } finally { txt = t0; txtFit = tf0; skyMap = false; W = W0; H = H0; relayout(); }' +
+    ' return bad || true; })()') === true;
+});
+
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v150', () => /const CACHE = 'skystack-v150'/.test(sw));
+check('sw.js cache bumped to v151', () => /const CACHE = 'skystack-v151'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
