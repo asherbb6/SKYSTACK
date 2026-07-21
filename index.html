@@ -1810,6 +1810,36 @@ function driftForce() {
   const env = Math.sin(Math.min(wind.t/wind.dur, 1) * Math.PI);
   return wind.dir * wind.str * env * DRIFT_ACCEL * activeDifficulty().drift;
 }
+// ---------- v155: THE WIND YOU CAN SEE ----------
+// Wind is INTRODUCED in LOWER SKY (MATERIALS[3].gusty = 2.4) but until now it was invisible: the
+// gust switched on globally and you only learned about it once it had already shoved your block.
+// A gust now has a FRONT that sweeps across the world, so you watch it coming.
+//
+// THE HARD RULE: this is a VISUAL AND TELEGRAPH layer only. driftForce() is untouched, so the force
+// curve, the RNG stream and DAILY's bit-identical seeding are all exactly as they were — no
+// biome-mechanic magnitude moved (that verdict is still pending). What changed is that the same
+// force is now announced before it peaks.
+const GUST_FRONT_W = 0.28;   // how wide the leading edge is, as a fraction of the screen
+function windWaveAt(x) {
+  if (!wind || !wind.dur) return 0;
+  const t = clamp(wind.t / wind.dur, 0, 1);
+  const env = Math.sin(t * Math.PI);                       // the SAME envelope the force uses
+  // the front crosses during the gust's FIRST HALF, so it arrives before the force peaks
+  const p = clamp(wind.t / (wind.dur * 0.5), 0, 1);
+  const xn = clamp(x / Math.max(1, W), 0, 1);
+  const reach = wind.dir >= 0
+    ? (-0.15 + p * 1.30) - xn                              // blowing right: front enters from the left
+    : xn - (1.15 - p * 1.30);                              // blowing left: front enters from the right
+  return clamp(reach / GUST_FRONT_W, 0, 1) * env;
+}
+// Tree lean for a tree at normalised screen x. The ambient sway is PHASE-OFFSET BY X so even calm
+// air ripples across the forest instead of every trunk moving in unison, and the gust rides on top
+// of it as a travelling bend. (PART C item 6.)
+function treeBend(tx) {
+  if (reduceMotion) return 0;
+  const ambient = Math.sin(tick * 0.018 + tx * 3.4) * 2;
+  return ambient + (wind ? windWaveAt(tx * W) * wind.dir * 5 : 0);
+}
 function releaseBlock() {
   if (!slider) return;
   // launch with downward velocity so the tap reads as instant, not delayed
@@ -4619,7 +4649,7 @@ function rootedTree(t, seed) {
   const baseY = worldY(SURF_A), topY = worldY(t.topA);
   if (topY > H || baseY < 0) return;
   const sp = TREE_SPECIES[t.kind] || TREE_SPECIES.oak;                                         // v150: species drives silhouette + bark treatment
-  const sway = reduceMotion ? 0 : Math.sin(tick*.018 + seed)*2, xs = Math.round(W * t.x), x = Math.round(W * t.x + sway);
+  const sway = treeBend(t.x), xs = Math.round(W * t.x), x = Math.round(W * t.x + sway);   // v155: gusts travel across the forest
   const w = Math.max(5, Math.round(9 * t.s * sp.wMul)), trunkTop = Math.max(topY + 6, -20), y1 = Math.min(baseY, H + 2);
   ctx.globalAlpha = 1;
   // v149: the trunk is not a ruled rectangle — it TAPERS toward the crown and its edges wander a
@@ -5330,6 +5360,35 @@ function pastBuffer() {
   if (pastBuf.width !== bw || pastBuf.height !== bh) { pastBuf.width = bw; pastBuf.height = bh; }
   return pastBufCtx;
 }
+// v155: streaks of moving air riding the gust front. They only exist in OPEN AIR — a sheltered cave
+// has no crosswind to show, and drawing them there would contradict MATERIALS[0].wind = 0.3.
+// Nothing here reads or writes physics: it is the telegraph, not the force.
+const GUST_STREAKS = 30;   // tuned on a real LOWER SKY frame: 16 faint dashes were invisible as a tell
+function drawGustFront(cy) {
+  if (!wind || reduceMotion) return;
+  const env = Math.sin(clamp(wind.t / Math.max(1, wind.dur), 0, 1) * Math.PI);
+  if (env <= 0.03) return;
+  const altMid = (GROUND_Y - (cy + H / 2)) / BH;                       // altitude at the middle of the screen
+  const open = clamp((altMid - SURF_A) / 26, 0, 1);                    // sheltered below the surface, open above
+  if (open <= 0) return;
+  const p = clamp(wind.t / (wind.dur * 0.5), 0, 1);
+  const fx = (wind.dir >= 0 ? -0.15 + p * 1.30 : 1.15 - p * 1.30) * W;
+  ctx.fillStyle = '#FFFFFF';
+  for (let k = 0; k < GUST_STREAKS; k++) {
+    const hs = (k * 2654435761) >>> 0;                                 // stable per-streak hash: no RNG, DAILY unaffected
+    const y = ((hs >>> 7) % Math.max(1, H | 0));
+    const trail = ((hs >>> 3) % 34) + 6;                               // how far this streak lags the front
+    const x = Math.round(fx - wind.dir * trail);
+    if (x < -20 || x > W + 20) continue;
+    const len = 8 + ((hs >>> 11) % 13) + Math.round(env * 12);
+    const near = 1 - clamp(trail / 40, 0, 1);              // brightest right at the leading edge
+    ctx.globalAlpha = env * open * (0.16 + near * 0.30 + ((hs >>> 17) % 7) * 0.02);
+    const sx = wind.dir >= 0 ? x - len : x;
+    ctx.fillRect(sx, y, len, 1);
+    if (near > 0.55) ctx.fillRect(sx + (wind.dir >= 0 ? 2 : -2), y + 1, Math.round(len * 0.6), 1);   // a little body on the front itself
+  }
+  ctx.globalAlpha = 1;
+}
 function drawPastColumn(cy) {
   const top = blocks.length - 1;
   const liveStyle = skin().style;   // fallback finish for rows with no recorded skin
@@ -5390,6 +5449,7 @@ function renderWorld(cy, shX) {
   // the cave floor at A=0 is drawn by drawCaveGround (earthy dirt) — the old flat street strip is gone
 
   drawPastColumn(cy);   // v152: OUTSIDE the sway — the past does not lean with the live tower
+  drawGustFront(cy);    // v155: the gust you can see coming, behind the tower
   ctx.save(); ctx.translate(Math.round(swayX * RS) / RS, 0);
   const sstyle = skin().style;
   const h = blocks.length;

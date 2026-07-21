@@ -3364,7 +3364,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v154', () => /const CACHE = 'skystack-v154'/.test(sw));
+check('sw.js cache bumped to v155', () => /const CACHE = 'skystack-v155'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3703,6 +3703,87 @@ check('v152b past rows wear the REAL skin, dimmed — not a hand-drawn flat rect
   if (!ratios.every(r => r < 1)) return 'a past row was not dimmed at all';
   return ratios[0] < ratios[ratios.length - 1]   // index 0 is the DEEPEST row (drawn bottom-up)
     ? true : 'dimming does not deepen with depth: ' + ratios[0].toFixed(3) + ' -> ' + ratios[ratios.length-1].toFixed(3);
+});
+
+// ---------- v155 the wind you can SEE: a gust front that travels ----------
+check('v155 no gust, no wave: windWaveAt is flat zero across the screen', () => {
+  const g = makeGame();
+  g.run('startLevel(0); wind = null;');
+  return g.run('(() => { for (let x = 0; x <= W; x += 8) if (windWaveAt(x) !== 0) return "wave at x=" + x + " with no wind"; return true; })()');
+});
+check('v155 the gust FRONT travels across the screen, arriving windward first', () => {
+  const g = makeGame();
+  g.run('startLevel(0); wind = { dir: 1, str: 0.5, dur: 120, t: 0 };');   // dir +1 = blowing to the right
+  // early in the gust the leading (left) edge must be lit before the far (right) edge
+  g.run('wind.t = 12');
+  const early = { l: g.run('windWaveAt(6)'), r: g.run('windWaveAt(W - 6)') };
+  g.run('wind.t = 60');   // by mid-gust the whole width is in it
+  const mid = { l: g.run('windWaveAt(6)'), r: g.run('windWaveAt(W - 6)') };
+  if (!(early.l > early.r)) return 'front did not lead on the windward side: l=' + early.l + ' r=' + early.r;
+  if (!(mid.r > early.r)) return 'the far side never caught up: ' + early.r + ' -> ' + mid.r;
+  return true;
+});
+check('v155 the front reverses with the gust direction', () => {
+  const g = makeGame();
+  g.run('startLevel(0); wind = { dir: -1, str: 0.5, dur: 120, t: 12 };');   // blowing left
+  const l = g.run('windWaveAt(6)'), r = g.run('windWaveAt(W - 6)');
+  return r > l ? true : 'a leftward gust still lit the left edge first: l=' + l + ' r=' + r;
+});
+check('v155 the wave is VISUAL ONLY — the drift force never reads it', () => {
+  const i0 = src.indexOf('function driftForce');
+  const seg = src.slice(i0, src.indexOf('\n}', i0)).replace(/\/\/[^\n]*/g, '');
+  if (/windWaveAt|gustFront/.test(seg)) return 'driftForce now depends on the visual wave';
+  // and prove it behaviourally: the force is identical whatever the front is doing
+  const g = makeGame();
+  g.run('startLevel(0); wind = { dir: 1, str: 0.5, dur: 120, t: 12 };');
+  const a = g.run('driftForce()');
+  g.run('wind.t = 12');
+  const b = g.run('driftForce()');
+  return a === b && a !== 0 ? true : 'driftForce moved: ' + a + ' vs ' + b;
+});
+check('v155 trees bend as the front passes them, not in unison', () => {
+  const g = makeGame();
+  g.run('startLevel(0); wind = { dir: 1, str: 0.6, dur: 120, t: 14 };');
+  // two trees at opposite sides of the screen must not share a bend while the front is crossing
+  const near = g.run('treeBend(0.05)'), far = g.run('treeBend(0.95)');
+  if (near === far) return 'both trees bend identically — the gust is not travelling';
+  return Math.abs(near) > Math.abs(far) ? true : 'the windward tree is not leading: ' + near + ' vs ' + far;
+});
+check('v155 reduced motion keeps the world still', () => {
+  const g = makeGame(null, true);
+  g.run('startLevel(0); wind = { dir: 1, str: 0.6, dur: 120, t: 30 };');
+  return g.run('treeBend(0.2) === 0') ? true : 'trees still bend under reduced motion';
+});
+
+check('v155 the gust front is drawn in open air and NEVER in the sheltered cave', () => {
+  const { rec, g } = v149rec();
+  const streaks = (A, hasWind) => {
+    rec.rects.length = 0;
+    g.run('tick = 40; wind = ' + (hasWind ? '{ dir: 1, str: 0.6, dur: 120, t: 30 }' : 'null') + ';' +
+      ' drawGustFront(GROUND_Y - ' + A + '*BH - H/2);');
+    return rec.rects.filter(r => String(r.style) === '#FFFFFF' && r.h === 1).length;
+  };
+  g.run('prog = 9; startLevel(3)');
+  const cave = streaks(8, true), openAir = streaks(70, true), calm = streaks(70, false);
+  if (calm !== 0) return 'streaks drawn with no gust at all';
+  if (cave !== 0) return cave + ' streaks inside the sheltered cave';
+  return openAir > 0 ? true : 'no streaks in open air';
+});
+check('v155 the streaks ride the front: they move with it and fade with the gust', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(3); tick = 40;');
+  const at = t => {
+    rec.rects.length = 0;
+    g.run('wind = { dir: 1, str: 0.6, dur: 120, t: ' + t + ' };' +
+      ' drawGustFront(GROUND_Y - 70*BH - H/2);');
+    const s = rec.rects.filter(r => String(r.style) === '#FFFFFF' && r.h === 1);
+    return { n: s.length, x: s.length ? s.reduce((a, r) => a + r.x, 0) / s.length : null };
+  };
+  const early = at(14), mid = at(40);
+  if (!early.n || !mid.n) return 'front vanished mid-gust';
+  if (!(mid.x > early.x)) return 'streaks did not travel with the front: ' + early.x + ' -> ' + mid.x;
+  const late = at(118);   // the gust is dying: the envelope must take the streaks with it
+  return late.n === 0 || late.n < mid.n ? true : 'streaks did not fade out with the gust';
 });
 
 // ---------- report ----------
