@@ -3770,15 +3770,45 @@ function drawStratosphereBg(cy, a, ph) {   // thin swept cirrus, slow rising wea
     ctx.globalAlpha = 1;
   }
 }
+// v167: a flowing aurora curtain. The old ones were hard 4px bars with flat 60px tops — a comb, not
+// a curtain. Each curtain is a sheet of fine 2px rays around an UNDULATING spine, soft at both ends
+// (quadratic falloff, so no hard top/bottom edge), lightening toward the fringes, with fine per-
+// column FOLDS (the bright/dim vertical striations real aurora shows). Three curtains at different
+// heights/hues make the green-to-violet gradient. `still` freezes it for reduced motion.
+const AURORA_HUES = [148, 170, 282];   // green base, teal, violet crown
+// A curtain is a bright UNDULATING arc with fine vertical RAYS draping down from it — the way aurora
+// actually reads. Each column is a ray whose brightness and length vary (the folds), fading down its
+// length; a brighter cap sits on the spine. `still` freezes the ripple for reduced motion.
+function drawAuroraCurtain(spineY, drop, hue, alpha, ph, seed, still) {
+  for (let x = -2; x <= W; x += 2) {
+    const wave = still ? Math.sin(x*.03 + seed)*10
+                       : Math.sin(ph*.02 + x*.03 + seed)*16 + Math.sin(ph*.05 + x*.08 + seed*1.7)*6;
+    const sy = Math.round(spineY + wave);
+    const fold = still ? 0.4 + 0.6*(0.5 + 0.5*Math.sin(x*.22 + seed))               // bright/dim vertical folds
+                       : 0.35 + 0.65*(0.5 + 0.5*Math.sin(ph*.04 + x*.2 + seed*2.1));
+    const rayLen = Math.round(drop * (0.45 + 0.55*fold));                           // brighter columns hang longer
+    for (let dy = 0; dy < rayLen; dy++) {
+      const t = dy / drop;                                                          // 0 at the arc, 1 down the ray
+      const va = alpha * fold * (1 - t) * (1 - t*0.5);
+      if (va <= 0.012) continue;
+      ctx.globalAlpha = va;
+      ctx.fillStyle = 'hsl(' + hue + ',85%,' + Math.round(60 - t*10) + '%)';
+      ctx.fillRect(x, sy + dy, 2, 1);
+    }
+    ctx.globalAlpha = Math.min(1, alpha * fold * 1.5);                              // the bright arc on the spine
+    ctx.fillStyle = 'hsl(' + hue + ',92%,74%)';
+    ctx.fillRect(x, sy - 1, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+}
 function drawAuroraBg(cy, a, ph) {   // bold waving aurora curtains + big floating ice crystals
   const A = screenA(cy);
   const glow = clamp((TIERS[7].n - A) / 12, 0, 1);   // the last atmospheric glow dies away as space begins
-  if (!reduceMotion) {
-    const hues = [150, 168, 285, 200];
-    for (let k = 0; k < 4; k++) { ctx.fillStyle = 'hsl('+hues[k]+',85%,60%)';
-      for (let ax = 0; ax < W; ax += 4) { const ay = 34 + k*24 + Math.sin(ph*.02 + ax*.03 + k*1.7)*22 + Math.sin(ph*.05 + ax*.09)*6;
-        ctx.globalAlpha = (.05 + .03*Math.sin(ph*.03 + k + ax*.02))*a*(0.25 + 0.75*glow); ctx.fillRect(ax, Math.round(ay), 4, 60); } }
-  } else { ctx.globalAlpha = .06*a*(0.25 + 0.75*glow); ctx.fillStyle = 'hsl(160,80%,55%)'; ctx.fillRect(0, 60, W, 50); }
+  const cA = a * (0.25 + 0.75*glow);
+  const still = reduceMotion;
+  drawAuroraCurtain(64, 58, AURORA_HUES[0], 0.20*cA, ph, 0.4, still);   // green, lowest and boldest
+  drawAuroraCurtain(48, 50, AURORA_HUES[1], 0.16*cA, ph, 2.3, still);   // teal, mid
+  drawAuroraCurtain(34, 42, AURORA_HUES[2], 0.12*cA, ph, 4.1, still);   // violet crown, highest and faintest
   const s = cy*.5, P = 158, off = ((s % P) + P) % P;
   for (let y = -off; y < H; y += P) for (let k = 0; k < 2; k++) {
     const row = Math.round((y+s)/P), cx = Math.round(bhash(row*7 + k*17)*W), cyy = Math.round(y + k*72);

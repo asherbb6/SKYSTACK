@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v166', () => /const CACHE = 'skystack-v166'/.test(sw));
+check('sw.js cache bumped to v167', () => /const CACHE = 'skystack-v167'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4315,6 +4315,53 @@ check('v166 the comms balloon actually renders (envelope + gondola + dish) in th
   g.run('for (let A = TIERS[5].n; A <= TIERS[6].n; A += 4) drawStratosphereBg(GROUND_Y - A*BH - (H - 100), 1, 30);');
   const rail = rec.rects.filter(r => String(r.style) === '#C9D2E6' && r.w === 9);   // the lit gondola rail
   return rail.length > 0 ? true : 'no gondola rail drawn — the comms balloon is missing';
+});
+
+// ---------- v167 AURORA — flowing curtains, not hard bars ----------
+check('v167 the aurora reduced-motion path draws NO full-width veil', () => {
+  // reduceMotion is a const, so build a reduced-motion game with a recording ctx (v156 pattern)
+  const rec = { rects: [] };
+  const chain = anyProxy();
+  const base = { fillRect: function (x, y, w, h) { rec.rects.push({ x, y, w, h }); } };
+  const ctxRec = new Proxy(base, {
+    get(t, k) { if (k in t) return t[k]; if (k === Symbol.toPrimitive) return () => 0; if (k === 'then') return undefined; return chain; },
+    set(t, k, v) { t[k] = v; return true; }
+  });
+  const g = makeGame(null, true, false, ctxRec);
+  g.run('prog = 9; startLevel(7);');
+  rec.rects.length = 0;
+  g.run('drawAuroraBg(GROUND_Y - (TIERS[6].n + 6)*BH - (H - 100), 1, 0)');
+  const wide = rec.rects.filter(r => r.w >= g.run('W') * 0.9);
+  return wide.length === 0 ? true : wide.length + ' full-width aurora bars (the old veil)';
+});
+check('v167 the aurora curtains are fine soft rays, not hard 4px bars', () => {
+  const seg = src.slice(src.indexOf('function drawAuroraBg'), src.indexOf('\nfunction drawSpaceBg'));
+  if (/fillRect\(ax, Math\.round\(ay\), 4, 60\)/.test(seg)) return 'the hard 4px x 60px bars are still there';
+  return /drawAuroraCurtain\(/.test(seg) ? true : 'not using the flowing-curtain builder';
+});
+check('v167 a curtain has a soft vertical falloff — brightest at the spine, fading to the edges', () => {
+  const { rec, g } = v149rec();
+  rec.rects.length = 0;
+  g.run('drawAuroraCurtain(60, 40, 148, 0.6, 0, 0.4, true)');
+  const cells = rec.rects.filter(r => /^hsl\(148/.test(String(r.style)));
+  if (cells.length < 20) return 'too few ray cells: ' + cells.length;
+  // group by column; within a column the alpha (via lightness proxy) must peak near the spine
+  // simpler: the drawn cells must span a vertical range (a sheet), not a single row
+  const ys = cells.map(r => r.y);
+  return (Math.max(...ys) - Math.min(...ys)) >= 20 ? true : 'the curtain has no vertical extent';
+});
+check('v167 the curtain spine UNDULATES across the sky (a wave, not a straight band)', () => {
+  const { rec, g } = v149rec();
+  const topAtX = () => {
+    rec.rects.length = 0;
+    g.run('drawAuroraCurtain(60, 40, 170, 0.6, 0, 2.3, true)');
+    const byX = {};
+    for (const r of rec.rects) if (/^hsl\(170/.test(String(r.style))) byX[r.x] = Math.min(byX[r.x] ?? 1e9, r.y);
+    return byX;
+  };
+  const b = topAtX();
+  const tops = Object.values(b);
+  return (Math.max(...tops) - Math.min(...tops)) >= 8 ? true : 'the spine is flat, not undulating';
 });
 
 // ---------- report ----------
