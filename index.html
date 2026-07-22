@@ -3615,22 +3615,37 @@ function drawFinalGate(cy, a, ph) {
   for (let k = 0; k < 5; k++) { const sx = Math.round(lerp(lx+12,rx-12,k/4)); ctx.globalAlpha = a*(reduceMotion?.65:.42+.35*(.5+.5*Math.sin(ph*.08+k))); ctx.fillStyle='#FFF6C8'; ctx.fillRect(sx-1,top-2,3,3); }
   ctx.globalAlpha = 1;
 }
-function drawCloudNineBg(cy, a, ph) {   // fluffy animated cloud banks at two depths + soft sun shafts
+// v162: CLOUD NINE is a SOFT CLOUD SEA, and it was built from stacked pixDiscs — the exact bokeh
+// failure #81 fixed in foliage and v157 fixed in the LOWER SKY air. The banks are now the shared
+// continuous cumulus silhouette (drawCloudBank), in three parallax decks so distance reads as a
+// stratum: far/small/pale high, near/big/bold low. Coverage gathers and thins with cloudDensityAt,
+// so the deck forms as you enter and stretches out as JET STREAM nears. Sun shafts are unchanged.
+const CN_DECKS = [
+  { f:.22, P:150, n:2, halfW:30, h:13, al:.15, drift:.14 },   // far
+  { f:.40, P:176, n:2, halfW:46, h:21, al:.22, drift:.26 },   // mid
+  { f:.62, P:212, n:2, halfW:64, h:31, al:.30, drift:.42 }    // near — the sea you rise through
+];
+function drawCloudNineBg(cy, a, ph) {
   const A = screenA(cy), dens = cloudDensityAt(A);
   const c0 = TIERS[3].n, c1 = TIERS[4].n;
   const cold = clamp((A - (c1 - 10)) / 14, 0, 1);                                      // clouds run colder near the tier top
-  const layers = [ { f:.24, al:.30, sc:1.5, drift:.20, P:230, n:5, tone:[220,236,250] }, { f:.5, al:.42, sc:1.0, drift:.38, P:200, n:4, tone:[244,250,255] } ];
-  for (const L of layers) {
-    const tone = Math.round(lerp(L.tone[0], 205, cold)) + ',' + Math.round(lerp(L.tone[1], 224, cold)) + ',' + Math.round(lerp(L.tone[2], 246, cold));
+  const lerpHex = (a1, a2, t) => 'rgb(' + Math.round(lerp(a1[0], a2[0], t)) + ',' + Math.round(lerp(a1[1], a2[1], t)) + ',' + Math.round(lerp(a1[2], a2[2], t)) + ')';
+  const pal = cold <= 0.001 ? CLOUD_PAL : {                                            // warm sea below, cool near JET STREAM
+    body:  lerpHex([255,255,255], [222,236,250], cold),
+    crown: lerpHex([255,253,244], [234,244,255], cold),
+    belly: lerpHex([169,198,222], [140,176,212], cold)
+  };
+  for (const L of CN_DECKS) {
     const s = cy*L.f, off = ((s % L.P) + L.P) % L.P;
     for (let y = -off - L.P; y < H + L.P; y += L.P) for (let k = 0; k < L.n; k++) {
-      const row = Math.round((y+s)/L.P), base = bhash(row*11 + k*7);
-      if (bhash(row*31 + k*3) > dens + 0.25) continue;                                 // sparser cover while the deck gathers/thins
-      const dx = reduceMotion ? base*(W+120) : ((ph*L.drift + base*1300) % (W+140));
-      const cx = Math.round(-70 + dx), cyy = Math.round(y + base*44), r = Math.round(9*L.sc*(0.72 + 0.28*dens));
-      ctx.globalAlpha = L.al*a*(0.4 + 0.6*dens); const col = 'rgba('+tone+',0.95)';
-      pixDisc(cx, cyy, r, col); pixDisc(cx-r, cyy+3, (r*.7)|0, col); pixDisc(cx+r, cyy+3, (r*.7)|0, col);
-      ctx.globalAlpha = L.al*.6*a*(0.4 + 0.6*dens); pixDisc(cx-2, cyy-3, (r*.6)|0, 'rgba(255,255,255,0.95)');
+      const row = Math.round((y+s)/L.P), seed = row*3.3 + k*1.7;
+      if (bhash(row*31 + k*13) > dens + 0.22) continue;                                // sparser while the deck gathers/thins
+      const base = bhash(row*11 + k*7);
+      const dx = reduceMotion ? base*(W+220) : ((ph*L.drift + base*1300) % (W+220));
+      const cx = Math.round(-110 + dx), baseY = Math.round(y + base*40);
+      const alpha = L.al*a*(0.4 + 0.6*dens);
+      if (alpha <= 0.012) continue;
+      drawCloudBank(cx, baseY, Math.round(L.halfW*(0.8 + 0.35*dens)), Math.round(L.h*(0.7 + 0.5*dens)), alpha, seed, pal);
     }
   }
   const shaft = clamp((A - (c0 + 4)) / 6, 0, 1) * clamp(((c1 - 4) - A) / 8, 0, 1);     // sun shafts belong to the open-sky middle
@@ -3639,6 +3654,7 @@ function drawCloudNineBg(cy, a, ph) {   // fluffy animated cloud banks at two de
     for (let k = 0; k < 3; k++) { const rx = 50 + k*90 + (reduceMotion?0:Math.sin(ph*.01+k)*8);
       for (let yy = 0; yy < H; yy += 6) { const wdt = 8 + yy*.05; ctx.globalAlpha = .045*a*shaft; ctx.fillRect(Math.round(rx - wdt/2 + yy*.14), yy, Math.round(wdt), 6); } }
   }
+  ctx.globalAlpha = 1;
 }
 function drawJetStreamBg(cy, a, ph) {   // high thin racing streaks + a jet crossing with a contrail
   const A = screenA(cy), dens = cloudDensityAt(A);
@@ -5168,17 +5184,21 @@ function cloudTopAt(dx, halfW, seed) {
   const bite = bhash(Math.round(dx * 0.5) * 131 + Math.round(seed * 17)) * 0.16;
   return Math.max(0, body * (0.55 * l1 + 0.45 * l2) - bite);
 }
-function drawCloudBank(cx, baseY, halfW, height, alpha, seed) {
+// pal is optional {body, crown, belly}; the default is the warm daylight cloud used by the LOWER SKY
+// air (v157). CLOUD NINE passes a cooler palette near the top of the biome (v162).
+const CLOUD_PAL = { body:'#FFFFFF', crown:'#FFFDF4', belly:'#A9C6DE' };
+function drawCloudBank(cx, baseY, halfW, height, alpha, seed, pal) {
   if (baseY < -40 || baseY - height > H + 40) return;
+  const P = pal || CLOUD_PAL;
   for (let dx = -halfW; dx <= halfW; dx++) {
     const x = Math.round(cx + dx);
     if (x < -1 || x > W + 1) continue;
     const h = Math.round(height * cloudTopAt(dx, halfW, seed));
     if (h <= 0) continue;
     const top = baseY - h;
-    ctx.globalAlpha = alpha;            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(x, top, 1, h);
-    ctx.globalAlpha = Math.min(1, alpha * 1.7); ctx.fillStyle = '#FFFDF4'; ctx.fillRect(x, top, 1, 1);          // sunlit crown
-    ctx.globalAlpha = alpha * 0.62;     ctx.fillStyle = '#A9C6DE'; ctx.fillRect(x, baseY - 1, 1, 1);            // cool belly
+    ctx.globalAlpha = alpha;            ctx.fillStyle = P.body;  ctx.fillRect(x, top, 1, h);
+    ctx.globalAlpha = Math.min(1, alpha * 1.7); ctx.fillStyle = P.crown; ctx.fillRect(x, top, 1, 1);           // sunlit crown
+    ctx.globalAlpha = alpha * 0.62;     ctx.fillStyle = P.belly; ctx.fillRect(x, baseY - 1, 1, 1);             // cool belly
   }
   ctx.globalAlpha = 1;
 }

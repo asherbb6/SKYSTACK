@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v161', () => /const CACHE = 'skystack-v161'/.test(sw));
+check('sw.js cache bumped to v162', () => /const CACHE = 'skystack-v162'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4185,6 +4185,44 @@ check('v161 no level star objective needs wind in a now-windless biome', () => {
     '   for (let t = band.t0; t <= band.t1; t++) if (MATERIALS[t].wind > 0) anyWind = true;' +
     '   if (!anyWind) return "level " + i + " needs wind but its biome has none"; } }' +
     ' return true; })()');
+});
+
+// ---------- v162 CLOUD NINE — the soft cloud sea, no more bokeh ----------
+check('v162 CLOUD NINE builds NO stacked pixDiscs (the same bokeh #81/v157 killed)', () => {
+  const i0 = src.indexOf('function drawCloudNineBg');
+  const seg = src.slice(i0, src.indexOf('\nfunction ', i0 + 20)).replace(/\/\/[^\n]*/g, '');
+  return !/pixDisc/.test(seg) ? true : 'CLOUD NINE is drawing pixDiscs again';
+});
+check('v162 the CLOUD NINE sea draws continuous cumulus banks that gather with density', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(4);');   // CLOUD NINE
+  const cols = A => {
+    rec.rects.length = 0;
+    g.run('tick = 30; drawCloudNineBg(GROUND_Y - ' + A + '*BH - (H - 100), 1, 30)');
+    // cumulus body columns are white, 1px wide, several px tall
+    return rec.rects.filter(r => String(r.style) === '#FFFFFF' && r.w === 1 && r.h >= 2).length;
+  };
+  const mid = g.run('Math.round((TIERS[3].n + TIERS[4].n) / 2)');       // thick open-sky middle
+  const deep = cols(g.run('TIERS[2].n - 20'));                          // well below the deck
+  const thick = cols(mid);
+  if (thick < 30) return 'the cloud sea is thin in the CLOUD NINE middle (' + thick + ' columns)';
+  return deep < thick ? true : 'clouds do not gather toward the deck: deep=' + deep + ' thick=' + thick;
+});
+check('v162 every CLOUD NINE cloud column is lit on top and shaded underneath', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(4); tick = 30;');
+  rec.rects.length = 0;
+  g.run('drawCloudNineBg(GROUND_Y - Math.round((TIERS[3].n+TIERS[4].n)/2)*BH - (H - 100), 1, 30)');
+  // count EVERY body column (any height) — a 1px column still gets its crown + belly
+  const crown = rec.rects.filter(r => String(r.style) === '#FFFDF4').length;
+  const belly = rec.rects.filter(r => String(r.style) === '#A9C6DE').length;
+  const body  = rec.rects.filter(r => String(r.style) === '#FFFFFF' && r.w === 1).length;
+  if (!body) return 'no cloud body drawn';
+  return crown === body && belly === body ? true : 'crown=' + crown + ' belly=' + belly + ' body=' + body;
+});
+check('v162 the CLOUD NINE sea uses the SHARED cumulus builder, not its own', () => {
+  const seg = src.slice(src.indexOf('function drawCloudNineBg'), src.indexOf('\nfunction drawJetStreamBg'));
+  return /drawCloudBank\(/.test(seg) ? true : 'CLOUD NINE is not calling the shared drawCloudBank';
 });
 
 // ---------- report ----------
