@@ -3748,14 +3748,26 @@ function drawStratosphereBg(cy, a, ph) {   // thin swept cirrus, slow rising wea
     ctx.fillStyle = 'rgba(255,246,232,0.5)'; ctx.fillRect(bx-1, by+8, 2, 1);                   // basket rim
     ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.fillRect(bx-2, by+6, 4, 1);
   }
-  const ds = cy*.6, DP = 300, doff = ((ds % DP) + DP) % DP;                            // relay dish + expanding signal ring
+  // v166: the relay dish used to float on a bare mast whose foot-shadow fell on NOTHING — there is no
+  // ground at 150M (Asher: "the relay dish is floating on nothing. its just there"). It now hangs
+  // from a HIGH-ALTITUDE COMMS BALLOON — envelope, ropes, a gondola, the dish mounted on it — a
+  // believable thing to drift past at the edge of space, still pinging its signal ring.
+  const ds = cy*.6, DP = 300, doff = ((ds % DP) + DP) % DP;
   for (let y = -doff; y < H; y += DP) {
-    const dx = 20, dy = Math.round(y);
-    ctx.globalAlpha = .55*a; ctx.fillStyle = '#9AA6C2'; ctx.fillRect(dx, dy, 1, 12); pixDisc(dx+4, dy-2, 4, '#C9D2E6'); pixDisc(dx+5, dy-2, 3, '#8A93AD');
-    ctx.fillStyle = '#E8EEF8'; ctx.fillRect(dx+2, dy-5, 2, 1);                                 // v103: lit dish rim + feed spar
-    ctx.fillStyle = '#6A7390'; ctx.fillRect(dx+6, dy-2, 3, 1); ctx.fillRect(dx+8, dy-3, 1, 1);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(dx-1, dy+11, 3, 1);                       // mast foot shadow
-    if (!reduceMotion) { const pr = 4 + (ph*.4) % 26; ctx.globalAlpha = (.35*(1 - (pr-4)/26))*a; ctx.fillStyle = '#BFE8FF'; ringFrame(dx+4, dy-2, Math.round(pr)); }
+    const cx = 24 + (reduceMotion ? 0 : Math.round(Math.sin(ph*.014 + y*.05)*3)), ey = Math.round(y);
+    ctx.globalAlpha = .55*a;
+    pixDisc(cx, ey, 7, '#B4BFD6'); pixDisc(cx-2, ey-3, 5, '#DBE3F0');                          // envelope + lit crown
+    ctx.fillStyle = 'rgba(110,122,150,0.6)'; ctx.fillRect(cx+3, ey, 2, 4);                     // shaded flank
+    ctx.fillStyle = 'rgba(40,48,66,0.55)'; ctx.fillRect(cx-3, ey+7, 1, 5); ctx.fillRect(cx+3, ey+7, 1, 5);   // ropes
+    const gy = ey + 12;                                                                        // gondola hanging below
+    ctx.fillStyle = '#8A93AD'; ctx.fillRect(cx-4, gy, 9, 4);
+    ctx.fillStyle = '#C9D2E6'; ctx.fillRect(cx-4, gy, 9, 1);                                    // lit rail
+    ctx.fillStyle = '#565D74'; ctx.fillRect(cx-4, gy+3, 9, 1);                                  // shaded base
+    const dx = cx + 3, dy = gy - 2;                                                             // the dish, mounted on the gondola
+    pixDisc(dx+1, dy, 3, '#C9D2E6'); pixDisc(dx+2, dy, 2, '#8A93AD');
+    ctx.fillStyle = '#E8EEF8'; ctx.fillRect(dx-1, dy-2, 1, 1);                                  // lit feed spar
+    if (!reduceMotion) { const pr = 4 + (ph*.4) % 26; ctx.globalAlpha = (.35*(1 - (pr-4)/26))*a; ctx.fillStyle = '#BFE8FF'; ringFrame(dx+1, dy, Math.round(pr)); }
+    ctx.globalAlpha = 1;
   }
 }
 function drawAuroraBg(cy, a, ph) {   // bold waving aurora curtains + big floating ice crystals

@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v165', () => /const CACHE = 'skystack-v165'/.test(sw));
+check('sw.js cache bumped to v166', () => /const CACHE = 'skystack-v166'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4297,6 +4297,25 @@ check('v165 the cirrus wisps are feathery: swept, tapered, and bounded', () => {
 });
 check('v165 the stratosphere aircraft still keeps to the lower half of the tier', () =>
   /A < \(TIERS\[5\]\.n \+ TIERS\[6\]\.n\) \/ 2/.test(src));
+
+// ---------- v166 the relay dish has a home now ----------
+check('v166 the stratosphere relay is balloon-borne, not a mast floating on nothing', () => {
+  const seg = src.slice(src.indexOf('function drawStratosphereBg'), src.indexOf('\nfunction drawAuroraBg'));
+  if (/fillRect\(dx, dy, 1, 12\)/.test(seg)) return 'the bare floating mast is still there';
+  if (/mast foot shadow/.test(seg)) return 'still drops a foot-shadow onto nothing';
+  if (!/COMMS BALLOON/.test(seg)) return 'no comms-balloon home for the dish';
+  // it must still ping its signal ring (the good detail is kept)
+  return /ringFrame\(/.test(seg) ? true : 'the signal-ring ping was lost';
+});
+check('v166 the comms balloon actually renders (envelope + gondola + dish) in the stratosphere', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(7); tick = 30;');
+  rec.rects.length = 0;
+  // draw across the stratosphere band so a DP=300 comms balloon is guaranteed on screen
+  g.run('for (let A = TIERS[5].n; A <= TIERS[6].n; A += 4) drawStratosphereBg(GROUND_Y - A*BH - (H - 100), 1, 30);');
+  const rail = rec.rects.filter(r => String(r.style) === '#C9D2E6' && r.w === 9);   // the lit gondola rail
+  return rail.length > 0 ? true : 'no gondola rail drawn — the comms balloon is missing';
+});
 
 // ---------- report ----------
 let pass = 0, fail = 0;
