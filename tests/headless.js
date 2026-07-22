@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v167', () => /const CACHE = 'skystack-v167'/.test(sw));
+check('sw.js cache bumped to v168', () => /const CACHE = 'skystack-v168'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4362,6 +4362,30 @@ check('v167 the curtain spine UNDULATES across the sky (a wave, not a straight b
   const b = topAtX();
   const tops = Object.values(b);
   return (Math.max(...tops) - Math.min(...tops)) >= 8 ? true : 'the spine is flat, not undulating';
+});
+
+// ---------- v168 AURORA — climb through it; never pin it to the screen ----------
+check('v168 aurora curtain bands move down the screen as the camera climbs', () => {
+  const { g } = v149rec();
+  const y0 = g.run('auroraBandScreenY(3, -1000)');
+  const y1 = g.run('auroraBandScreenY(3, -1080)');
+  const moved = y1 - y0;
+  return moved > 30 ? true : 'aurora barely moved with an 80px camera climb: ' + moved;
+});
+check('v168 drawAuroraBg tiles world-derived curtain bands instead of fixed screen spines', () => {
+  const seg = src.slice(src.indexOf('function drawAuroraBg'), src.indexOf('\nfunction drawSpaceBg'));
+  if (/drawAuroraCurtain\((64|48|34),/.test(seg)) return 'fixed screen-y curtain spine remains';
+  if (!/auroraBandScreenY\(/.test(seg)) return 'aurora does not derive curtain y from the camera';
+  return /for \(let row =/.test(seg) ? true : 'aurora has no vertical world-band tiling';
+});
+check('v168 the duplicate legacy screen-anchored aurora overlay is gone', () => {
+  const seg = src.slice(src.indexOf('function render()'), src.indexOf('// a campaign level'));
+  return !/h >= 160 && h < 208/.test(seg) ? true : 'legacy fixed-screen aurora still draws in render()';
+});
+check('v168 aurora rays use coarse alpha segments, not one draw call per vertical pixel', () => {
+  const seg = src.slice(src.indexOf('function drawAuroraCurtain'), src.indexOf('\nfunction drawAuroraBg'));
+  return /dy \+= AURORA_RAY_SEG/.test(seg) && /Math\.min\(AURORA_RAY_SEG/.test(seg)
+    ? true : 'aurora ray is still rendered one pixel/call down its full length';
 });
 
 // ---------- report ----------
