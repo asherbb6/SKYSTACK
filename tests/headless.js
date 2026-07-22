@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v172', () => /const CACHE = 'skystack-v172'/.test(sw));
+check('sw.js cache bumped to v173', () => /const CACHE = 'skystack-v173'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4512,6 +4512,20 @@ check('v172 an ordinary auto-timed SPACE level receives live contact in all thre
     'update(1);if(spaceHazard&&(spaceHazard.sliderHit||spaceHazard.hit)&&!seen[spaceHazard.serial]){seen[spaceHazard.serial]=1;contacts[spaceHazard.phaseIndex]++;}}' +
     'return state==="levelwin"&&contacts.every(n=>n>0); })()');
 });
+
+// ---------- v173 SPACE — dropping commits the warned route instead of enabling aimbot tracking ----------
+check('v173 dropping locks the warning route instead of following the faller downward', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:7,startingAltitude:205,seed:37,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:205},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=8;assist=0;spacePhaseSeen=0;spaceHazardTimer=99;' +
+  'slider={x:80,w:24,y:74,dir:1,speed:2.2,golden:false,spaceV:0};spaceHazard=spaceHazardPlan(SPACE_PHASES[0],1,37,slider.y+BH/2);spaceHazard.t=spaceHazard.warn/2;' +
+  'trackSpaceHazardTarget(spaceHazard);const committed=spaceHazard.wy;releaseBlock();faller.y+=48;trackSpaceHazardTarget(spaceHazard);' +
+  'return spaceHazard.routeLocked===true && Math.abs(spaceHazard.wy-committed)<.01; })()'));
+check('v173 a committed warning route never reacquires a later slider', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:7,startingAltitude:205,seed:41,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:205},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=8;assist=0;spacePhaseSeen=0;spaceHazardTimer=99;' +
+  'slider={x:80,w:24,y:74,dir:1,speed:2.2,golden:false,spaceV:0};spaceHazard=spaceHazardPlan(SPACE_PHASES[0],1,41,slider.y+BH/2);spaceHazard.t=spaceHazard.warn/2;' +
+  'trackSpaceHazardTarget(spaceHazard);releaseBlock();const committed=spaceHazard.wy;faller=null;slider={x:80,w:24,y:18,dir:-1,speed:2.2,golden:false,spaceV:0};trackSpaceHazardTarget(spaceHazard);' +
+  'return spaceHazard.routeLocked===true && Math.abs(spaceHazard.wy-committed)<.01; })()'));
 
 // ---------- report ----------
 let pass = 0, fail = 0;

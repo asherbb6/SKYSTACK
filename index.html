@@ -1111,9 +1111,10 @@ const MATERIALS = [
 // falling block, so the phases read as labels/art. v171 gives stars a broad trailing shove and
 // asteroids a broad attractive well, both affecting the slider as well as a faller. That was still
 // too subtle: its path went stale while the player climbed and its fractional nudge hid inside the
-// slider's normal speed. v172 keeps an unhit crossing aimed at the CURRENT live block and turns
+// slider's normal speed. v172 keeps an unhit crossing aimed at the CURRENT live slider and turns
 // contact into an unmistakable rule: a star sweeps the slider with it; asteroid gravity slows normal
-// travel and pulls against it. Pressure still rises through shorter gaps; bands stop at ORBIT.
+// travel and pulls against it. v173 commits that route when the player drops, so the warning never
+// chases the faller or reacquires a later slider. Pressure still rises through shorter gaps; bands stop at ORBIT.
 const SPACE_PHASES = deepFreeze([
   { index:0, id:'shooting-stars', name:'SHOOTING STARS', rule:'STAR PASS SWEEPS BLOCK', start:205, end:220, kind:'star',     first:110, gap:220, warn:72, dur:72, force:0.038, radius:22, color:'#BFE8FF' },
   { index:1, id:'asteroid-field', name:'ASTEROID FIELD', rule:'GRAVITY SLOWS + PULLS',  start:221, end:240, kind:'asteroid', first:90, gap:170, warn:64, dur:86, force:0.052, radius:25, color:'#FFD75E' },
@@ -1135,7 +1136,7 @@ function spaceHazardPlan(phase, serial, seed, wy) {
     tilt:(asteroid?8:20)*(u2<.5?-1:1), force:phase.force*(asteroid?1.08:1),
     radius:phase.radius+(asteroid?2:0), trail:asteroid?0:96+phase.index*12,
     fieldX:asteroid?82+phase.index*6:0, fieldY:asteroid?48+phase.index*4:34+phase.index*3,
-    hit:false, sliderHit:false };
+    hit:false, sliderHit:false, routeLocked:false };
 }
 function spaceHazardProgress(h) { return h ? clamp((h.t-h.warn)/Math.max(1,h.dur),0,1) : 0; }
 function spaceHazardX(h) {
@@ -1169,14 +1170,12 @@ const SPACE_WAKE_MAX_VX = 1.65;
 const SPACE_SLIDER_MAX_VX = 2.35, SPACE_STAR_SWEEP_V = 1.45, SPACE_ASTEROID_GRAB_V = 0.95;
 const SPACE_STAR_SLIDER_ACCEL = 12, SPACE_ASTEROID_SLIDER_ACCEL = 28, SPACE_FALLER_ACCEL = 2.4;
 const SPACE_STAR_FALLER_KICK = 1.05, SPACE_ASTEROID_FALLER_KICK = 0.72, SPACE_SLIDER_DECAY = 0.82;
-// A transient hazard is allowed to follow the current interaction row; unlike aurora/scenery it is
-// a gameplay encounter. Until first contact, keep its visible body centered on the live slider or
-// faller so normal climbing cannot leave the telegraphed route several rows below the player.
+// A transient hazard may aim at the current slider while the player is deciding; unlike
+// aurora/scenery it is a gameplay encounter. Releasing the block permanently commits that route,
+// so an early drop is real counterplay rather than a warning that chases the faller like aimbot.
 function trackSpaceHazardTarget(h) {
-  if (!h||h.sliderHit||h.hit) return;
-  const target=slider||faller;
-  if (!target) return;
-  const targetY=target.y+BH/2;
+  if (!h||h.routeLocked||h.sliderHit||h.hit||!slider) return;
+  const targetY=slider.y+BH/2;
   h.wy=h.t<h.warn ? targetY : targetY-(spaceHazardProgress(h)-.5)*h.tilt;
 }
 function spaceSliderInfluence(h, block, difficulty, shielded, dt) {
@@ -2022,6 +2021,7 @@ function treeBend(tx) {
 }
 function releaseBlock() {
   if (!slider) return;
+  if (spaceHazard) spaceHazard.routeLocked = true;
   // launch with downward velocity so the tap reads as instant, not delayed
   faller = { x: slider.x, x0: slider.x, w: slider.w, y: slider.y, vx: 0, vy: dropPhysicsFor(tier).initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
   slider = null; state = 'dropping';
