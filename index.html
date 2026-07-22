@@ -1105,6 +1105,49 @@ const MATERIALS = [
   { name:'COSMIC', spd:0.86, wob:0, wind:0,   grav:0.45, slide:0, soft:0, lane:1,    spring:0, gusty:1 },   // 9 ORBIT        — low gravity
   { name:'STAR',   spd:0.92, wob:0, wind:0,   grav:1,    slide:0, soft:0, lane:1,    spring:0, gusty:1 }    // 10 THE STARS
 ];
+// v170: SPACE is a 55-block journey of its own, not one flat low-gravity room. These phases use
+// crossing objects rather than invisible random drift: the route appears first, then the body, then
+// (only close to that visible body) its wake can tug a falling block. Pressure rises through shorter
+// calm gaps, shorter warnings and stronger wakes. The altitude bands are exact and stop at ORBIT.
+const SPACE_PHASES = deepFreeze([
+  { index:0, id:'shooting-stars', name:'SHOOTING STARS', start:205, end:220, kind:'star',     first:110, gap:220, warn:72, dur:72, force:0.028, radius:22, color:'#BFE8FF' },
+  { index:1, id:'asteroid-field', name:'ASTEROID FIELD', start:221, end:240, kind:'asteroid', first:90, gap:170, warn:64, dur:86, force:0.042, radius:25, color:'#FFD75E' },
+  { index:2, id:'starstorm',      name:'STARSTORM',      start:241, end:259, kind:'mixed',    first:70, gap:118, warn:48, dur:64, force:0.058, radius:27, color:'#C8A0FF' }
+]);
+function spacePhaseAt(h) { return SPACE_PHASES.find(p => h >= p.start && h <= p.end) || null; }
+// A private integer mix for SPACE events. It never touches rnd(), so adding or tuning a hazard
+// cannot silently change pickups, wind, balloons, or any other seeded outcome later in the run.
+function spaceHazardUnit(seed, n) {
+  let x = ((seed >>> 0) ^ Math.imul((n + 1) >>> 0, 0x9E3779B9)) >>> 0;
+  x ^= x >>> 16; x = Math.imul(x, 0x7FEB352D); x ^= x >>> 15; x = Math.imul(x, 0x846CA68B); x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+function spaceHazardPlan(phase, serial, seed, wy) {
+  const u0=spaceHazardUnit(seed,serial*4), u1=spaceHazardUnit(seed,serial*4+1), u2=spaceHazardUnit(seed,serial*4+2);
+  const kind=phase.kind==='mixed'?(u0<.5?'star':'asteroid'):phase.kind, asteroid=kind==='asteroid';
+  return { phase:phase.id, phaseIndex:phase.index, serial, kind, dir:u1<.5?-1:1, t:0,
+    warn:phase.warn, dur:Math.round(phase.dur*(asteroid?1.12:1)), wy,
+    tilt:(asteroid?8:20)*(u2<.5?-1:1), force:phase.force*(asteroid?1.08:1),
+    radius:phase.radius+(asteroid?2:0), hit:false };
+}
+function spaceHazardProgress(h) { return h ? clamp((h.t-h.warn)/Math.max(1,h.dur),0,1) : 0; }
+function spaceHazardX(h) {
+  const p=spaceHazardProgress(h), margin=h&&h.kind==='asteroid'?18:28;
+  return h&&h.dir>0 ? -margin+p*(W+margin*2) : W+margin-p*(W+margin*2);
+}
+function spaceHazardRouteY(h,p) { return h.wy+(clamp(p,0,1)-.5)*h.tilt; }
+function spaceHazardY(h) { return spaceHazardRouteY(h,spaceHazardProgress(h)); }
+// Pure proximity sample: zero during the entire warning and outside the visible object's local wake.
+// The return value is acceleration, not position, and difficulty scales it through the same drift
+// vocabulary as wind. A shield softens it later in the live update without being consumed.
+function spaceWakeAt(h, f, difficulty) {
+  if (!h||!f||h.t<h.warn||h.t>h.warn+h.dur) return 0;
+  const hx=spaceHazardX(h), hy=spaceHazardY(h), fx=f.x+f.w/2, fy=f.y+BH/2;
+  const dx=(fx-hx)/(h.radius*1.65), dy=(fy-hy)/h.radius, dist=Math.sqrt(dx*dx+dy*dy);
+  if (dist>=1) return 0;
+  return h.dir*h.force*(1-dist)*((difficulty&&difficulty.drift)||1);
+}
+const SPACE_WAKE_MAX_VX = 0.78;
 const BALANCE_REGISTRY = deepFreeze({
   physics:{ blockHeight:14, baseWidth:96, metersPerBlock:3, topple:28, perfectPx:2.6 },   // v122: 34→28, topples land more often
   slider:{ base:1.1, perBlock:0.020, max:2.8, campaignStep:0.03, campaignMax:3.1, assistSlow:0.30 },
@@ -1337,6 +1380,7 @@ let notes = [], curNote = null;   // one-at-a-time top-middle notification queue
 let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
 let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false, rushT = 0, gasCloud = null;
 let wind = null, windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
+let spaceHazard = null, spaceHazardTimer = 0, spaceHazardSerial = 0, spacePhaseSeen = -1;
 let nextPickupRow = 8;
 let previewIdx = 0, basePreviewIdx = Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)), shopView = 'character';
 let missionsOpen = false, shopDetailOpen = false, meDetailOpen = false, meView = 'progress';
@@ -1786,6 +1830,7 @@ function resetRun() {
   runCoins = 0; runPerfects = 0; runPowerups = 0; runFevers = 0; runBalloons = 0; runSkybreaks = 0; notes = []; curNote = null;
   shield = 0; widenNext = false; slowBlocks = 0; auraBlocks = 0; goldenNext = false; rushT = 0; gasCloud = null;
   wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
+  spaceHazard = null; spaceHazardTimer = 0; spaceHazardSerial = 0; spacePhaseSeen = -1;
   nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; collectionThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
   reviveUsed = false; reviveOffered = false; runSettled = false;
@@ -1857,6 +1902,33 @@ function driftForce() {
   if (!wind) return 0;
   const env = Math.sin(Math.min(wind.t/wind.dur, 1) * Math.PI);
   return wind.dir * wind.str * env * DRIFT_ACCEL * activeDifficulty().drift;
+}
+function spaceHazardsEnabled() {
+  return !!(runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&spacePhaseAt(blocks.length));
+}
+function updateSpaceHazards(dt) {
+  const phase=spacePhaseAt(blocks.length);
+  if (!spaceHazardsEnabled()||!phase) { spaceHazard=null; spaceHazardTimer=0; return; }
+  if (spacePhaseSeen!==phase.index) {
+    spacePhaseSeen=phase.index; spaceHazard=null; spaceHazardTimer=phase.first;
+    note(phase.index===0?'WATCH THE ROUTE BEFORE YOU DROP':phase.index===1?'ASTEROIDS PULL HARDER':'CROSSINGS COME FASTER',phase.color,1,100);
+  }
+  if (spaceHazard) {
+    spaceHazard.t+=dt;
+    if (spaceHazard.t>=spaceHazard.warn+spaceHazard.dur) {
+      spaceHazard=null;
+      const jitter=(spaceHazardUnit(runContext.seed,900+spaceHazardSerial)-.5)*28;
+      spaceHazardTimer=Math.max(50,phase.gap+jitter);
+    }
+    return;
+  }
+  spaceHazardTimer-=dt;
+  // Spawn only while a block is visibly sliding. The warning route is locked through that block's
+  // lane, so the player can hold the drop, let the crossing pass, or deliberately ride its wake.
+  if (spaceHazardTimer<=0&&state==='playing'&&slider) {
+    spaceHazard=spaceHazardPlan(phase,spaceHazardSerial++,runContext.seed,slider.y+BH/2);
+    note(spaceHazard.kind==='asteroid'?'INCOMING ASTEROID':'INCOMING SHOOTING STAR',phase.color,3,spaceHazard.warn);
+  }
 }
 // ---------- v155: THE WIND YOU CAN SEE ----------
 // Wind is INTRODUCED in LOWER SKY (MATERIALS[3].gusty = 2.4) but until now it was invisible: the
@@ -2846,6 +2918,7 @@ function update(dt) {
       if (wind) { wind.t += dt; if (wind.t >= wind.dur) { wind = null; windTimer = (wCfg.minCooldownFrames + rnd()*wCfg.cooldownRangeFrames) / Math.max(0.5, wf * gustRate); } }
     }
   } else wind = null;
+  updateSpaceHazards(dt);
 
   if (rushT > 0) rushT = Math.max(0, rushT - dt);
   if (gasCloud) {
@@ -2895,7 +2968,16 @@ function update(dt) {
   }
   if (faller && state === 'dropping') {
     faller.vy += BALANCE_REGISTRY.drop.gravity*matAt(tier).grav*dt; faller.y += faller.vy*dt;   // v123: biome gravity (== dropPhysicsFor(tier).gravity, inlined to keep this hot path allocation-free)
-    faller.vx = (faller.vx || 0) + driftForce()*dt; faller.x += faller.vx*dt;                   // v125: wind drift (|| 0 — hand-built fallers in the suite have no vx, and NaN would silently fail every overlap)
+    const wake=spaceWakeAt(spaceHazard,faller,activeDifficulty());
+    faller.vx = (faller.vx || 0) + (driftForce()+wake*(shield > 0 ? .42 : 1))*dt;                // v125 wind + v170 visible SPACE wake
+    if (wake) {
+      faller.vx=clamp(faller.vx,-SPACE_WAKE_MAX_VX,SPACE_WAKE_MAX_VX);
+      if (!spaceHazard.hit) {
+        spaceHazard.hit=true; shake=Math.max(shake,reduceMotion?0:1.4);
+        floaters.push({text:'GRAVITY WAKE!',x:faller.x+faller.w/2,y:faller.y-7,vy:-.38,life:1,color:spaceHazard.kind==='asteroid'?'#FFD75E':'#BFE8FF'});
+      }
+    }
+    faller.x += faller.vx*dt;                                                                   // (|| 0 above keeps hand-built suite fallers finite)
     if (!reduceMotion && tick % 2 < dt) trails.push({ x:faller.x, y:faller.y, w:faller.w, life:.6, h:faller.col.h });
     if (faller.y >= towerTopY() - BH) { faller.y = towerTopY() - BH; land(); }
   }
@@ -5833,6 +5915,50 @@ function drawGustFront(cy) {
   }
   ctx.globalAlpha = 1;
 }
+// v170: the SPACE obstacle itself. Warning dashes are a projected route, not a screen veil; they
+// live at the same world altitude as the slider and scroll away when the player climbs. The active
+// star/asteroid then follows that exact route, keeping the force and its visual inseparable.
+function drawSpaceHazard(cy) {
+  const h=spaceHazard;
+  if (!h) return;
+  const warning=h.t<h.warn;
+  if (warning) {
+    const pulse=reduceMotion ? .72 : (.58+Math.sin(h.t*.18)*.20);
+    ctx.globalAlpha=pulse; ctx.fillStyle=h.kind==='asteroid'?'#FFD75E':'#BFE8FF';
+    for (let x=5;x<W-4;x+=13) {
+      const routeP=h.dir>0?x/Math.max(1,W):1-x/Math.max(1,W), y=Math.round(spaceHazardRouteY(h,routeP)-cy);
+      if (y>-2&&y<H+2) ctx.fillRect(x,y,5,1);
+    }
+    const ex=h.dir>0?4:W-7, ep=h.dir>0?0:1, ey=Math.round(spaceHazardRouteY(h,ep)-cy);
+    if (ey>-8&&ey<H+8) {
+      ctx.fillRect(ex,ey-5,3,1); ctx.fillRect(ex,ey+5,3,1); ctx.fillRect(ex,ey-5,1,11);
+      ctx.fillRect(ex+(h.dir>0?3:-2),ey-1,3,3);
+    }
+    ctx.globalAlpha=1;
+    return;
+  }
+  if (h.t>h.warn+h.dur) return;
+  const hx=Math.round(spaceHazardX(h)), hy=Math.round(spaceHazardY(h)-cy);
+  if (hy<-20||hy>H+20) return;
+  if (h.kind==='star') {
+    if (!reduceMotion) for (let i=5;i>=1;i--) {
+      const p=spaceHazardProgress(h)-h.dir*i*.018, tx=Math.round(h.dir>0?hx-i*4:hx+i*4), ty=Math.round(spaceHazardRouteY(h,p)-cy);
+      ctx.globalAlpha=(6-i)*.09; ctx.fillStyle=i&1?'#8FA8FF':'#C8A0FF'; ctx.fillRect(tx,ty-1,Math.max(1,7-i),2);
+    }
+    ctx.globalAlpha=1; ctx.fillStyle='#FFF6E8'; ctx.fillRect(hx-2,hy-2,5,5);
+    ctx.fillStyle='#BFE8FF'; ctx.fillRect(hx-4,hy,2,1); ctx.fillRect(hx+3,hy,2,1); ctx.fillRect(hx,hy-4,1,2); ctx.fillRect(hx,hy+3,1,2);
+    ctx.fillStyle='#FFD75E'; ctx.fillRect(hx-1,hy-1,2,2);
+  } else {
+    ctx.globalAlpha=.35; ctx.fillStyle='#8FA8FF';
+    if (!reduceMotion) for (let i=1;i<=3;i++) ctx.fillRect(hx-h.dir*(8+i*4),hy+(i&1),5-i,1);
+    ctx.globalAlpha=1; ctx.fillStyle='#3A3648'; ctx.fillRect(hx-5,hy-3,10,7); ctx.fillRect(hx-3,hy-5,6,11);
+    ctx.fillStyle='#7E7890'; ctx.fillRect(hx-3,hy-4,5,2); ctx.fillRect(hx-5,hy-2,2,3);
+    ctx.fillStyle='#282436'; ctx.fillRect(hx-3,hy+3,7,2); ctx.fillRect(hx+3,hy,3,3);
+    ctx.fillStyle='#B6AEC5'; ctx.fillRect(hx-2,hy-3,2,1);
+    ctx.fillStyle='#24202F'; ctx.fillRect(hx-2,hy,3,2); ctx.fillRect(hx+2,hy-2,2,2);
+  }
+  ctx.globalAlpha=1;
+}
 function drawPastColumn(cy) {
   const top = blocks.length - 1;
   const liveStyle = skin().style;   // fallback finish for rows with no recorded skin
@@ -5894,6 +6020,7 @@ function renderWorld(cy, shX) {
 
   drawPastColumn(cy);   // v152: OUTSIDE the sway — the past does not lean with the live tower
   drawGustFront(cy);    // v155: the gust you can see coming, behind the tower
+  drawSpaceHazard(cy);  // v170: its warning route and body use the same world path as its wake
   ctx.save(); ctx.translate(Math.round(swayX * RS) / RS, 0);
   const sstyle = skin().style;
   const h = blocks.length;
@@ -7390,6 +7517,14 @@ function renderModifierHUD(h) {
     ctx.fillStyle=active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(lane.left),y+15,Math.max(2,Math.round(lane.right-lane.left)),2);
   }
 }
+function renderSpacePhaseHUD(h) {
+  const phase=spacePhaseAt(h);
+  if (!phase||!spaceHazardsEnabled()) return;
+  const roman=['I','II','III'][phase.index], label='SPACE '+roman+' - '+phase.name;
+  ctx.globalAlpha=.76;
+  txtFit(label,W/2,62,1,phase.color,'center',W-50);
+  ctx.globalAlpha=1;
+}
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
   const m = activeMode();
@@ -7461,6 +7596,7 @@ function renderHUD(h) {
     txt(wind.dir>0?'WIND >':'< WIND', W/2, 62, 1, '#BFE8FF', 'center');
     ctx.globalAlpha = 1;
   }
+  renderSpacePhaseHUD(h);
   renderModifierHUD(h);
   // first-run / PRACTICE onboarding: one compact line in the shared notification lane (v109)
   if (tutStep >= 0 && !curNote) {

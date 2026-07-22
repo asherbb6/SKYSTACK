@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v169', () => /const CACHE = 'skystack-v169'/.test(sw));
+check('sw.js cache bumped to v170', () => /const CACHE = 'skystack-v170'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4410,6 +4410,45 @@ check('v169 SPACE keeps its good layers while replacing only the dated nebula', 
   const seg = src.slice(src.indexOf('function drawSpaceBg'), src.indexOf('\nfunction drawOrbitBg'));
   return /drawEarthLimb\(/.test(seg) && /spiral galaxies/.test(seg) && /asteroids gain a sunlit chamfer/.test(seg)
     ? true : 'galaxy, asteroid, or Earth-limb layer was lost';
+});
+
+// ---------- v170 SPACE — progressive, counterable playfield hazards ----------
+check('v170 SPACE has three exact gameplay phases with rising pressure', () => fresh.run(
+  'spacePhaseAt(204)===null && spacePhaseAt(205).id==="shooting-stars" && spacePhaseAt(220).id==="shooting-stars" && ' +
+  'spacePhaseAt(221).id==="asteroid-field" && spacePhaseAt(240).id==="asteroid-field" && ' +
+  'spacePhaseAt(241).id==="starstorm" && spacePhaseAt(259).id==="starstorm" && spacePhaseAt(260)===null && ' +
+  'SPACE_PHASES[0].gap>SPACE_PHASES[1].gap && SPACE_PHASES[1].gap>SPACE_PHASES[2].gap && ' +
+  'SPACE_PHASES[0].warn>SPACE_PHASES[1].warn && SPACE_PHASES[1].warn>SPACE_PHASES[2].warn && ' +
+  'SPACE_PHASES[0].force<SPACE_PHASES[1].force && SPACE_PHASES[1].force<SPACE_PHASES[2].force'));
+check('v170 SPACE hazards respect the existing modifier permission contract', () => fresh.run(
+  '(() => { const mk=mode=>createRunContext({mode,campaignLevel:mode==="level"?7:-1,startingAltitude:205,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'runContext=mk("level");blocks=Array.from({length:205},()=>({x:70,w:96}));state="playing";slider={x:70,w:96,y:100};const on=spaceHazardsEnabled();' +
+  'return on && ["practice","pure","daily"].every(mode=>{runContext=mk(mode);return !spaceHazardsEnabled();}); })()'));
+check('v170 hazard plans are reproducible without consuming the run RNG', () => fresh.run(
+  '(() => { const p=SPACE_PHASES[2],a=spaceHazardPlan(p,7,12345,100),b=spaceHazardPlan(p,7,12345,100),c=spaceHazardPlan(p,8,12345,100);' +
+  'return JSON.stringify(a)===JSON.stringify(b) && JSON.stringify(a)!==JSON.stringify(c) && ["star","asteroid"].includes(a.kind); })()'));
+check('v170 gravity wakes are visible-before-active, local, and difficulty-scaled', () => fresh.run(
+  '(() => { const p=SPACE_PHASES[1],h=spaceHazardPlan(p,2,44,100);h.t=h.warn-1;let x=spaceHazardX(h),y=spaceHazardY(h),f={x:x-12,y:y-BH/2,w:24};' +
+  'const early=spaceWakeAt(h,f,DIFFICULTY_TIERS.medium);h.t=h.warn+h.dur/2;x=spaceHazardX(h);y=spaceHazardY(h);f={x:x-12,y:y-BH/2,w:24};const near=spaceWakeAt(h,f,DIFFICULTY_TIERS.medium),hard=spaceWakeAt(h,f,DIFFICULTY_TIERS.hard);' +
+  'const far=spaceWakeAt(h,{x:f.x,y:f.y+100,w:f.w},DIFFICULTY_TIERS.medium);return early===0 && near!==0 && Math.abs(hard)>Math.abs(near) && far===0; })()'));
+check('v170 the live fall path applies a capped SPACE wake in addition to wind drift', () => {
+  const start = src.indexOf('if (faller && state === \'dropping\')', src.indexOf('// ---------- update ----------'));
+  const seg = src.slice(start, src.indexOf('if (fever && !reduceMotion', start));
+  return /spaceWakeAt\(spaceHazard,\s*faller/.test(seg) && /SPACE_WAKE_MAX_VX/.test(seg) && /clamp\(/.test(seg)
+    ? true : 'the dropping block does not receive a capped SPACE wake';
+});
+check('v170 SPACE hazards draw a warning route before either active body', () => {
+  const { rec, g } = v149rec();
+  g.run('spaceHazard=spaceHazardPlan(SPACE_PHASES[2],3,91,100);spaceHazard.t=10;');
+  rec.rects.length = 0; g.run('drawSpaceHazard(0)'); const warning = rec.rects.length;
+  g.run('spaceHazard.t=spaceHazard.warn+spaceHazard.dur/2;');
+  rec.rects.length = 0; g.run('drawSpaceHazard(0)'); const active = rec.rects.length;
+  return warning >= 8 && active >= 5 ? true : 'warning=' + warning + ', active body=' + active;
+});
+check('v170 phase identity stays visible in the SPACE HUD', () => {
+  const seg = src.slice(src.indexOf('function renderSpacePhaseHUD'), src.indexOf('\nfunction renderHUD'));
+  return /SPACE/.test(seg) && /phase\.name/.test(seg) && /renderSpacePhaseHUD\(h\)/.test(src)
+    ? true : 'SPACE phase name is not carried into the live HUD';
 });
 
 // ---------- report ----------
