@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v171', () => /const CACHE = 'skystack-v171'/.test(sw));
+check('sw.js cache bumped to v172', () => /const CACHE = 'skystack-v172'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4453,7 +4453,7 @@ check('v170 phase identity stays visible in the SPACE HUD', () => {
 
 // ---------- v171 SPACE — the phases materially move the live block ----------
 check('v171 each SPACE chapter declares the gameplay rule it teaches', () => fresh.run(
-  'SPACE_PHASES[0].rule==="STAR WAKE SHOVES" && SPACE_PHASES[1].rule==="ASTEROIDS PULL" && SPACE_PHASES[2].rule==="BOTH - FASTER"'));
+  'SPACE_PHASES.every(p=>typeof p.rule==="string"&&p.rule.length>5) && /STAR/.test(SPACE_PHASES[0].rule) && /GRAVITY/.test(SPACE_PHASES[1].rule) && /BOTH/.test(SPACE_PHASES[2].rule)'));
 check('v171 a shooting-star trail shoves with travel direction across a broad trailing field', () => fresh.run(
   '(() => { const h=spaceHazardPlan(SPACE_PHASES[0],2,41,100);h.dir=1;h.t=h.warn+h.dur/2;const x=spaceHazardX(h),y=spaceHazardY(h);' +
   'const behind=spaceWakeAt(h,{x:x-64-12,y:y-BH/2,w:24},DIFFICULTY_TIERS.medium);' +
@@ -4477,6 +4477,40 @@ check('v171 the broader asteroid well is drawn, while star art extends through i
   const seg = src.slice(src.indexOf('function drawSpaceHazard'), src.indexOf('\nfunction drawPastColumn'));
   return /fieldX/.test(seg) && /gravity well/.test(seg) && /h\.trail/.test(seg)
     ? true : 'the gameplay fields are still broader than their visuals';
+});
+
+// ---------- v172 SPACE — normal play must visibly change, not only instrumented contact ----------
+check('v172 an unhit crossing tracks the current live block instead of its stale spawn row', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:7,startingAltitude:205,seed:19,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:205},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=8;assist=0;spacePhaseSeen=0;spaceHazardTimer=99;' +
+  'slider={x:70,w:24,y:74,dir:1,speed:2.2,golden:false,spaceV:0};spaceHazard=spaceHazardPlan(SPACE_PHASES[0],1,19,142);spaceHazard.t=spaceHazard.warn/2;' +
+  'updateSpaceHazards(1);const warningAligned=Math.abs(spaceHazard.wy-(slider.y+BH/2))<.01;slider.y=42;spaceHazard.t=spaceHazard.warn+8;updateSpaceHazards(1);' +
+  'return warningAligned && Math.abs(spaceHazardY(spaceHazard)-(slider.y+BH/2))<.01; })()'));
+check('v172 a star contact sweeps an ordinarily moving slider in the star direction', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:7,startingAltitude:205,seed:23,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:205},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=8;assist=0;shield=0;faller=null;spacePhaseSeen=0;spaceHazardTimer=99;floaters=[];' +
+  'slider={x:80,w:24,y:74,dir:-1,speed:2.2,golden:false,spaceV:0};spaceHazard=spaceHazardPlan(SPACE_PHASES[0],1,23,slider.y+BH/2);spaceHazard.dir=1;spaceHazard.t=spaceHazard.warn+spaceHazard.dur/2;' +
+  'const hx=spaceHazardX(spaceHazard);slider.x=hx-42-slider.w/2;const before=slider.x;update(1);return slider.x>before && slider.dir===1 && slider.spaceV>=1.2 && spaceHazard.sliderHit; })()'));
+check('v172 asteroid gravity can overcome opposite ordinary travel while inside its well', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:7,startingAltitude:221,seed:29,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:221},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=8;assist=0;shield=0;faller=null;spacePhaseSeen=1;spaceHazardTimer=99;floaters=[];' +
+  'slider={x:80,w:24,y:74,dir:-1,speed:2.2,golden:false,spaceV:0};spaceHazard=spaceHazardPlan(SPACE_PHASES[1],1,29,slider.y+BH/2);spaceHazard.t=spaceHazard.warn+spaceHazard.dur/2;' +
+  'const hx=spaceHazardX(spaceHazard);slider.x=hx-42-slider.w/2;const before=slider.x;update(1);return slider.x>before && slider.dir===-1 && slider.spaceV>0.8 && spaceHazard.sliderHit; })()'));
+check('v172 a star hit gives a falling block an immediate landing-scale lateral impulse', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:7,startingAltitude:205,seed:31,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:205},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="dropping";tier=8;assist=0;shield=0;slider=null;spacePhaseSeen=0;spaceHazardTimer=99;floaters=[];' +
+  'faller={x:80,x0:80,w:24,y:towerTopY()-BH-40,vx:0,vy:0,col:{h:0,s:0,l:50}};spaceHazard=spaceHazardPlan(SPACE_PHASES[0],1,31,faller.y+BH/2);spaceHazard.dir=1;spaceHazard.t=spaceHazard.warn+spaceHazard.dur/2;' +
+  'const hx=spaceHazardX(spaceHazard);faller.x=hx-42-faller.w/2;const before=faller.x;update(1);return faller.vx>=0.9 && spaceHazard.hit && faller.x>before; })()'));
+check('v172 the SPACE HUD teaches sweep, gravity drag, and their combined final phase', () => fresh.run(
+  'SPACE_PHASES[0].rule==="STAR PASS SWEEPS BLOCK" && SPACE_PHASES[1].rule==="GRAVITY SLOWS + PULLS" && SPACE_PHASES[2].rule==="BOTH - NO SAFE RHYTHM"'));
+check('v172 an ordinary auto-timed SPACE level receives live contact in all three phases', () => {
+  const normal = makeGame({'skystack-difficulty':JSON.stringify({level:'medium'})});
+  return normal.run(
+    '(() => { startLevel(7,"checkpoint-7",0x172);let seen={},contacts=[0,0,0],frames=0;' +
+    'while(frames++<9000&&state!=="levelwin"&&state!=="levelfail"&&state!=="gameover"){' +
+    'if(state==="playing"&&slider){const top=blocks[blocks.length-1],target=top.x+top.w/2-slider.w/2;if(Math.abs(slider.x-target)<=Math.max(7,slider.speed*3))drop();}' +
+    'update(1);if(spaceHazard&&(spaceHazard.sliderHit||spaceHazard.hit)&&!seen[spaceHazard.serial]){seen[spaceHazard.serial]=1;contacts[spaceHazard.phaseIndex]++;}}' +
+    'return state==="levelwin"&&contacts.every(n=>n>0); })()');
 });
 
 // ---------- report ----------
