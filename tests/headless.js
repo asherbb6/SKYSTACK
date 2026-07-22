@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v173', () => /const CACHE = 'skystack-v173'/.test(sw));
+check('sw.js cache bumped to v174', () => /const CACHE = 'skystack-v174'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4526,6 +4526,31 @@ check('v173 a committed warning route never reacquires a later slider', () => fr
   'slider={x:80,w:24,y:74,dir:1,speed:2.2,golden:false,spaceV:0};spaceHazard=spaceHazardPlan(SPACE_PHASES[0],1,41,slider.y+BH/2);spaceHazard.t=spaceHazard.warn/2;' +
   'trackSpaceHazardTarget(spaceHazard);releaseBlock();const committed=spaceHazard.wy;faller=null;slider={x:80,w:24,y:18,dir:-1,speed:2.2,golden:false,spaceV:0};trackSpaceHazardTarget(spaceHazard);' +
   'return spaceHazard.routeLocked===true && Math.abs(spaceHazard.wy-committed)<.01; })()'));
+
+// ---------- v174 SPACE — Earth is a coherent pixel world, not circular map-marker blobs ----------
+check('v174 Earth uses authored connected continent silhouettes instead of pixDisc blobs', () => {
+  const seg = src.slice(src.indexOf('const EARTH_LANDMASSES'), src.indexOf('\nfunction drawGoldFragments'));
+  return /function earthLandAt/.test(seg) && /EARTH_LAND_MASK/.test(seg) && !/pixDisc\(/.test(seg)
+    ? true : 'Earth still lacks an authored raster landmass or still stamps circular continents';
+});
+check('v174 Earth contains atmosphere, ocean depth, cloud systems, night, and city-light layers', () => {
+  const seg = src.slice(src.indexOf('function drawEarthLimb'), src.indexOf('\nfunction drawGoldFragments'));
+  return /atmospheric rim/.test(seg) && /ocean depth/.test(seg) && /cloud ribbons/.test(seg) &&
+    /terminator/.test(seg) && /city lights/.test(seg) ? true : 'one or more reference-defining Earth layers are missing';
+});
+check('v174 authored geography separates major land samples from open ocean', () => fresh.run(
+  'earthLandAt(.14,.18) && earthLandAt(.22,.55) && earthLandAt(.61,.42) && !earthLandAt(.43,.46) && !earthLandAt(.72,.78)'));
+check('v174 Earth is already a substantial curved hemisphere in mid-SPACE', () => fresh.run(
+  '(() => { W=180;H=390;const h=earthHorizonAt(226),c=earthSurfaceTop(90,h,earthCurveAt(226)),e=earthSurfaceTop(0,h,earthCurveAt(226));' +
+  'return c<H*.78 && e>c+14 && c>H*.55; })()'));
+check('v174 detailed Earth renders deterministically without a full-width veil', () => {
+  const { rec, g } = v149rec();
+  rec.rects.length = 0; g.run('W=180;H=390;drawEarthLimb(226,1,45)');
+  const first = JSON.stringify(rec.rects), full = rec.rects.some(r => r.w >= 180);
+  rec.rects.length = 0; g.run('W=180;H=390;drawEarthLimb(226,1,45)');
+  return first === JSON.stringify(rec.rects) && rec.rects.length > 2500 && !full
+    ? true : 'Earth is sparse, nondeterministic, or paints a full-width overlay';
+});
 
 // ---------- report ----------
 let pass = 0, fail = 0;
