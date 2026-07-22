@@ -1105,14 +1105,16 @@ const MATERIALS = [
   { name:'COSMIC', spd:0.86, wob:0, wind:0,   grav:0.45, slide:0, soft:0, lane:1,    spring:0, gusty:1 },   // 9 ORBIT        — low gravity
   { name:'STAR',   spd:0.92, wob:0, wind:0,   grav:1,    slide:0, soft:0, lane:1,    spring:0, gusty:1 }    // 10 THE STARS
 ];
-// v170: SPACE is a 55-block journey of its own, not one flat low-gravity room. These phases use
+// v170/v171: SPACE is a 55-block journey of its own, not one flat low-gravity room. These phases use
 // crossing objects rather than invisible random drift: the route appears first, then the body, then
-// (only close to that visible body) its wake can tug a falling block. Pressure rises through shorter
-// calm gaps, shorter warnings and stronger wakes. The altitude bands are exact and stop at ORBIT.
+// its VISIBLE FIELD moves the live block. v170's tiny body-only ellipse almost never met a normal
+// falling block, so the phases read as labels/art. v171 gives stars a broad trailing shove and
+// asteroids a broad attractive well, both affecting the slider as well as a faller. Pressure still
+// rises through shorter calm gaps, shorter warnings and stronger fields; bands stop at ORBIT.
 const SPACE_PHASES = deepFreeze([
-  { index:0, id:'shooting-stars', name:'SHOOTING STARS', start:205, end:220, kind:'star',     first:110, gap:220, warn:72, dur:72, force:0.028, radius:22, color:'#BFE8FF' },
-  { index:1, id:'asteroid-field', name:'ASTEROID FIELD', start:221, end:240, kind:'asteroid', first:90, gap:170, warn:64, dur:86, force:0.042, radius:25, color:'#FFD75E' },
-  { index:2, id:'starstorm',      name:'STARSTORM',      start:241, end:259, kind:'mixed',    first:70, gap:118, warn:48, dur:64, force:0.058, radius:27, color:'#C8A0FF' }
+  { index:0, id:'shooting-stars', name:'SHOOTING STARS', rule:'STAR WAKE SHOVES', start:205, end:220, kind:'star',     first:110, gap:220, warn:72, dur:72, force:0.038, radius:22, color:'#BFE8FF' },
+  { index:1, id:'asteroid-field', name:'ASTEROID FIELD', rule:'ASTEROIDS PULL',   start:221, end:240, kind:'asteroid', first:90, gap:170, warn:64, dur:86, force:0.052, radius:25, color:'#FFD75E' },
+  { index:2, id:'starstorm',      name:'STARSTORM',      rule:'BOTH - FASTER',    start:241, end:259, kind:'mixed',    first:70, gap:118, warn:48, dur:64, force:0.070, radius:27, color:'#C8A0FF' }
 ]);
 function spacePhaseAt(h) { return SPACE_PHASES.find(p => h >= p.start && h <= p.end) || null; }
 // A private integer mix for SPACE events. It never touches rnd(), so adding or tuning a hazard
@@ -1128,7 +1130,9 @@ function spaceHazardPlan(phase, serial, seed, wy) {
   return { phase:phase.id, phaseIndex:phase.index, serial, kind, dir:u1<.5?-1:1, t:0,
     warn:phase.warn, dur:Math.round(phase.dur*(asteroid?1.12:1)), wy,
     tilt:(asteroid?8:20)*(u2<.5?-1:1), force:phase.force*(asteroid?1.08:1),
-    radius:phase.radius+(asteroid?2:0), hit:false };
+    radius:phase.radius+(asteroid?2:0), trail:asteroid?0:96+phase.index*12,
+    fieldX:asteroid?82+phase.index*6:0, fieldY:asteroid?48+phase.index*4:34+phase.index*3,
+    hit:false, sliderHit:false };
 }
 function spaceHazardProgress(h) { return h ? clamp((h.t-h.warn)/Math.max(1,h.dur),0,1) : 0; }
 function spaceHazardX(h) {
@@ -1137,17 +1141,34 @@ function spaceHazardX(h) {
 }
 function spaceHazardRouteY(h,p) { return h.wy+(clamp(p,0,1)-.5)*h.tilt; }
 function spaceHazardY(h) { return spaceHazardRouteY(h,spaceHazardProgress(h)); }
-// Pure proximity sample: zero during the entire warning and outside the visible object's local wake.
-// The return value is acceleration, not position, and difficulty scales it through the same drift
-// vocabulary as wind. A shield softens it later in the live update without being consumed.
+// Pure field sample: zero for the entire warning and outside what drawSpaceHazard actually draws.
+// Stars PUSH in their travel direction anywhere in the broad trail behind the head. Asteroids PULL
+// toward their body from either side. The return is acceleration; difficulty shares wind's drift
+// vocabulary, and a shield softens it later without being consumed.
 function spaceWakeAt(h, f, difficulty) {
   if (!h||!f||h.t<h.warn||h.t>h.warn+h.dur) return 0;
   const hx=spaceHazardX(h), hy=spaceHazardY(h), fx=f.x+f.w/2, fy=f.y+BH/2;
-  const dx=(fx-hx)/(h.radius*1.65), dy=(fy-hy)/h.radius, dist=Math.sqrt(dx*dx+dy*dy);
+  let dist=0, direction=h.dir;
+  if (h.kind==='star') {
+    const behind=(hx-fx)*h.dir;
+    if (behind<0||behind>h.trail) return 0;
+    const dx=behind/h.trail, dy=(fy-hy)/h.fieldY;
+    dist=Math.sqrt(dx*dx+dy*dy);
+  } else {
+    const rawX=fx-hx, dx=rawX/h.fieldX, dy=(fy-hy)/h.fieldY;
+    dist=Math.sqrt(dx*dx+dy*dy);
+    direction=rawX<0?1:rawX>0?-1:h.dir;
+  }
   if (dist>=1) return 0;
-  return h.dir*h.force*(1-dist)*((difficulty&&difficulty.drift)||1);
+  return direction*h.force*(1-dist)*((difficulty&&difficulty.drift)||1);
 }
 const SPACE_WAKE_MAX_VX = 0.78;
+const SPACE_SLIDER_WAKE_SCALE = 10, SPACE_SLIDER_MAX_STEP = 0.65;
+function spaceContactText(h) { return h&&h.kind==='asteroid'?'GRAVITY PULL!':'STAR WAKE!'; }
+function spaceContactFloater(h, block, vy) {
+  const text=spaceContactText(h), half=(text.length*6-1)/2;
+  return {text,x:clamp(block.x+block.w/2,half+4,W-half-4),y:block.y-7,vy,life:1,color:h.kind==='asteroid'?'#FFD75E':'#BFE8FF'};
+}
 const BALANCE_REGISTRY = deepFreeze({
   physics:{ blockHeight:14, baseWidth:96, metersPerBlock:3, topple:28, perfectPx:2.6 },   // v122: 34→28, topples land more often
   slider:{ base:1.1, perBlock:0.020, max:2.8, campaignStep:0.03, campaignMax:3.1, assistSlow:0.30 },
@@ -1911,7 +1932,7 @@ function updateSpaceHazards(dt) {
   if (!spaceHazardsEnabled()||!phase) { spaceHazard=null; spaceHazardTimer=0; return; }
   if (spacePhaseSeen!==phase.index) {
     spacePhaseSeen=phase.index; spaceHazard=null; spaceHazardTimer=phase.first;
-    note(phase.index===0?'WATCH THE ROUTE BEFORE YOU DROP':phase.index===1?'ASTEROIDS PULL HARDER':'CROSSINGS COME FASTER',phase.color,1,100);
+    note(phase.rule,phase.color,1,100);
   }
   if (spaceHazard) {
     spaceHazard.t+=dt;
@@ -2954,6 +2975,15 @@ function update(dt) {
     // v117: constant drift — the old high-altitude sin() speed wobble is gone (fever/rush still scale it)
     slider.x += slider.dir * slider.speed * feverSlow * (rushT > 0 ? BALANCE_REGISTRY.balloon.rushMul : 1) * dt;
     if (wind) { const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI); slider.x += wind.dir * wind.str * env * dt; }
+    const sliderWake=spaceWakeAt(spaceHazard,slider,activeDifficulty());
+    if (sliderWake) {
+      const step=clamp(sliderWake*SPACE_SLIDER_WAKE_SCALE*(shield > 0 ? .42 : 1),-SPACE_SLIDER_MAX_STEP,SPACE_SLIDER_MAX_STEP);
+      slider.x+=step*dt;
+      if (!spaceHazard.sliderHit) {
+        spaceHazard.sliderHit=true; shake=Math.max(shake,reduceMotion?0:1);
+        floaters.push(spaceContactFloater(spaceHazard,slider,-.34));
+      }
+    }
     const SR = slideRange();
     const min = SR.l - slider.w*.55, max = SR.r - slider.w*.45;
     if (SR.wrap) {
@@ -2974,7 +3004,7 @@ function update(dt) {
       faller.vx=clamp(faller.vx,-SPACE_WAKE_MAX_VX,SPACE_WAKE_MAX_VX);
       if (!spaceHazard.hit) {
         spaceHazard.hit=true; shake=Math.max(shake,reduceMotion?0:1.4);
-        floaters.push({text:'GRAVITY WAKE!',x:faller.x+faller.w/2,y:faller.y-7,vy:-.38,life:1,color:spaceHazard.kind==='asteroid'?'#FFD75E':'#BFE8FF'});
+        floaters.push(spaceContactFloater(spaceHazard,faller,-.38));
       }
     }
     faller.x += faller.vx*dt;                                                                   // (|| 0 above keeps hand-built suite fallers finite)
@@ -5941,14 +5971,33 @@ function drawSpaceHazard(cy) {
   const hx=Math.round(spaceHazardX(h)), hy=Math.round(spaceHazardY(h)-cy);
   if (hy<-20||hy>H+20) return;
   if (h.kind==='star') {
-    if (!reduceMotion) for (let i=5;i>=1;i--) {
-      const p=spaceHazardProgress(h)-h.dir*i*.018, tx=Math.round(h.dir>0?hx-i*4:hx+i*4), ty=Math.round(spaceHazardRouteY(h,p)-cy);
-      ctx.globalAlpha=(6-i)*.09; ctx.fillStyle=i&1?'#8FA8FF':'#C8A0FF'; ctx.fillRect(tx,ty-1,Math.max(1,7-i),2);
+    // The long tapered trail IS the shove volume. v170 drew ~20px while its already-small force
+    // sampled only the head; v171 exposes the full h.trail so the player sees exactly where it acts.
+    if (!reduceMotion) {
+      const n=Math.ceil(h.trail/7), span=W+(h.kind==='asteroid'?36:56);
+      for (let i=n;i>=1;i--) {
+        const d=Math.min(h.trail,i*7), p=spaceHazardProgress(h)-d/Math.max(1,span);
+        const tx=Math.round(hx-h.dir*d), ty=Math.round(spaceHazardRouteY(h,p)-cy), strength=1-d/h.trail;
+        ctx.globalAlpha=.08+strength*.34; ctx.fillStyle=i&1?'#8FA8FF':'#C8A0FF';
+        ctx.fillRect(tx,ty-1,Math.max(1,Math.round(2+strength*5)),strength>.5?2:1);
+      }
     }
     ctx.globalAlpha=1; ctx.fillStyle='#FFF6E8'; ctx.fillRect(hx-2,hy-2,5,5);
     ctx.fillStyle='#BFE8FF'; ctx.fillRect(hx-4,hy,2,1); ctx.fillRect(hx+3,hy,2,1); ctx.fillRect(hx,hy-4,1,2); ctx.fillRect(hx,hy+3,1,2);
     ctx.fillStyle='#FFD75E'; ctx.fillRect(hx-1,hy-1,2,2);
   } else {
+    // Dotted gravity well: two broad ellipses derived from the SAME fieldX/fieldY sampled by
+    // spaceWakeAt. Sparse points keep the lane readable while making attraction impossible to miss.
+    const spin=reduceMotion?0:h.t*.035;
+    ctx.fillStyle='#FFD75E';
+    for (let ring=0;ring<2;ring++) {
+      const scale=ring ? .74 : .46, count=ring ? 18 : 12;
+      for (let i=0;i<count;i++) {
+        const a=i/count*Math.PI*2+spin*(ring?1:-1);
+        ctx.globalAlpha=ring ? .20 : .28;
+        ctx.fillRect(Math.round(hx+Math.cos(a)*h.fieldX*scale),Math.round(hy+Math.sin(a)*h.fieldY*scale),1,1);
+      }
+    }
     ctx.globalAlpha=.35; ctx.fillStyle='#8FA8FF';
     if (!reduceMotion) for (let i=1;i<=3;i++) ctx.fillRect(hx-h.dir*(8+i*4),hy+(i&1),5-i,1);
     ctx.globalAlpha=1; ctx.fillStyle='#3A3648'; ctx.fillRect(hx-5,hy-3,10,7); ctx.fillRect(hx-3,hy-5,6,11);

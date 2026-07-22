@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v170', () => /const CACHE = 'skystack-v170'/.test(sw));
+check('sw.js cache bumped to v171', () => /const CACHE = 'skystack-v171'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4449,6 +4449,34 @@ check('v170 phase identity stays visible in the SPACE HUD', () => {
   const seg = src.slice(src.indexOf('function renderSpacePhaseHUD'), src.indexOf('\nfunction renderHUD'));
   return /SPACE/.test(seg) && /phase\.name/.test(seg) && /renderSpacePhaseHUD\(h\)/.test(src)
     ? true : 'SPACE phase name is not carried into the live HUD';
+});
+
+// ---------- v171 SPACE — the phases materially move the live block ----------
+check('v171 each SPACE chapter declares the gameplay rule it teaches', () => fresh.run(
+  'SPACE_PHASES[0].rule==="STAR WAKE SHOVES" && SPACE_PHASES[1].rule==="ASTEROIDS PULL" && SPACE_PHASES[2].rule==="BOTH - FASTER"'));
+check('v171 a shooting-star trail shoves with travel direction across a broad trailing field', () => fresh.run(
+  '(() => { const h=spaceHazardPlan(SPACE_PHASES[0],2,41,100);h.dir=1;h.t=h.warn+h.dur/2;const x=spaceHazardX(h),y=spaceHazardY(h);' +
+  'const behind=spaceWakeAt(h,{x:x-64-12,y:y-BH/2,w:24},DIFFICULTY_TIERS.medium);' +
+  'const ahead=spaceWakeAt(h,{x:x+64-12,y:y-BH/2,w:24},DIFFICULTY_TIERS.medium);' +
+  'return behind>0 && ahead===0 && h.trail>=90 && h.fieldY>=30; })()'));
+check('v171 an asteroid pulls toward itself from both sides with a broad visible well', () => fresh.run(
+  '(() => { const h=spaceHazardPlan(SPACE_PHASES[1],2,41,100);h.t=h.warn+h.dur/2;const x=spaceHazardX(h),y=spaceHazardY(h);' +
+  'const left=spaceWakeAt(h,{x:x-54-12,y:y-BH/2,w:24},DIFFICULTY_TIERS.medium);' +
+  'const right=spaceWakeAt(h,{x:x+54-12,y:y-BH/2,w:24},DIFFICULTY_TIERS.medium);' +
+  'return left>0 && right<0 && h.fieldX>=75 && h.fieldY>=40; })()'));
+check('v171 an active hazard moves a zero-speed live slider and names the contact', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:7,startingAltitude:205,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:205},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=8;assist=0;spacePhaseSeen=0;spaceHazardTimer=99;' +
+  'slider={x:70,w:24,y:100,dir:1,speed:0,golden:false};spaceHazard=spaceHazardPlan(SPACE_PHASES[0],1,17,slider.y+BH/2);spaceHazard.dir=1;spaceHazard.t=spaceHazard.warn+spaceHazard.dur/2;' +
+  'const hx=spaceHazardX(spaceHazard);slider.x=hx-60-slider.w/2;const before=slider.x;notes=[];curNote=null;floaters=[];update(1);' +
+  'return slider.x>before && spaceHazard.sliderHit===true && floaters.some(f=>f.text==="STAR WAKE!"); })()'));
+check('v171 SPACE contact feedback stays on-screen at either slider wrap edge', () => fresh.run(
+  '(() => { W=180;const s=spaceHazardPlan(SPACE_PHASES[0],1,17,100),a=spaceContactFloater(s,{x:-80,w:24,y:100},-.3);s.kind="asteroid";const b=spaceContactFloater(s,{x:240,w:24,y:100},-.3);' +
+  'const aw=a.text.length*6-1,bw=b.text.length*6-1;return a.x-aw/2>=4 && a.x+aw/2<=W-4 && b.x-bw/2>=4 && b.x+bw/2<=W-4; })()'));
+check('v171 the broader asteroid well is drawn, while star art extends through its real wake', () => {
+  const seg = src.slice(src.indexOf('function drawSpaceHazard'), src.indexOf('\nfunction drawPastColumn'));
+  return /fieldX/.test(seg) && /gravity well/.test(seg) && /h\.trail/.test(seg)
+    ? true : 'the gameplay fields are still broader than their visuals';
 });
 
 // ---------- report ----------
