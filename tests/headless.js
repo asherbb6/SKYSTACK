@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v163', () => /const CACHE = 'skystack-v163'/.test(sw));
+check('sw.js cache bumped to v164', () => /const CACHE = 'skystack-v164'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4245,6 +4245,33 @@ check('v163 the catch still softens the fall — CLOUD NINE keeps MORE than a pl
     '  slider=null; state="dropping"; land(); return blocks[blocks.length-1].w; };' +
     ' for (const off of [6, 10, 20]) if (!(keep(4, off) > keep(3, off))) return "cloud not softer at off="+off;' +
     ' return true; })()');
+});
+
+// ---------- v164 JET STREAM — the racing wind reads as moving air ----------
+check('v164 airStreak draws a tapered 3-segment blur, head-led, in the sky-family colour', () => {
+  const { rec, g } = v149rec();
+  rec.rects.length = 0;
+  g.run('airStreak(100, 40, 30, 1, 0.5)');
+  const segs = rec.rects.filter(r => String(r.style) === g.run('GUST_STREAK_COL'));
+  if (segs.length !== 3) return 'expected 3 segments, got ' + segs.length;
+  // head is the widest, and each following segment is no wider (taper)
+  const ws = segs.map(r => r.w);
+  for (let i = 1; i < ws.length; i++) if (ws[i] > ws[0]) return 'not head-led: ' + ws.join(',');
+  return ws[0] > ws[2] ? true : 'no taper: ' + ws.join(',');
+});
+check('v164 JET STREAM racing wind uses the shared airStreak, not flat 2px bars', () => {
+  const seg = src.slice(src.indexOf('function drawJetStreamBg'), src.indexOf('\nfunction drawStratosphereBg'));
+  if (!/airStreak\(/.test(seg)) return 'JET STREAM is not using airStreak';
+  // the old flat racing bar was a 2px-tall fillRect of width 46+; make sure that pattern is gone
+  return !/fillRect\(Math\.round\(-70 \+ sp\)/.test(seg) ? true : 'the old flat wind bars are still there';
+});
+check('v164 the jet-stream wind is visible (streaks actually drawn) and one-directional', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(5); tick = 40;');   // JET STREAM
+  rec.rects.length = 0;
+  g.run('drawJetStreamBg(GROUND_Y - TIERS[4].n*BH - (H - 100), 1, 40)');
+  const streaks = rec.rects.filter(r => String(r.style) === g.run('GUST_STREAK_COL') && r.h === 1);
+  return streaks.length >= 12 ? true : 'too few racing streaks: ' + streaks.length;
 });
 
 // ---------- report ----------

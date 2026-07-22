@@ -3675,11 +3675,14 @@ function drawJetStreamBg(cy, a, ph) {   // high thin racing streaks + a jet cros
       ctx.fillRect(rx-14, ry, 28, 3); ctx.fillRect(rx-8, ry-2, 16, 2); ctx.fillRect(rx-4, ry+3, 20, 2);
     }
   }
-  const s = cy*.5, P = 60, off = ((s % P) + P) % P;   // dense racing wind streaks convey speed
-  ctx.fillStyle = 'rgb(240,250,255)';
+  // v164: the racing wind now reads as MOVING AIR (the shared tapered streak), not flat bars — so
+  // wind looks consistent from the LOWER SKY gust front up through the jet-stream corridor. Layered
+  // by speed for depth; the fastest streaks are the boldest, which is what sells the corridor's pace.
+  const s = cy*.5, P = 60, off = ((s % P) + P) % P;
   for (let y = -off; y < H; y += P) for (let k = 0; k < 4; k++) {
-    const row = Math.round((y+s)/P), sp = reduceMotion ? (row*50)%(W+140) : ((ph*(3+k*1.4) + row*50 + k*120) % (W+140));
-    ctx.globalAlpha = (.16 + .07*k)*a; ctx.fillRect(Math.round(-70 + sp), Math.round(y + k*8), 46 + k*22, 2);
+    const row = Math.round((y+s)/P), speed = 3 + k*1.6;
+    const x = reduceMotion ? (row*50 + k*120) % (W+180) - 90 : ((ph*speed + row*50 + k*120) % (W+180)) - 90;
+    airStreak(Math.round(x), Math.round(y + k*8), 30 + k*18, 1, (.20 + .09*k)*a);   // streams rightward, longer/bolder when faster
   }
   if (!reduceMotion) {                                                                // a jet sweeps across, trailing vapor
     const cyc = (ph*.8) % (W + 300), px = Math.round(W + 140 - cyc), py = Math.round(64 + 44*Math.sin(ph*.005));
@@ -5660,6 +5663,23 @@ function pastBuffer() {
 // Nothing here reads or writes physics: it is the telegraph, not the force.
 const GUST_STREAKS = 30;   // tuned on a real LOWER SKY frame: 16 faint dashes were invisible as a tell
 const GUST_STREAK_COL = '#EAF4FF';
+// v164: a tapered three-segment streak of moving air — head-to-tail blur, not a flat bar. The shared
+// visual language for wind, so it reads the same from the LOWER SKY gust front up through the JET
+// STREAM racing corridor (the windiest biome). dir +1 travels right (head leads), -1 travels left.
+function airStreak(x, y, len, dir, alpha) {
+  if (alpha <= 0.01) return;
+  ctx.fillStyle = GUST_STREAK_COL;
+  const seg = [0.46, 0.32, 0.22], al = [1, 0.55, 0.26];
+  let run = 0;
+  for (let s = 0; s < 3; s++) {
+    const sl = Math.max(1, Math.round(len * seg[s]));
+    const sx = dir >= 0 ? x - run - sl : x + run;
+    ctx.globalAlpha = alpha * al[s];
+    ctx.fillRect(Math.round(sx), y, sl, 1);
+    run += sl + 1;
+  }
+  ctx.globalAlpha = 1;
+}
 // v160 WHAT YOU SEE IS WHAT YOU FEEL. Two real bugs and a restyle, all from Asher's verdict on v155:
 //   (1) Every streak was pinned to the FRONT with a <=40px trail, and the front leaves the screen at
 //       t = dur/2. So for the ENTIRE SECOND HALF of a gust — while the force decays from its peak —
