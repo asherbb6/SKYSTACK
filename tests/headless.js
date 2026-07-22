@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v174', () => /const CACHE = 'skystack-v174'/.test(sw));
+check('sw.js cache bumped to v175', () => /const CACHE = 'skystack-v175'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4550,6 +4550,58 @@ check('v174 detailed Earth renders deterministically without a full-width veil',
   rec.rects.length = 0; g.run('W=180;H=390;drawEarthLimb(226,1,45)');
   return first === JSON.stringify(rec.rects) && rec.rects.length > 2500 && !full
     ? true : 'Earth is sparse, nondeterministic, or paints a full-width overlay';
+});
+
+// ---------- v175 ORBIT — released blocks inherit a telegraphed orbital coast ----------
+check('v175 ORBIT has three exact chapters with progressively stronger coast', () => fresh.run(
+  'orbitPhaseAt(259)===null && orbitPhaseAt(260).id==="insertion" && orbitPhaseAt(289).id==="insertion" && ' +
+  'orbitPhaseAt(290).id==="satellite-belt" && orbitPhaseAt(324).id==="satellite-belt" && ' +
+  'orbitPhaseAt(325).id==="high-orbit" && orbitPhaseAt(359).id==="high-orbit" && orbitPhaseAt(360)===null && ' +
+  'ORBIT_PHASES[0].speed<ORBIT_PHASES[1].speed && ORBIT_PHASES[1].speed<ORBIT_PHASES[2].speed'));
+check('v175 orbital coast is seed-stable and never consumes the shared run RNG', () => fresh.run(
+  '(() => { rnd=mulberry32(55);const before=rnd(),a=orbitCoastPlan(310,12345,DIFFICULTY_TIERS.medium,false),after=rnd();' +
+  'rnd=mulberry32(55);const before2=rnd(),after2=rnd(),b=orbitCoastPlan(310,12345,DIFFICULTY_TIERS.medium,false);' +
+  'return before===before2 && after===after2 && JSON.stringify(a)===JSON.stringify(b) && Math.abs(a.vx)>0; })()'));
+check('v175 orbital coast respects the existing modifier permission contract', () => fresh.run(
+  '(() => { const mk=mode=>createRunContext({mode,campaignLevel:mode==="level"?8:-1,startingAltitude:260,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:260},()=>({x:70,w:96}));state="playing";runContext=mk("level");const on=orbitCoastEnabled();' +
+  'return on && ["practice","pure","daily"].every(mode=>{runContext=mk(mode);return !orbitCoastEnabled();}); })()'));
+check('v175 coast scales by chapter and difficulty while a shield softens it', () => fresh.run(
+  '(() => { const e=orbitCoastPlan(260,71,DIFFICULTY_TIERS.easy,false),m=orbitCoastPlan(300,71,DIFFICULTY_TIERS.medium,false),' +
+  'h=orbitCoastPlan(340,71,DIFFICULTY_TIERS.hard,false),s=orbitCoastPlan(340,71,DIFFICULTY_TIERS.hard,true);' +
+  'return Math.abs(e.vx)<Math.abs(m.vx) && Math.abs(m.vx)<Math.abs(h.vx) && Math.abs(s.vx)<Math.abs(h.vx); })()'));
+check('v175 releasing in ORBIT gives only the falling block orbital momentum', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:8,startingAltitude:260,seed:83,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:300},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=9;assist=0;shield=0;wind=null;' +
+  'slider={x:80,w:24,y:towerTopY()-BH-24,dir:1,speed:0,golden:false,spaceV:0};const sx=slider.x;releaseBlock();' +
+  'return state==="dropping" && Number.isFinite(faller.orbitV) && faller.orbitV!==0 && faller.x===sx && faller.vx===0; })()'));
+check('v175 a normal live ORBIT drop visibly coasts while its waiting slider does not', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:8,startingAltitude:260,seed:89,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:340},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=9;assist=0;shield=0;wind=null;spaceHazard=null;' +
+  'slider={x:80,w:24,y:towerTopY()-BH-24,dir:1,speed:0,golden:false,spaceV:0};const waiting=slider.x;update(1);if(slider.x!==waiting)return false;' +
+  'releaseBlock();const released=faller.x,coast=Math.abs(faller.orbitV);update(1);return coast>=.8 && Math.abs(faller.x-released)>=.8; })()'));
+check('v175 a player who leads the visible coast can clear all three ORBIT chapters', () => {
+  const normal = makeGame({'skystack-difficulty':JSON.stringify({level:'medium'})});
+  return normal.run(
+    '(() => { startLevel(8,"checkpoint-8",0x175);let chapters=0,frames=0;' +
+    'while(frames++<18000&&state!=="levelwin"&&state!=="levelfail"&&state!=="gameover"){' +
+    'const p=orbitPhaseAt(blocks.length);if(p)chapters|=1<<p.index;' +
+    'if(state==="playing"&&slider){const top=blocks[blocks.length-1],c=orbitCoastPlan(blocks.length,runContext.seed,activeDifficulty(),shield>0);' +
+    'const lead=c.vx*fallFramesFor(undefined,matAt(tier).grav),target=top.x+top.w/2-slider.w/2-lead;' +
+    'if(Math.abs(slider.x-target)<=Math.max(3,slider.speed*1.5))releaseBlock();}update(1);}' +
+    'return state==="levelwin"&&chapters===7; })()');
+});
+check('v175 the live fall path applies orbital momentum separately from wind and SPACE wakes', () => {
+  const start = src.indexOf('if (faller && state === \'dropping\')', src.indexOf('// ---------- update ----------'));
+  const seg = src.slice(start, src.indexOf('if (fever && !reduceMotion', start));
+  return /faller\.x \+= \(faller\.vx \+ \(faller\.orbitV \|\| 0\)\)\*dt/.test(seg) && /orbitV/.test(seg)
+    ? true : 'the falling block does not carry a separate orbital velocity';
+});
+check('v175 ORBIT keeps its chapter and coast direction visible in HUD and scenery', () => {
+  const hud = src.slice(src.indexOf('function renderOrbitPhaseHUD'), src.indexOf('\nfunction renderHUD'));
+  const bg = src.slice(src.indexOf('function drawOrbitBg'), src.indexOf('\nfunction drawStarsBg'));
+  return /ORBIT/.test(hud) && /COAST/.test(hud) && /phase\.name/.test(hud) && /renderOrbitPhaseHUD\(h\)/.test(src) &&
+    /drawOrbitCoastFlow\(/.test(bg) ? true : 'ORBIT coast is not continuously telegraphed in both HUD and world';
 });
 
 // ---------- report ----------

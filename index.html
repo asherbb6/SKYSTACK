@@ -1121,12 +1121,29 @@ const SPACE_PHASES = deepFreeze([
   { index:2, id:'starstorm',      name:'STARSTORM',      rule:'BOTH - NO SAFE RHYTHM',  start:241, end:259, kind:'mixed',    first:70, gap:118, warn:48, dur:64, force:0.070, radius:27, color:'#C8A0FF' }
 ]);
 function spacePhaseAt(h) { return SPACE_PHASES.find(p => h >= p.start && h <= p.end) || null; }
+// v175: ORBIT is not another hazard field. A released block inherits sideways orbital momentum,
+// so the player reads the direction before tapping and leads the landing. The slider and settled
+// tower stay untouched: this is a coast through micro-gravity, never a return of high-altitude wind.
+// Each chapter raises the same readable rule instead of piling unrelated obstacles on top of it.
+const ORBIT_PHASES = deepFreeze([
+  { index:0, id:'insertion',      name:'INSERTION',      rule:'LEAD THE DROP', start:260, end:289, speed:0.42, color:'#62E8B5' },
+  { index:1, id:'satellite-belt', name:'SATELLITE BELT', rule:'COAST FASTER',  start:290, end:324, speed:0.62, color:'#8FB8FF' },
+  { index:2, id:'high-orbit',     name:'HIGH ORBIT',     rule:'COMMIT EARLY',  start:325, end:359, speed:0.82, color:'#C8A0FF' }
+]);
+function orbitPhaseAt(h) { return ORBIT_PHASES.find(p => h >= p.start && h <= p.end) || null; }
 // A private integer mix for SPACE events. It never touches rnd(), so adding or tuning a hazard
 // cannot silently change pickups, wind, balloons, or any other seeded outcome later in the run.
 function spaceHazardUnit(seed, n) {
   let x = ((seed >>> 0) ^ Math.imul((n + 1) >>> 0, 0x9E3779B9)) >>> 0;
   x ^= x >>> 16; x = Math.imul(x, 0x7FEB352D); x ^= x >>> 15; x = Math.imul(x, 0x846CA68B); x ^= x >>> 16;
   return (x >>> 0) / 4294967296;
+}
+function orbitCoastPlan(h, seed, difficulty, shielded) {
+  const phase=orbitPhaseAt(h);
+  if (!phase) return { phase:null, phaseIndex:-1, dir:0, vx:0, speed:0 };
+  const dir=spaceHazardUnit(seed,1200+phase.index)<.5?-1:1;
+  const scale=(difficulty&&difficulty.drift)||1, shieldScale=shielded?.42:1;
+  return { phase:phase.id, phaseIndex:phase.index, dir, vx:dir*phase.speed*scale*shieldScale, speed:phase.speed };
 }
 function spaceHazardPlan(phase, serial, seed, wy) {
   const u0=spaceHazardUnit(seed,serial*4), u1=spaceHazardUnit(seed,serial*4+1), u2=spaceHazardUnit(seed,serial*4+2);
@@ -1429,7 +1446,7 @@ let notes = [], curNote = null;   // one-at-a-time top-middle notification queue
 let regionIntro = null;   // cinematic entry animation for the region you're entering { ti, t, dur }
 let shield = 0, widenNext = false, slowBlocks = 0, auraBlocks = 0, goldenNext = false, rushT = 0, gasCloud = null;
 let wind = null, windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
-let spaceHazard = null, spaceHazardTimer = 0, spaceHazardSerial = 0, spacePhaseSeen = -1;
+let spaceHazard = null, spaceHazardTimer = 0, spaceHazardSerial = 0, spacePhaseSeen = -1, orbitPhaseSeen = -1;
 let nextPickupRow = 8;
 let previewIdx = 0, basePreviewIdx = Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)), shopView = 'character';
 let missionsOpen = false, shopDetailOpen = false, meDetailOpen = false, meView = 'progress';
@@ -1879,7 +1896,7 @@ function resetRun() {
   runCoins = 0; runPerfects = 0; runPowerups = 0; runFevers = 0; runBalloons = 0; runSkybreaks = 0; notes = []; curNote = null;
   shield = 0; widenNext = false; slowBlocks = 0; auraBlocks = 0; goldenNext = false; rushT = 0; gasCloud = null;
   wind = null; windTimer = BALANCE_REGISTRY.wind.firstDelayFrames;
-  spaceHazard = null; spaceHazardTimer = 0; spaceHazardSerial = 0; spacePhaseSeen = -1;
+  spaceHazard = null; spaceHazardTimer = 0; spaceHazardSerial = 0; spacePhaseSeen = -1; orbitPhaseSeen = -1;
   nextPickupRow = Math.max(8, blocks.length + 4); completedThisRun = []; achThisRun = []; collectionThisRun = []; levelUpsThisRun = 0; xpThisRun = 0;
   fadeT = 1; overCause = '';
   reviveUsed = false; reviveOffered = false; runSettled = false;
@@ -1955,6 +1972,18 @@ function driftForce() {
 function spaceHazardsEnabled() {
   return !!(runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&spacePhaseAt(blocks.length));
 }
+function orbitCoastEnabled() {
+  return !!(runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&orbitPhaseAt(blocks.length));
+}
+function updateOrbitCoastPhase() {
+  const phase=orbitPhaseAt(blocks.length);
+  if (!orbitCoastEnabled()||!phase) { orbitPhaseSeen=-1; return; }
+  if (orbitPhaseSeen!==phase.index) {
+    orbitPhaseSeen=phase.index;
+    const coast=orbitCoastPlan(blocks.length,runContext.seed,activeDifficulty(),shield>0);
+    note(phase.rule+' - COAST '+(coast.dir>0?'>':'<'),phase.color,1,110);
+  }
+}
 function updateSpaceHazards(dt) {
   const phase=spacePhaseAt(blocks.length);
   if (!spaceHazardsEnabled()||!phase) { spaceHazard=null; spaceHazardTimer=0; return; }
@@ -2022,8 +2051,9 @@ function treeBend(tx) {
 function releaseBlock() {
   if (!slider) return;
   if (spaceHazard) spaceHazard.routeLocked = true;
+  const orbit=orbitCoastEnabled()?orbitCoastPlan(blocks.length,runContext.seed,activeDifficulty(),shield>0):null;
   // launch with downward velocity so the tap reads as instant, not delayed
-  faller = { x: slider.x, x0: slider.x, w: slider.w, y: slider.y, vx: 0, vy: dropPhysicsFor(tier).initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
+  faller = { x: slider.x, x0: slider.x, w: slider.w, y: slider.y, vx: 0, orbitV:orbit?orbit.vx:0, vy: dropPhysicsFor(tier).initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
   slider = null; state = 'dropping';
   if (tutStep === 0) tutStep = 1;
 }
@@ -2970,6 +3000,7 @@ function update(dt) {
     }
   } else wind = null;
   updateSpaceHazards(dt);
+  updateOrbitCoastPhase();
 
   if (rushT > 0) rushT = Math.max(0, rushT - dt);
   if (gasCloud) {
@@ -3039,7 +3070,7 @@ function update(dt) {
         floaters.push(spaceContactFloater(spaceHazard,faller,-.38));
       }
     }
-    faller.x += faller.vx*dt;                                                                   // (|| 0 above keeps hand-built suite fallers finite)
+    faller.x += (faller.vx + (faller.orbitV || 0))*dt;                                          // v175: faller-only orbital momentum, kept separate from wind and SPACE wakes
     if (!reduceMotion && tick % 2 < dt) trails.push({ x:faller.x, y:faller.y, w:faller.w, life:.6, h:faller.col.h });
     if (faller.y >= towerTopY() - BH) { faller.y = towerTopY() - BH; land(); }
   }
@@ -4121,9 +4152,26 @@ function drawSpaceBg(cy, a, ph) {   // deep cosmos — the last atmosphere gives
   drawEarthLimb(A, a, ph);
   if (q.gold > 0) drawGoldFragments(A, a*.35, ph);
 }
+function drawOrbitCoastFlow(A, a, ph) {
+  const h=(runContext&&(state==='playing'||state==='dropping'))?blocks.length:Math.floor(A), phase=orbitPhaseAt(h);
+  if (!phase||!runContext||!runContext.modifierPermissions.enabled) return;
+  const coast=orbitCoastPlan(h,runContext.seed,activeDifficulty(),shield>0), dir=coast.dir;
+  // The same direction shown in the HUD crosses the world behind the tower. Reduced motion keeps
+  // the arrow-shaped flow static; the rule stays readable without animation.
+  for (let k=0;k<6;k++) {
+    const span=W+70, travel=reduceMotion?bhash(k*17+phase.index*5):((ph*(.42+phase.index*.12)+k*53)%span)/span;
+    const x=Math.round(dir>0?-35+travel*span:W+35-travel*span), y=Math.round(54+k*Math.max(30,(H-112)/6)+bhash(k*23)*13);
+    const len=12+phase.index*4+(k%3)*3;
+    ctx.globalAlpha=(.12+.035*(k%3))*a; ctx.fillStyle=phase.color;
+    if (dir>0) { ctx.fillRect(x-len,y,len,1);ctx.fillRect(x-5,y-1,5,1);ctx.fillRect(x-2,y+1,2,1); }
+    else { ctx.fillRect(x,y,len,1);ctx.fillRect(x,y-1,5,1);ctx.fillRect(x,y+1,2,1); }
+  }
+  ctx.globalAlpha=1;
+}
 function drawOrbitBg(cy, a, ph) {   // low orbit — a huge planet limb below, satellites + debris crossing above it
   const A = screenA(cy), q = finalJourneyAt(A);
   drawEarthLimb(A, a, ph);
+  drawOrbitCoastFlow(A, a, ph);
   const ss = cy*.8, SP = 140, soff = ((ss % SP) + SP) % SP;                            // satellites + debris streaking across
   for (let y = -soff; y < H*.72; y += SP) {
     const row = Math.round((y+ss)/SP), dir = (row & 1) ? 1 : -1, prog = reduceMotion ? bhash(row*3) : ((ph*.6 + row*90) % (W+80))/(W+80);
@@ -7714,6 +7762,20 @@ function renderSpacePhaseHUD(h) {
   txtFit(label,W/2,62,1,phase.color,'center',W-50);
   ctx.globalAlpha=1;
 }
+function renderOrbitPhaseHUD(h) {
+  const phase=orbitPhaseAt(h);
+  if (!phase||!orbitCoastEnabled()) return;
+  const coast=orbitCoastPlan(h,runContext.seed,activeDifficulty(),shield>0), roman=['I','II','III'][phase.index];
+  let title='ORBIT '+roman+' '+phase.name;
+  ctx.globalAlpha=.78;
+  if (W>300) txtFit(title+'   COAST '+(coast.dir>0?'>':'<'),W/2,62,1,phase.color,'center',W-50);
+  else {
+    if (title.length*6-1>W-70) title='ORBIT '+roman+' '+phase.name.replace('SATELLITE ','').replace(' ORBIT','');
+    txtFit(title,8,62,1,phase.color,'left',W-70);
+    txt('COAST '+(coast.dir>0?'>':'<'),W-6,62,1,phase.color,'right');
+  }
+  ctx.globalAlpha=1;
+}
 function renderHUD(h) {
   const shadow = 'rgba(0,0,0,0.35)';
   const m = activeMode();
@@ -7786,6 +7848,7 @@ function renderHUD(h) {
     ctx.globalAlpha = 1;
   }
   renderSpacePhaseHUD(h);
+  renderOrbitPhaseHUD(h);
   renderModifierHUD(h);
   // first-run / PRACTICE onboarding: one compact line in the shared notification lane (v109)
   if (tutStep >= 0 && !curNote) {
