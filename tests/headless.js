@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v168', () => /const CACHE = 'skystack-v168'/.test(sw));
+check('sw.js cache bumped to v169', () => /const CACHE = 'skystack-v169'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4386,6 +4386,30 @@ check('v168 aurora rays use coarse alpha segments, not one draw call per vertica
   const seg = src.slice(src.indexOf('function drawAuroraCurtain'), src.indexOf('\nfunction drawAuroraBg'));
   return /dy \+= AURORA_RAY_SEG/.test(seg) && /Math\.min\(AURORA_RAY_SEG/.test(seg)
     ? true : 'aurora ray is still rendered one pixel/call down its full length';
+});
+
+// ---------- v169 SPACE — connected nebula gas, not a stack of bokeh discs ----------
+check('v169 the SPACE nebula uses a continuous builder, never stacked pixDiscs', () => {
+  const start = src.indexOf('function drawSpaceBg');
+  const seg = src.slice(start, src.indexOf('  const s = cy*.3', start));
+  if (/pixDisc\(/.test(seg)) return 'SPACE nebula still stacks circular bokeh discs';
+  return /drawSpaceNebula\(/.test(seg) ? true : 'continuous SPACE nebula builder is not used';
+});
+check('v169 a SPACE nebula is one bounded connected gas ribbon with a dust lane', () => {
+  const { rec, g } = v149rec();
+  rec.rects.length = 0;
+  g.run('drawSpaceNebula(80, 70, 42, 30, 0.5, 0, 3)');
+  const gas = rec.rects.filter(r => r.w === 1 && r.h >= 2);
+  const xs = [...new Set(gas.map(r => r.x))].sort((a,b) => a-b);
+  if (xs.length < 60) return 'nebula is too sparse to read as connected gas: ' + xs.length + ' columns';
+  for (let i = 1; i < xs.length; i++) if (xs[i] !== xs[i-1] + 1) return 'nebula ribbon has a gap at x=' + xs[i];
+  const dust = rec.rects.filter(r => String(r.style) === g.run('SPACE_NEBULA_PALS[0].dust'));
+  return dust.length >= 20 ? true : 'dark dust lane is missing or too short: ' + dust.length;
+});
+check('v169 SPACE keeps its good layers while replacing only the dated nebula', () => {
+  const seg = src.slice(src.indexOf('function drawSpaceBg'), src.indexOf('\nfunction drawOrbitBg'));
+  return /drawEarthLimb\(/.test(seg) && /spiral galaxies/.test(seg) && /asteroids gain a sunlit chamfer/.test(seg)
+    ? true : 'galaxy, asteroid, or Earth-limb layer was lost';
 });
 
 // ---------- report ----------

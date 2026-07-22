@@ -3831,15 +3831,46 @@ function drawAuroraBg(cy, a, ph) {   // bold waving aurora curtains + big floati
     ctx.globalAlpha = .6*a; ctx.fillStyle = '#FFFFFF'; ctx.fillRect(cx, cyy-2, 1, 4); ctx.fillRect(cx-2, cyy-1, 1, 1);   // core + spark
   }
 }
+// v169: one connected ribbon of interstellar gas. The old SPACE nebula was ten large overlapping
+// pixDiscs, which read as dim bokeh circles on a real frame. This is a bounded per-column silhouette:
+// two wandering gas edges, a brighter inner filament, and a broken dark dust lane through the core.
+// It stays side-weighted in drawSpaceBg, leaving the stacking lane clean.
+const SPACE_NEBULA_PALS = [
+  { outer:'#17234E', mid:'#294382', core:'#526EB2', dust:'#080B1D' },
+  { outer:'#2A1746', mid:'#4A286B', core:'#7A4C96', dust:'#0A0818' }
+];
+function drawSpaceNebula(cx, cy2, halfW, height, alpha, hue, seed) {
+  if (alpha <= 0.008 || halfW < 2) return;
+  const pal = SPACE_NEBULA_PALS[hue & 1], left = Math.round(cx-halfW), right = Math.round(cx+halfW);
+  for (let x = left; x <= right; x++) {
+    const dx = x-cx, edge = clamp(1-Math.abs(dx)/halfW, 0, 1);
+    const bend = Math.sin(dx*.075 + seed*1.7)*4 + Math.sin(dx*.19 - seed*.8)*2;
+    const swell = 0.68 + Math.sin(dx*.11 + seed)*.17 + Math.sin(dx*.037 + seed*2.3)*.15;
+    const outerH = Math.max(2, Math.round(4 + height*edge*swell));
+    const midH = Math.max(1, Math.round(outerH*(.48 + edge*.18)));
+    const yy = Math.round(cy2 + bend);
+    ctx.globalAlpha = alpha*(.14 + edge*.10); ctx.fillStyle = pal.outer; ctx.fillRect(x, yy-(outerH>>1), 1, outerH);
+    ctx.globalAlpha = alpha*(.18 + edge*.16); ctx.fillStyle = pal.mid;   ctx.fillRect(x, yy-(midH>>1), 1, midH);
+    if (edge > .28 && bhash(x*17 + seed*31) > .36) {
+      ctx.globalAlpha = alpha*(.20 + edge*.22); ctx.fillStyle = pal.core;
+      ctx.fillRect(x, yy-Math.max(1, Math.round(midH*.18)), 1, Math.max(1, Math.round(midH*.28)));
+    }
+    if (edge > .12 && bhash(x*29 + seed*43) > .24) {
+      ctx.globalAlpha = alpha*(.28 + edge*.20); ctx.fillStyle = pal.dust;
+      ctx.fillRect(x, yy + Math.round(Math.sin(dx*.13 + seed)*2), 1, bhash(x*7+seed) > .86 ? 2 : 1);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
 function drawSpaceBg(cy, a, ph) {   // deep cosmos — the last atmosphere gives way to galaxies and a first Earth glimpse
   const A = screenA(cy), q = finalJourneyAt(A);
-  const ns = cy*.16, NP = 360, noff = ((ns % NP) + NP) % NP;                            // soft colour nebula clouds (depth + richness)
+  const ns = cy*.16, NP = 360, noff = ((ns % NP) + NP) % NP;                            // bounded side nebulae: connected gas, never bokeh
   for (let y = -noff - NP; y < H + NP; y += NP) {
-    const row = Math.round((y+ns)/NP), nx = Math.round(bhash(row*11)*W), ny = Math.round(y + bhash(row*17)*80), hue = row&1;
-    for (let b = 0; b < 5; b++) { const bx = nx + Math.round((bhash(row*7+b)-0.5)*70), by = ny + Math.round((bhash(row*3+b)-0.5)*60);
-      ctx.globalAlpha = .05*a; pixDisc(bx, by, 26, hue?'#3A2A6E':'#243A72'); ctx.globalAlpha = .05*a; pixDisc(bx, by, 15, hue?'#6A3E9E':'#2E5AA0'); }
+    const row = Math.round((y+ns)/NP), halfW = clamp(Math.round(W*.13), 34, 68), side = row&1;
+    const nx = Math.round(side ? W-halfW*.55 : halfW*.55), ny = Math.round(y + 28 + bhash(row*17)*84);
+    drawSpaceNebula(nx, ny, halfW, 30 + Math.round(bhash(row*7)*12), .42*a, side, row);
   }
-  const s = cy*.3, P = 280, off = ((s % P) + P) % P;
+  const s = cy*.3, P = 280, off = ((s % P) + P) % P;                                  // spiral galaxies — kept from the strong existing SPACE layer
   for (let y = -off - P; y < H + P; y += P) {
     const row = Math.round((y+s)/P), gx = Math.round(bhash(row*5)*W), gy = Math.round(y + bhash(row*9)*60);
     for (let arm = 0; arm < 2; arm++) for (let i2 = 0; i2 < 26; i2++) { const ang = i2*.5 + arm*Math.PI + ph*.006, rr = i2*1.1;
