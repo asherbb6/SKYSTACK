@@ -2066,9 +2066,16 @@ function land() {
 
   const isPerfect = Math.abs(offset) <= effPerfect();
   let nx = oL, nw = overlap;
-  const SOFT_CATCH_PX = 8;                                  // v131: 3px was invisible; cloud now visibly swallows a scrappy landing
+  // v163: the catch recovers a FRACTION of the overhang, never all of it. The old flat 8px grow
+  // FULLY refunded any drop within 8px of centre — and the perfect window is only ~3.4px — so every
+  // sloppy landing on CLOUD NINE came back to full width and the tower never narrowed (Asher: "makes
+  // the level way too easy and basically gives the user a perfect every time"). Now a scrappy landing
+  // always costs something; the cloud only SOFTENS the cut, it can't erase it.
+  const SOFT_CATCH_FRAC = 0.4;                              // give back 40% of what the cut took...
+  const SOFT_CATCH_CAP = 8;                                 // ...capped, so a wild drop isn't hugely rescued
   if (!isPerfect && matAt(tier).soft) {
-    const grow = Math.min(SOFT_CATCH_PX, f.w - nw);         // never wider than the block that fell
+    const overhang = f.w - nw;                              // width the cut removed
+    const grow = Math.min(SOFT_CATCH_CAP, Math.floor(overhang * SOFT_CATCH_FRAC));
     if (grow > 0) {
       // v131 FIX: grow INWARD, over the support. Growing outward (the v128 behaviour) pushed the
       // block's centre further off the tower and INCREASED lean — a "forgiving" mechanic that was

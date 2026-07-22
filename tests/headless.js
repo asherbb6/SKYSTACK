@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v162', () => /const CACHE = 'skystack-v162'/.test(sw));
+check('sw.js cache bumped to v163', () => /const CACHE = 'skystack-v163'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4223,6 +4223,28 @@ check('v162 every CLOUD NINE cloud column is lit on top and shaded underneath', 
 check('v162 the CLOUD NINE sea uses the SHARED cumulus builder, not its own', () => {
   const seg = src.slice(src.indexOf('function drawCloudNineBg'), src.indexOf('\nfunction drawJetStreamBg'));
   return /drawCloudBank\(/.test(seg) ? true : 'CLOUD NINE is not calling the shared drawCloudBank';
+});
+
+// ---------- v163: the soft catch always costs something ----------
+check('v163 the CLOUD NINE catch never hands back a free full-width block', () => {
+  const g = makeGame();
+  return g.run('(() => { const keep = off => { mode="endless"; resetRun(); state="playing"; tier=4; wind=null;' +
+    '  const top=blocks[blocks.length-1], tw=top.w;' +
+    '  faller={x:top.x+off, x0:top.x+off, y:towerTopY()-BH, w:top.w, vx:0, vy:dropPhysicsFor(4).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+    '  slider=null; state="dropping"; land();' +
+    '  return { nw: blocks[blocks.length-1].w, tw }; };' +
+    ' for (const off of [5, 6, 8, 10, 14]) { const r = keep(off);' +   // all beyond the ~3.4px perfect window
+    '   if (r.nw >= r.tw) return "off="+off+" kept the FULL "+r.tw+"px width — a free perfect"; }' +
+    ' return true; })()');
+});
+check('v163 the catch still softens the fall — CLOUD NINE keeps MORE than a plain biome', () => {
+  const g = makeGame();
+  return g.run('(() => { const keep = (ti, off) => { mode="endless"; resetRun(); state="playing"; tier=ti; wind=null;' +
+    '  const top=blocks[blocks.length-1];' +
+    '  faller={x:top.x+off, x0:top.x+off, y:towerTopY()-BH, w:top.w, vx:0, vy:dropPhysicsFor(ti).initialVelocity, col:blockCol(blocks.length), golden:false};' +
+    '  slider=null; state="dropping"; land(); return blocks[blocks.length-1].w; };' +
+    ' for (const off of [6, 10, 20]) if (!(keep(4, off) > keep(3, off))) return "cloud not softer at off="+off;' +
+    ' return true; })()');
 });
 
 // ---------- report ----------
