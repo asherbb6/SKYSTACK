@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v164', () => /const CACHE = 'skystack-v164'/.test(sw));
+check('sw.js cache bumped to v165', () => /const CACHE = 'skystack-v165'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4273,6 +4273,30 @@ check('v164 the jet-stream wind is visible (streaks actually drawn) and one-dire
   const streaks = rec.rects.filter(r => String(r.style) === g.run('GUST_STREAK_COL') && r.h === 1);
   return streaks.length >= 12 ? true : 'too few racing streaks: ' + streaks.length;
 });
+
+// ---------- v165 STRATOSPHERE — swept cirrus, not ruled lines ----------
+check('v165 STRATOSPHERE draws NO full-width cirrus lines (the no-veil rule)', () => {
+  const { rec, g } = v149rec();
+  g.run('prog = 9; startLevel(6); tick = 30;');   // STRATOSPHERE
+  rec.rects.length = 0;
+  g.run('drawStratosphereBg(GROUND_Y - Math.round((TIERS[5].n+TIERS[6].n)/2)*BH - (H - 100), 1, 30)');
+  const wide = rec.rects.filter(r => r.w >= g.run('W') * 0.9);
+  return wide.length === 0 ? true : wide.length + ' full-width bars remain (the old ruled cirrus)';
+});
+check('v165 the cirrus wisps are feathery: swept, tapered, and bounded', () => {
+  const { rec, g } = v149rec();
+  rec.rects.length = 0;
+  g.run('drawCirrus(60, 40, 50, 0.5, 3)');
+  const fib = rec.rects.filter(r => String(r.style) === 'rgb(255,246,232)');
+  if (fib.length < 3) return 'too few fibres: ' + fib.length;
+  // no fibre spans anywhere near the screen width — a wisp is a bounded feather
+  if (fib.some(r => r.w >= 40)) return 'a cirrus fibre is a bar, not a feather';
+  // the fibres sweep upward (later fibres sit higher) — a wind-combed tail
+  const ys = fib.map(r => r.y);
+  return Math.min(...ys) < Math.max(...ys) ? true : 'the wisp has no vertical sweep';
+});
+check('v165 the stratosphere aircraft still keeps to the lower half of the tier', () =>
+  /A < \(TIERS\[5\]\.n \+ TIERS\[6\]\.n\) \/ 2/.test(src));
 
 // ---------- report ----------
 let pass = 0, fail = 0;

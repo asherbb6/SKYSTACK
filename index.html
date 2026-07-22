@@ -3695,12 +3695,40 @@ function drawJetStreamBg(cy, a, ph) {   // high thin racing streaks + a jet cros
     }
   }
 }
-function drawStratosphereBg(cy, a, ph) {   // thin edge-of-space cirrus, slow rising weather balloons, a dish pinging signals
-  const A = screenA(cy), dens = cloudDensityAt(A);
-  const cir = 0.4 + 1.8*dens;                                                          // cirrus follows the dying cloud gradient
-  const s = cy*.35, P = 108, off = ((s % P) + P) % P;
+// v165: a swept MARE'S-TAIL cirrus wisp — a high, thin, wind-combed ice cloud. Fine fibres peel off a
+// spine and taper down-wind with a gentle upward sweep, so it reads as feathery high-altitude cloud,
+// not a ruled line. Warm (the stratosphere sunset). Always bounded — never spans the sky (no-veil).
+function drawCirrus(cx, cy2, len, alpha, seed) {
+  if (alpha <= 0.008) return;
   ctx.fillStyle = 'rgb(255,246,232)';
-  for (let y = -off; y < H; y += P) { ctx.globalAlpha = .10*a*cir; ctx.fillRect(0, Math.round(y), W, 1); ctx.globalAlpha = .06*a*cir; ctx.fillRect(20, Math.round(y)+5, W-40, 1); }
+  const n = 4 + Math.round(bhash(seed*7)*3);                                           // fibres
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    const fx = Math.round(cx + t * len);
+    const fy = Math.round(cy2 - t * 4 - bhash(seed*13 + i)*2);                          // combed upward by the wind below
+    const fl = Math.max(2, Math.round((10 + bhash(seed*3 + i)*10) * (1 - t*0.55)));     // fibres shorten toward the tail
+    ctx.globalAlpha = alpha * (0.4 + 0.6*(1 - t));                                      // fade into the swept tail
+    ctx.fillRect(fx, fy, fl, 1);
+    if (i % 2 === 0) ctx.fillRect(fx + 2, fy - 1, Math.max(1, fl - 4), 1);             // a second fibre for body
+  }
+  ctx.globalAlpha = 1;
+}
+function drawStratosphereBg(cy, a, ph) {   // thin swept cirrus, slow rising weather balloons, a dish pinging signals
+  const A = screenA(cy);
+  // v165: cirrus lives THROUGH the stratosphere (it is high ice cloud), strongest mid-tier and
+  // fading into space up top / toward the jet stream below. NOT tied to the dying cumulus deck — the
+  // old `0.4 + 1.8*dens` made it vanish exactly where high cirrus should read strongest.
+  const t0 = TIERS[5].n, t1 = TIERS[6].n;
+  const cir = clamp((A - (t0 - 6)) / 10, 0, 1) * clamp((t1 - A) / 12, 0, 1);
+  // scattered swept wisps replace the old full-width ruled lines — two per parallax row, at random x,
+  // so no wisp ever crosses the whole sky. High and thin: this is where the air runs out.
+  const s = cy*.35, P = 96, off = ((s % P) + P) % P;
+  for (let y = -off - P; y < H + P; y += P) for (let k = 0; k < 2; k++) {
+    const row = Math.round((y+s)/P), seed = row*5.1 + k*2.7;
+    const drift = reduceMotion ? bhash(seed*7)*(W+160) : (ph*0.10 + bhash(seed*7)*400) % (W+160);
+    const cx = Math.round(-80 + drift + k*40), yy = Math.round(y + bhash(seed*11)*40 + k*22);
+    drawCirrus(cx, yy, 30 + Math.round(bhash(seed*3)*34), .17*a*cir, seed);
+  }
   if (!reduceMotion && A < (TIERS[5].n + TIERS[6].n) / 2) {                            // increasingly sparse aircraft: one tiny distant plane, lower half only
     const cyc = (ph*.35) % (W + 460), px = Math.round(W + 200 - cyc), py = Math.round(H*0.3 + 26*Math.sin(ph*.003));
     if (px > -30 && px < W + 30) {
