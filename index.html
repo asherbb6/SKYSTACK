@@ -7634,7 +7634,7 @@ function shopPanel(x,y,w,h,o){
 }
 // A glossy rounded control (EQUIPPED/EQUIP/UNLOCK); base is a solid accent or a dark outline.
 function shopButton(rc,label,o){
-  o=o||{}; const x=rc.x,y=rc.y,w=rc.w,h=rc.h,r=o.r==null?Math.min(6,h/2):o.r;
+  o=o||{}; const x=rc.x,y=rc.y,w=rc.w,h=rc.h,r=o.r==null?Math.min(3,h/2):o.r;   // v187: sharper corners
   ctx.save(); ctx.shadowColor='rgba(0,0,0,0.4)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1.5;
   shopRR(x,y,w,h,r);
   if(o.outline){ ctx.fillStyle=o.fill||'rgba(11,16,28,0.9)'; ctx.fill(); }
@@ -7668,9 +7668,8 @@ function shopBackArrow(r,col){             // bold left arrow (←) for the head
   ctx.moveTo(cx-4.5,cy); ctx.lineTo(cx-1,cy-3.6); ctx.moveTo(cx-4.5,cy); ctx.lineTo(cx-1,cy+3.6);
   ctx.stroke(); ctx.restore();
 }
-function shopStageBackdrop(r) {
-  const x=r.x+1,y=r.y+1,w=r.w-2,h=r.h-2;
-  ctx.save();shopRR(x,y,w,h,5);ctx.clip();
+function shopStageBackdrop(r) {   // v187: caller clips it into the unified card's hero region
+  const x=r.x,y=r.y,w=r.w,h=r.h;
   const g=ctx.createLinearGradient(0,y,0,y+h);        // smooth dusk gradient
   g.addColorStop(0,'#0A1330'); g.addColorStop(.35,'#182A54'); g.addColorStop(.62,'#3B3A66'); g.addColorStop(.82,'#7C466E'); g.addColorStop(1,'#C56A6A');
   ctx.fillStyle=g; ctx.fillRect(x,y,w,h);
@@ -7686,7 +7685,6 @@ function shopStageBackdrop(r) {
   const base=y+h;                                     // dusk mountains
   ctx.fillStyle='#241A3A';ctx.beginPath();ctx.moveTo(x,base);ctx.lineTo(x,base-h*.22);ctx.lineTo(x+w*.12,base-h*.36);ctx.lineTo(x+w*.23,base-h*.18);ctx.lineTo(x+w*.34,base-h*.31);ctx.lineTo(x+w*.48,base-h*.14);ctx.lineTo(x+w*.61,base-h*.28);ctx.lineTo(x+w*.72,base-h*.15);ctx.lineTo(x+w*.86,base-h*.35);ctx.lineTo(x+w,base-h*.2);ctx.lineTo(x+w,base);ctx.fill();
   ctx.fillStyle='#3A2A4E';ctx.beginPath();ctx.moveTo(x,base);ctx.lineTo(x,base-h*.12);ctx.lineTo(x+w*.16,base-h*.25);ctx.lineTo(x+w*.31,base-h*.1);ctx.lineTo(x+w*.47,base-h*.22);ctx.lineTo(x+w*.64,base-h*.08);ctx.lineTo(x+w*.81,base-h*.24);ctx.lineTo(x+w,base-h*.1);ctx.lineTo(x+w,base);ctx.fill();
-  ctx.restore();
 }
 function shopCloud(cx,cy,rw){
   ctx.beginPath();
@@ -7736,9 +7734,9 @@ function drawShopTower(sk,r) {                        // beveled, glossy 3D bloc
 function shopVisibleCharacter(slot) {
   return CHARACTER_REGISTRY[(previewIdx+slot)%CHARACTER_REGISTRY.length];
 }
-function drawShopSkinTile(x,y,w,h,sk,selected) {   // v186: wide carousel tile, glossy blocks
-  shopPanel(x,y,w,h,{r:4,shadow:false,
-    fill:selected?'rgba(98,232,181,0.14)':'#101A2E',
+function drawShopSkinTile(x,y,w,h,sk,selected) {   // v187: sharper wide carousel tile, glossy blocks
+  shopPanel(x,y,w,h,{r:2,shadow:false,
+    fill:selected?'rgba(98,232,181,0.16)':'#131D30',
     border:selected?SUI.mint:SUI.border,
     glow:selected?'rgba(98,232,181,0.6)':null, glowBlur:6});
   const labelH=9, previewTop=y+4, previewH=h-labelH-6, bw=Math.max(10,w-10), bh=Math.max(4,Math.floor((previewH-4)/3)), bx=Math.round(x+w/2-bw/2);
@@ -7752,15 +7750,15 @@ function drawShopSkinTile(x,y,w,h,sk,selected) {   // v186: wide carousel tile, 
   }
   txt(sk.name,x+w/2,y+h-labelH+1,.5,selected?'#FFF6E8':SUI.muted,'center');
 }
-function drawShopPassiveIcon(x,y,col) {     // silver cog with a colored core
+function drawShopPassiveIcon(x,y,col) {     // v187: crisp "perk" spark (the muddy gear is gone)
   ctx.save();
-  ctx.fillStyle='#8496B0';                   // 8 teeth (extend to ~r7.2)
-  for(let a=0;a<8;a++){ ctx.save(); ctx.translate(x,y); ctx.rotate(a*Math.PI/4); ctx.fillRect(-1.4,-7.2,2.8,3); ctx.restore(); }
-  pixDisc(x,y,5.3,'#7286A0');                 // body
-  pixDisc(x,y,4.3,'#B4C4DC');                 // lit face
-  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.fillRect(x-3.2,y-3.3,2.2,1); ctx.fillRect(x-3.4,y-2.4,1,2);   // top-left rim light
-  pixDisc(x,y,2.2,'#0E1626');                 // hub hole
-  ctx.fillStyle=col; ctx.fillRect(x-1.9,y-.6,3.8,1.2); ctx.fillRect(x-.6,y-1.9,1.2,3.8);   // + core
+  ctx.fillStyle=col;                         // 4-point spark
+  ctx.beginPath();
+  ctx.moveTo(x,y-6.6); ctx.lineTo(x+1.7,y-1.7); ctx.lineTo(x+6.6,y); ctx.lineTo(x+1.7,y+1.7);
+  ctx.lineTo(x,y+6.6); ctx.lineTo(x-1.7,y+1.7); ctx.lineTo(x-6.6,y); ctx.lineTo(x-1.7,y-1.7);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.9)';     // bright core
+  ctx.beginPath(); ctx.moveTo(x,y-2.5); ctx.lineTo(x+2.5,y); ctx.lineTo(x,y+2.5); ctx.lineTo(x-2.5,y); ctx.closePath(); ctx.fill();
   ctx.restore();
 }
 const BOOST_ACCENT={ shield:'#5EC8F2', aura:'#5BE0A0', slow:'#C77EFF' };
@@ -7803,44 +7801,58 @@ function shopBoostIcon(id,x,y){
   ctx.restore();
 }
 function drawShopBoostChip(c) {
-  const on=loadout[c.id],afford=canAfford(c.cost),acc=BOOST_ACCENT[c.id]||POW[c.id].c;
-  shopPanel(c.x,c.y,c.w,c.h,{r:4,shadow:false,
+  const on=loadout[c.id],afford=canAfford(c.cost),acc=BOOST_ACCENT[c.id]||POW[c.id].c,cy=c.y+Math.round(c.h/2);
+  shopPanel(c.x,c.y,c.w,c.h,{r:2,shadow:false,
     fill:on?'rgba(98,232,181,0.12)':'#0E1626',
     border:on?SUI.mint:SUI.borderSoft, glow:on?'rgba(98,232,181,0.55)':null, glowBlur:5});
-  shopBoostIcon(c.id,c.x+9,c.y+Math.round(c.h/2)-1);
-  txt(POW_NAME[c.id],c.x+17,c.y+5,.75,on?SUI.mint:SUI.text,'left');
-  const pipY=c.y+c.h-6;
-  for(let i=0;i<3;i++){ shopRR(c.x+17+i*5,pipY,3,3,1); ctx.fillStyle=i<(on?3:afford?2:1)?(on?SUI.mint:acc):'rgba(255,246,232,0.13)'; ctx.fill(); }
+  shopBoostIcon(c.id,c.x+10,cy-1);
+  txt(POW_NAME[c.id],c.x+19,cy-6,.75,on?SUI.mint:SUI.text,'left');   // v187: label centred on the icon/button middle
+  for(let i=0;i<3;i++){ shopRR(c.x+19+i*5,cy+3,3,3,1); ctx.fillStyle=i<(on?3:afford?2:1)?(on?SUI.mint:acc):'rgba(255,246,232,0.13)'; ctx.fill(); }
+}
+function shopDivider(x,y,w){   // v187: engraved hairline between sections of the one card
+  ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(x,y,w,.75);
+  ctx.fillStyle='rgba(255,246,232,0.07)'; ctx.fillRect(x,y+.75,w,.75);
 }
 function renderShop() {
-  // v185 premium Skin Shop: deep-navy field, rounded raised panels with soft shadows,
-  // one SKINS plate (Bases retired). Layout geometry unchanged; only the chrome is new.
+  // v187 premium Skin Shop: a flat nav-style header + ONE unified content card with engraved
+  // dividers (no floating cards), sharper corners. Layout geometry unchanged.
   shopBackdrop();
-  shopPanel(SHOP_HEADER.x,SHOP_HEADER.y,SHOP_HEADER.w,SHOP_HEADER.h,{r:6});   // v186: header + page tabs are one unit
+
+  // ── flat top bar, styled like the bottom nav; the SKINS tab is a label + underline (no pill) ──
   const titleH=SHOP_HEADER.titleH;
+  shopRR(SHOP_HEADER.x,SHOP_HEADER.y,SHOP_HEADER.w,SHOP_HEADER.h,3); ctx.fillStyle='rgba(9,12,20,0.92)'; ctx.fill();
+  shopRR(SHOP_HEADER.x+.5,SHOP_HEADER.y+.5,SHOP_HEADER.w-1,SHOP_HEADER.h-1,3); ctx.lineWidth=1; ctx.strokeStyle=SUI.borderSoft; ctx.stroke();
   shopBackArrow(SHOP_BACK_BTN,SUI.gold);
   txt('SHOP',W/2,SHOP_HEADER.y+Math.round((titleH-14)/2),2,SUI.gold,'center');
   const coinText=coins>99999?Math.floor(coins/1000)+'K':coins,coinW=String(coinText).length*6-1,coinX=SHOP_HEADER.x+SHOP_HEADER.w-7-coinW-9;
   drawCoin(coinX,SHOP_HEADER.y+Math.round(titleH/2)-2.5);
   txt(coinText,coinX+9,SHOP_HEADER.y+Math.round((titleH-7)/2),1,'#FFF6E8','left');
-  ctx.fillStyle='rgba(255,246,232,0.08)'; ctx.fillRect(SHOP_HEADER.x+7,SHOP_HEADER.y+titleH,SHOP_HEADER.w-14,.75);   // hairline between title row and tabs
-  const tab=SHOP_TABS[0];
-  shopPanel(tab.x,tab.y,tab.w,tab.h,{r:4,shadow:false,fill:SUI.panelActive,border:SUI.gold,glow:'rgba(255,215,94,0.4)',glowBlur:4});
-  txt('SKINS',tab.x+tab.w/2,tab.y+Math.round((tab.h-7)/2),1,'#FFD75E','center');
+  ctx.fillStyle='rgba(255,246,232,0.07)'; ctx.fillRect(SHOP_HEADER.x+8,SHOP_HEADER.y+titleH,SHOP_HEADER.w-16,.75);
+  const tab=SHOP_TABS[0], tcx=Math.round(tab.x+tab.w/2);
+  txt('SKINS',tcx,tab.y+Math.round((tab.h-7)/2),1,SUI.gold,'center');
+  ctx.fillStyle=SUI.gold; ctx.fillRect(tcx-18,tab.y+tab.h-1,36,1.5);   // active underline, nav-style
 
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
-  shopStageBackdrop(SHOP_STAGE);
-  ctx.save(); shopRR(SHOP_STAGE.x+.5,SHOP_STAGE.y+.5,SHOP_STAGE.w-1,SHOP_STAGE.h-1,6); ctx.lineWidth=1; ctx.strokeStyle=SUI.border; ctx.stroke(); ctx.restore();
-  drawShopTower(sk,SHOP_STAGE);
 
-  shopPanel(SHOP_IDENTITY.x,SHOP_IDENTITY.y,SHOP_IDENTITY.w,SHOP_IDENTITY.h,{r:5});
+  // ── ONE unified content card (stage → boosts): sections divided by hairlines, not floating cards ──
+  const cardX=SHOP_STAGE.x, cardY=SHOP_STAGE.y, cardW=SHOP_STAGE.w, cardH=(BOOST_TOP+BOOST_CARD_H)-cardY, R=3, dpad=8;
+  shopPanel(cardX,cardY,cardW,cardH,{r:R,fill:'#0E1524',border:SUI.border,sheen:false});
+  const divAt=(yy)=>shopDivider(cardX+dpad,Math.round(yy),cardW-dpad*2);
+
+  // hero preview (sky + tower), clipped into the card's rounded top
+  ctx.save(); shopRR(cardX+1,cardY+1,cardW-2,cardH-2,R-1); ctx.clip();
+  shopStageBackdrop({x:cardX,y:cardY,w:cardW,h:SHOP_STAGE.h});
+  ctx.restore();
+  drawShopTower(sk,SHOP_STAGE);
+  divAt((SHOP_STAGE.y+SHOP_STAGE.h+SHOP_IDENTITY.y)/2);
+
+  // identity (on the card, no sub-panel)
   const nameMax=EQUIP_BTN.x-SHOP_IDENTITY.x-10;
-  txtFit(sk.name,SHOP_IDENTITY.x+7,SHOP_IDENTITY.y+(SHOP_IDENTITY.h>=35?5:4),SHOP_IDENTITY.h>=35?2:1,'#FFF6E8','left',nameMax,1);
-  const iy=SHOP_IDENTITY.y+SHOP_IDENTITY.h-10, ix=SHOP_IDENTITY.x+7, rw=sk.rare.length*6*.75;
+  txtFit(sk.name,SHOP_IDENTITY.x+8,SHOP_IDENTITY.y+(SHOP_IDENTITY.h>=35?5:4),SHOP_IDENTITY.h>=35?2:1,'#FFF6E8','left',nameMax,1);
+  const iy=SHOP_IDENTITY.y+SHOP_IDENTITY.h-10, ix=SHOP_IDENTITY.x+8, rw=sk.rare.length*6*.75;
   txt(sk.rare,ix,iy,.75,RARE_COL[sk.rare],'left');
   ctx.fillStyle=SUI.muted; ctx.fillRect(ix+rw+3,iy+2,2,2);       // separator dot (bitmap font has no bullet)
   txt(sk.role,ix+rw+9,iy,.75,SUI.muted,'left');
-
   if (isEquipped) {
     shopButton(EQUIP_BTN,'EQUIPPED',{accent:VISUAL_SYSTEM.palette.mint});
   } else if (isOwned) {
@@ -7851,19 +7863,21 @@ function renderShop() {
       shopButton(EQUIP_BTN,'UNLOCK',{outline:true,accent:VISUAL_SYSTEM.palette.gold,textCol:VISUAL_SYSTEM.palette.gold});
     } else { shopButton(EQUIP_BTN,null,{outline:true,accent:'rgba(255,246,232,0.22)'}); coinsToGo(sk.cost); }   // v120: coins-to-go gauge until you can afford it
   }
+  divAt((SHOP_IDENTITY.y+SHOP_IDENTITY.h+SHOP_DETAIL_BTN.y)/2);
 
-  shopPanel(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,{r:5,border:isEquipped?VISUAL_SYSTEM.palette.mint:SUI.border});
+  // passive row (on the card) — perk spark + name + benefit + chevron
   const passiveCy=Math.round(SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h/2);
-  drawShopPassiveIcon(SHOP_DETAIL_BTN.x+13,passiveCy,isEquipped?VISUAL_SYSTEM.palette.mint:RARE_COL[sk.rare]);
-  txt(passive.name,SHOP_DETAIL_BTN.x+25,SHOP_DETAIL_BTN.y+4,1,isEquipped?VISUAL_SYSTEM.palette.mint:'#FFF6E8','left');
-  const pby=SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h-9, pbx=SHOP_DETAIL_BTN.x+25, pbw=passive.benefit.length*6*.5;
+  drawShopPassiveIcon(SHOP_DETAIL_BTN.x+14,passiveCy,isEquipped?VISUAL_SYSTEM.palette.mint:RARE_COL[sk.rare]);
+  txt(passive.name,SHOP_DETAIL_BTN.x+26,SHOP_DETAIL_BTN.y+4,1,isEquipped?VISUAL_SYSTEM.palette.mint:'#FFF6E8','left');
+  const pby=SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h-9, pbx=SHOP_DETAIL_BTN.x+26, pbw=passive.benefit.length*6*.5;
   txt(passive.benefit,pbx,pby,.5,'rgba(255,246,232,0.62)','left');
   ctx.fillStyle='rgba(255,246,232,0.5)'; ctx.fillRect(pbx+pbw+2,pby+1,1.5,1.5);
   txt(passive.tradeoff,pbx+pbw+6,pby,.5,'rgba(255,246,232,0.62)','left');
-  shopChevron(SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-10,passiveCy-5,'#5EC8F2');
+  shopChevron(SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-12,passiveCy-5,'#5EC8F2');
+  divAt((SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h+SHOP_RAIL.y)/2);
 
-  shopPanel(SHOP_RAIL.x,SHOP_RAIL.y,SHOP_RAIL.w,SHOP_RAIL.h,{r:6});   // v186: drag/swipe carousel, no arrows
-  ctx.save(); shopRR(SHOP_RAIL.x+SHOP_RAIL.padX-1,SHOP_RAIL.y+2,SHOP_RAIL.viewW+2,SHOP_RAIL.h-4,4); ctx.clip();
+  // carousel (on the card) — clip to rail viewport + scroll offset; edge fades to the card fill
+  ctx.save(); shopRR(SHOP_RAIL.x+SHOP_RAIL.padX-1,SHOP_RAIL.y+1,SHOP_RAIL.viewW+2,SHOP_RAIL.h-2,3); ctx.clip();
   const railLeft=SHOP_RAIL.x+SHOP_RAIL.padX;
   for(const t of SHOP_SKIN_TILES){
     const sx=railLeft+t.sx-railScroll;
@@ -7871,13 +7885,14 @@ function renderShop() {
     drawShopSkinTile(sx,t.y,t.w,t.h,CHARACTER_REGISTRY[t.idx],t.idx===previewIdx);
   }
   ctx.restore();
-  if(railScrollMax>0){   // soft edge fades hint there is more to scroll
-    const efw=10, ry=SHOP_RAIL.y+2, rh=SHOP_RAIL.h-4;
-    if(railScroll>1){ const gl=ctx.createLinearGradient(SHOP_RAIL.x,0,SHOP_RAIL.x+efw,0); gl.addColorStop(0,'rgba(10,14,26,0.9)'); gl.addColorStop(1,'rgba(10,14,26,0)'); ctx.fillStyle=gl; ctx.fillRect(SHOP_RAIL.x+1,ry,efw,rh); }
-    if(railScroll<railScrollMax-1){ const gr=ctx.createLinearGradient(SHOP_RAIL.x+SHOP_RAIL.w-efw,0,SHOP_RAIL.x+SHOP_RAIL.w,0); gr.addColorStop(0,'rgba(10,14,26,0)'); gr.addColorStop(1,'rgba(10,14,26,0.9)'); ctx.fillStyle=gr; ctx.fillRect(SHOP_RAIL.x+SHOP_RAIL.w-efw-1,ry,efw,rh); }
+  if(railScrollMax>0){
+    const efw=10, ry=SHOP_RAIL.y+1, rh=SHOP_RAIL.h-2;
+    if(railScroll>1){ const gl=ctx.createLinearGradient(SHOP_RAIL.x,0,SHOP_RAIL.x+efw,0); gl.addColorStop(0,'rgba(14,21,36,0.96)'); gl.addColorStop(1,'rgba(14,21,36,0)'); ctx.fillStyle=gl; ctx.fillRect(SHOP_RAIL.x,ry,efw,rh); }
+    if(railScroll<railScrollMax-1){ const gr=ctx.createLinearGradient(SHOP_RAIL.x+SHOP_RAIL.w-efw,0,SHOP_RAIL.x+SHOP_RAIL.w,0); gr.addColorStop(0,'rgba(14,21,36,0)'); gr.addColorStop(1,'rgba(14,21,36,0.96)'); ctx.fillStyle=gr; ctx.fillRect(SHOP_RAIL.x+SHOP_RAIL.w-efw,ry,efw,rh); }
   }
+  divAt((SHOP_RAIL.y+SHOP_RAIL.h+BOOST_TOP)/2);
 
-  shopPanel(SHOP_IDENTITY.x,BOOST_TOP,SHOP_IDENTITY.w,BOOST_CARD_H,{r:5,border:SUI.gold});
+  // boosts (on the card) — label + three boost buttons
   ctx.fillStyle='rgba(255,215,94,0.5)'; ctx.fillRect(W/2-52,BOOST_TOP+6,15,1); ctx.fillRect(W/2+37,BOOST_TOP+6,15,1);
   txt('RUN BOOSTS',W/2,BOOST_TOP+3,1,'#FFD75E','center');
   if (!canUseLoadout(mode) && mode === 'pure') {
