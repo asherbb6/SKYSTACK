@@ -2885,10 +2885,10 @@ function relayout() {
   DEV_TARGET_L={x:devX+8,y:DEV_TOP+135,w:26,h:22}; DEV_TARGET_R={x:devX+devW-34,y:DEV_TOP+135,w:26,h:22};
   DEV_TARGET_PLAY={x:devX+42,y:DEV_TOP+161,w:devW-84,h:20};
   { const gap=4,bw=Math.floor((devW-16-gap*2)/3),bx=devX+8;
-    DEV_ART_BTN={x:bx,y:DEV_TOP+198,w:bw,h:18};
-    DEV_AMBIENT_BTN={x:bx+bw+gap,y:DEV_TOP+198,w:bw,h:18};
-    DEV_LIGHT_BTN={x:bx+(bw+gap)*2,y:DEV_TOP+198,w:devW-16-(bw+gap)*2,h:18}; }
-  DEV_EXIT={x:devX+42,y:DEV_TOP+238,w:devW-84,h:20}; DEV_HUD_BTN={x:W-54,y:H-20,w:50,h:16};
+    DEV_ART_BTN={x:bx,y:DEV_TOP+202,w:bw,h:18};
+    DEV_AMBIENT_BTN={x:bx+bw+gap,y:DEV_TOP+202,w:bw,h:18};
+    DEV_LIGHT_BTN={x:bx+(bw+gap)*2,y:DEV_TOP+202,w:devW-16-(bw+gap)*2,h:18}; }
+  DEV_EXIT={x:devX+42,y:DEV_TOP+240,w:devW-84,h:20}; DEV_HUD_BTN={x:W-54,y:H-20,w:50,h:16};
   // shop — v99: the two cards float vertically CENTERED between the tabs and the nav (SHOP_OFF),
   // the tab pair splits around center with a 6px gap (still aligned with the cards' inner edges
   // at the phone width), and every button keeps 4-5px clearance from its card frame
@@ -6754,11 +6754,11 @@ function renderDeveloper() {
   txt(T.altitude*METERS_PER+'M - NO FAIL',W/2,DEV_TOP+153,1,'rgba(98,232,181,0.75)','center');
   pixelButton(DEV_TARGET_L,'<',false); pixelButton(DEV_TARGET_R,'>',false); pixelButton(DEV_TARGET_PLAY,'JUMP HERE',true);
 
-  txt('WORLD LAYERS - TAP TO TOGGLE',W/2,DEV_TOP+188,1,'rgba(255,246,232,0.42)','center');
+  txt('WORLD LAYERS - TAP TO TOGGLE',W/2,DEV_TOP+191,1,'rgba(255,246,232,0.42)','center');
   pixelButton(DEV_ART_BTN,'ART',WORLD_PREVIEW.assets);
   pixelButton(DEV_AMBIENT_BTN,'AIR',WORLD_PREVIEW.ambient);
   pixelButton(DEV_LIGHT_BTN,'RAYS',WORLD_PREVIEW.light);
-  txt('DEV BUTTON RETURNS HERE',W/2,DEV_TOP+225,1,'rgba(255,246,232,0.42)','center');
+  txt('DEV BUTTON RETURNS HERE',W/2,DEV_TOP+228,1,'rgba(255,246,232,0.42)','center');
   pixelButton(DEV_EXIT,'EXIT TO HOME',false);
 }
 
