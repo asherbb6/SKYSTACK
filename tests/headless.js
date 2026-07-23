@@ -1393,7 +1393,7 @@ check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 ever
   /drawCoin\(MISS_PANEL\.x \+ MISS_PANEL\.w - 24, rowY \+ \.5\)/.test(src) &&
   /drawCoin\(PAD, 5\.5\)/.test(src) && /drawCoin\(22, 7\.5\)/.test(src) &&
   /drawCoin\(x\+w-27,rowY\+\.5\)/.test(src) && /drawCoin\(x0, EQUIP_BTN\.y \+ 5\.5\)/.test(src) &&
-  /drawCoin\(coinX,SHOP_HEADER\.y\+Math\.round\(SHOP_HEADER\.h\/2\)-2\.5\)/.test(src) &&
+  /drawCoin\(coinX,SHOP_HEADER\.y\+Math\.round\(titleH\/2\)-2\.5\)/.test(src) &&
   // v159: the fail screen's coin moved from a fixed `by + 27.5` into the budgeted flow as
   // `iy + 0.5`, with its text at `iy` — the +0.5 centring rule this guard exists for is unchanged.
   /drawCoin\(W\/2 - 20, sy \+ 1\.5\)/.test(src) && /drawCoin\(W\/2 - 16, iy \+ 0\.5\)/.test(src) &&
@@ -1588,16 +1588,18 @@ check('v97 shop tabs stay centred at every viewport', () => fresh.run(
   'if(b.x-(a.x+a.w)!==6 || a.w!==b.w) return false;' +   // v99: 6px gap
   'if(Math.abs((a.x + b.x+b.w)/2 - W/2) > 1) return false; } return true; })()'));
 
-check('v184 the seven-skin rail stays inside its frame and the first tile is the selected skin', () => fresh.run(
+check('v186 the skin carousel holds every skin as an ordered in-band strip and can select the previewed one', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();previewIdx=3;' +
-  'if(SHOP_SKIN_TILES.length!==7||shopVisibleCharacter(0).id!==CHARACTER_REGISTRY[previewIdx].id)return false;' +
-  'if(SHOP_SKIN_TILES.some(t=>t.x<SHOP_RAIL.x+12||t.x+t.w>SHOP_RAIL.x+SHOP_RAIL.w-12||t.y<SHOP_RAIL.y||t.y+t.h>SHOP_RAIL.y+SHOP_RAIL.h))return false;}return true;})()'));
+  'if(SHOP_SKIN_TILES.length!==CHARACTER_REGISTRY.length)return false;' +
+  'if(!SHOP_SKIN_TILES.some(t=>t.idx===previewIdx))return false;' +
+  'if(SHOP_SKIN_TILES.some((t,i)=>t.idx!==i||t.w<=0||t.y<SHOP_RAIL.y||t.y+t.h>SHOP_RAIL.y+SHOP_RAIL.h))return false;' +
+  'if(railScrollMax<0||!(SHOP_RAIL.step>0))return false;}return true;})()'));
 
 check('v184 identity, passive, rail, boosts, and navigation occupy separate ordered bands', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
   'if(EQUIP_BTN.x<SHOP_IDENTITY.x||EQUIP_BTN.x+EQUIP_BTN.w>SHOP_IDENTITY.x+SHOP_IDENTITY.w)return false;' +
   'if(SHOP_STAGE.y+SHOP_STAGE.h>=SHOP_IDENTITY.y||SHOP_IDENTITY.y+SHOP_IDENTITY.h>=SHOP_DETAIL_BTN.y||SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h>=SHOP_RAIL.y||SHOP_RAIL.y+SHOP_RAIL.h>=BOOST_TOP||BOOST_TOP+BOOST_CARD_H>=NAV_Y)return false;' +
-  'if(SKIN_L.x+SKIN_L.w>=SHOP_SKIN_TILES[0].x||SHOP_SKIN_TILES[6].x+SHOP_SKIN_TILES[6].w>=SKIN_R.x)return false;}return true;})()'));
+  '}return true;})()'));
 
 // ---------- v184 approved Skin Shop hierarchy ----------
 check('v184 the shop hierarchy fills the available phone column without dead zones', () => fresh.run(

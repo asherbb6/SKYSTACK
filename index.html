@@ -1526,6 +1526,9 @@ let spaceHazard = null, spaceHazardTimer = 0, spaceHazardSerial = 0, spacePhaseS
 let starsPhaseSeen=-1, starsPulseTimer=0, starsPulseFlash=0, starsPulseBoost=0, starsPulseCount=0;
 let nextPickupRow = 8;
 let previewIdx = 0, basePreviewIdx = Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)), shopView = 'character';
+// v186: skin rail is a drag/swipe carousel (no arrows). Strip-relative scroll + flick momentum,
+// modelled on the sky-map drag. `railDrag.moved` distinguishes a drag from a tap-to-select.
+let railScroll = 0, railScrollMax = 0, railDrag = null, railScrollV = 0;
 let missionsOpen = false, shopDetailOpen = false, meDetailOpen = false, meView = 'progress';
 let completedThisRun = [], achThisRun = [], collectionThisRun = [], levelUpsThisRun = 0, xpThisRun = 0;
 let overCause = '';
@@ -2859,28 +2862,33 @@ function relayout() {
   // hierarchy scales from the 180x390 phone reference down to the 242x300 technical minimum.
   const shopW=Math.min(W-8,240),shopX=Math.round((W-shopW)/2),shopRoom=NAV_Y-7;
   const shopCompact=shopRoom<330,gap=shopCompact?2:3;
-  const headerH=shopCompact?18:22,tabH=shopCompact?14:16,identityH=shopCompact?28:35,
-        passiveH=shopCompact?22:28,railH=shopCompact?38:50;
+  const titleH=shopCompact?18:22,tabH=shopCompact?13:15,identityH=shopCompact?28:35,
+        passiveH=shopCompact?22:28,railH=shopCompact?40:52;
   BOOST_CARD_H=shopCompact?34:43;
-  const fixed=headerH+tabH+identityH+passiveH+railH+BOOST_CARD_H+gap*6;
+  const headerH=titleH+tabH+2;                                    // v186: title row + page-tab row = one merged header unit
+  const fixed=headerH+identityH+passiveH+railH+BOOST_CARD_H+gap*5;
   const stageH=Math.max(shopCompact?72:112,shopRoom-fixed);
   let sy=3;
-  SHOP_HEADER={x:shopX,y:sy,w:shopW,h:headerH}; sy+=headerH+gap;
-  const shopTabW=Math.min(86,shopW-28);
-  SHOP_TABS=[{id:'character',x:Math.round(W/2-shopTabW/2),y:sy,w:shopTabW,h:tabH}]; sy+=tabH+gap;
+  SHOP_HEADER={x:shopX,y:sy,w:shopW,h:headerH,titleH:titleH};
+  const tabW=Math.min(74,shopW-16), tabStripY=sy+titleH+1;
+  SHOP_TABS=[{id:'character',x:Math.round(W/2-tabW/2),y:tabStripY,w:tabW,h:tabH}];
+  sy+=headerH+gap;
   SHOP_STAGE={x:shopX,y:sy,w:shopW,h:stageH}; SHOP_TOP=sy; sy+=stageH+gap;
   SHOP_IDENTITY={x:shopX,y:sy,w:shopW,h:identityH}; sy+=identityH+gap;
   SHOP_DETAIL_BTN={x:shopX,y:sy,w:shopW,h:passiveH}; sy+=passiveH+gap;
   SHOP_RAIL={x:shopX,y:sy,w:shopW,h:railH}; sy+=railH+gap;
   BOOST_TOP=sy;
-  SHOP_BACK_BTN={x:SHOP_HEADER.x+3,y:SHOP_HEADER.y+2,w:shopCompact?18:22,h:SHOP_HEADER.h-4};
+  SHOP_BACK_BTN={x:SHOP_HEADER.x+3,y:SHOP_HEADER.y+2,w:shopCompact?18:22,h:titleH-4};
   const equipW=shopCompact?48:56,equipH=shopCompact?18:22;
   EQUIP_BTN={x:SHOP_IDENTITY.x+SHOP_IDENTITY.w-equipW-5,y:SHOP_IDENTITY.y+Math.round((SHOP_IDENTITY.h-equipH)/2),w:equipW,h:equipH};
-  SKIN_L={x:SHOP_RAIL.x+2,y:SHOP_RAIL.y+Math.round((SHOP_RAIL.h-18)/2),w:10,h:18};
-  SKIN_R={x:SHOP_RAIL.x+SHOP_RAIL.w-12,y:SKIN_L.y,w:10,h:18};
-  const tileCount=7,tileGap=3,tileW=shopCompact?14:18,tilesW=tileW*tileCount+tileGap*(tileCount-1);
-  const tileX=Math.round(W/2-tilesW/2);
-  SHOP_SKIN_TILES=Array.from({length:tileCount},(_,i)=>({slot:i,x:tileX+i*(tileW+tileGap),y:SHOP_RAIL.y+3,w:tileW,h:SHOP_RAIL.h-6}));
+  // v186 skin carousel: all skins in a horizontal strip, ~3 wide tiles visible, drag to scroll.
+  const railPad=4, railViewW=SHOP_RAIL.w-railPad*2, N=CHARACTER_REGISTRY.length, tileGap=6;
+  const tileW=Math.round((railViewW-tileGap*2)/3), tileH=SHOP_RAIL.h-railPad*2, step=tileW+tileGap;
+  SHOP_RAIL.padX=railPad; SHOP_RAIL.viewW=railViewW; SHOP_RAIL.step=step; SHOP_RAIL.tileW=tileW;
+  SHOP_SKIN_TILES=Array.from({length:N},(_,i)=>({idx:i,sx:i*step,y:SHOP_RAIL.y+railPad,w:tileW,h:tileH}));
+  railScrollMax=Math.max(0, N*tileW+(N-1)*tileGap - railViewW);
+  railScroll=clamp(railScroll,0,railScrollMax);
+  SKIN_L={x:SHOP_RAIL.x,y:SHOP_RAIL.y,w:0,h:0}; SKIN_R={x:SHOP_RAIL.x+SHOP_RAIL.w,y:SHOP_RAIL.y,w:0,h:0};   // legacy arrows retired
   const chipsGap=4,chipsW=SHOP_IDENTITY.w-12,chipW=Math.floor((chipsW-chipsGap*2)/3);
   LOAD_CHIPS=LOADOUT.map((l,i)=>({x:SHOP_IDENTITY.x+6+i*(chipW+chipsGap),y:BOOST_TOP+12,w:chipW,h:BOOST_CARD_H-15,id:l.id,cost:l.cost}));
   // me
@@ -2953,7 +2961,7 @@ function startRun(retrySeed) { if(Number.isInteger(retrySeed))pendingRunSeed=ret
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
-    if (state !== t.id) { state = t.id; fadeT = reduceMotion ? 0 : 1; notePress(t); missionsOpen=false; shopDetailOpen=false; meDetailOpen=false; sfx.tap(); if (t.id === 'shop') { shopView='character'; previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); basePreviewIdx=Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; } }
+    if (state !== t.id) { state = t.id; fadeT = reduceMotion ? 0 : 1; notePress(t); missionsOpen=false; shopDetailOpen=false; meDetailOpen=false; sfx.tap(); if (t.id === 'shop') { shopView='character'; previewIdx = Math.max(0, CHARACTER_REGISTRY.findIndex(s => s.id === skinId)); basePreviewIdx=Math.max(0,BASE_REGISTRY.findIndex(b=>b.id===baseId)); demo.n = 1; shopInfo = 'TAP A BOOST TO BUY IT'; railCenterOn(previewIdx); } }
     return true;
   }
   return true;
@@ -3068,11 +3076,7 @@ function pressDown(e) {
     if (shopDetailOpen) { shopDetailOpen=false; sfx.tap(); return; }
     if (inR(p,SHOP_BACK_BTN,3)) { state='home'; fadeT=reduceMotion?0:1; sfx.tap(); return; }
     if (navHit(p)) return;
-    if (inR(p, SKIN_L, 6)) { previewIdx=(previewIdx+CHARACTER_REGISTRY.length-1)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); return; }
-    if (inR(p, SKIN_R, 6)) { previewIdx=(previewIdx+1)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); return; }
-    for (const tile of SHOP_SKIN_TILES) if (inR(p,tile,2)) {
-      previewIdx=(previewIdx+tile.slot)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); return;
-    }
+    if (inR(p, SHOP_RAIL, 4)) { railDrag={x:p.x, scroll:railScroll, moved:false}; railScrollV=0; return; }   // v186: drag to scroll; tap-to-select resolves on pressUp
     if (inR(p,SHOP_DETAIL_BTN,3)) { shopDetailOpen=true; sfx.tap(); return; }
     if (inR(p, EQUIP_BTN, 3)) {
       const sk = CHARACTER_REGISTRY[previewIdx];
@@ -3123,33 +3127,63 @@ function pressDown(e) {
     state = 'home'; fadeT = 1;
   }
 }
-// sky map drag-to-scroll: move updates the scroll, release without movement is a tap
+// v186 skin carousel helpers
+function railCenterOn(idx) {
+  if (!SHOP_RAIL || !SHOP_RAIL.step) return;
+  railScroll = clamp(idx * SHOP_RAIL.step - (SHOP_RAIL.viewW - SHOP_RAIL.tileW) / 2, 0, railScrollMax);
+  railScrollV = 0;
+}
+function railTapAt(p) {   // select the tile under a tap (screen x accounts for the scroll offset)
+  const left = SHOP_RAIL.x + SHOP_RAIL.padX;
+  for (const t of SHOP_SKIN_TILES) {
+    const sx = left + t.sx - railScroll;
+    if (sx + t.w < SHOP_RAIL.x || sx > SHOP_RAIL.x + SHOP_RAIL.w) continue;
+    if (p.x >= sx && p.x <= sx + t.w && p.y >= t.y && p.y <= t.y + t.h) { previewIdx = t.idx; demo.n = 4; sfx.tap(); railCenterOn(t.idx); return; }
+  }
+}
+// sky map / skin rail drag-to-scroll: move updates the scroll, release without movement is a tap
 function pressMove(e) {
-  if (!skyMap || !mapDrag) return;
-  const p = pos(e);
-  const dy = p.y - mapDrag.y;
-  if (Math.abs(dy) > 5) mapDrag.moved = true;
-  if (mapDrag.moved) { const ns = clamp(mapDrag.scroll + dy, 0, mapScrollMax); mapScrollV = ns - mapScroll; mapScroll = ns; }   // last delta = flick velocity on release
+  if (skyMap && mapDrag) {
+    const p = pos(e);
+    const dy = p.y - mapDrag.y;
+    if (Math.abs(dy) > 5) mapDrag.moved = true;
+    if (mapDrag.moved) { const ns = clamp(mapDrag.scroll + dy, 0, mapScrollMax); mapScrollV = ns - mapScroll; mapScroll = ns; }   // last delta = flick velocity on release
+    return;
+  }
+  if (railDrag) {
+    const p = pos(e);
+    const dx = p.x - railDrag.x;
+    if (Math.abs(dx) > 4) railDrag.moved = true;
+    if (railDrag.moved) { const ns = clamp(railDrag.scroll - dx, 0, railScrollMax); railScrollV = ns - railScroll; railScroll = ns; }   // drag right → reveal earlier skins
+  }
 }
 function pressUp(e) {
-  if (!skyMap || !mapDrag) return;
-  const wasDrag = mapDrag.moved;
-  mapDrag = null;
-  if (!wasDrag) { const p = e ? pos(e) : null; if (p) mapTapAt(p); }
+  if (skyMap && mapDrag) {
+    const wasDrag = mapDrag.moved;
+    mapDrag = null;
+    if (!wasDrag) { const p = e ? pos(e) : null; if (p) mapTapAt(p); }
+    return;
+  }
+  if (railDrag) {
+    const wasDrag = railDrag.moved;
+    railDrag = null;
+    if (!wasDrag) { const p = e ? pos(e) : null; if (p) railTapAt(p); }   // a tap (no drag) selects the tile
+  }
 }
 canvas.addEventListener('pointerdown', e => { e.preventDefault(); pressDown(e); });
 canvas.addEventListener('pointermove', e => pressMove(e));
 canvas.addEventListener('pointerup', e => pressUp(e));
-canvas.addEventListener('pointercancel', () => { mapDrag = null; });
+canvas.addEventListener('pointercancel', () => { mapDrag = null; railDrag = null; });
 canvas.addEventListener('wheel', e => {
   // reversed vs v111: wheel/trackpad DOWN glides toward the ground (down the list), like every
   // native list; the impulse feeds the momentum velocity so it glides instead of snapping.
   if (skyMap) { mapScrollV = clamp(mapScrollV - e.deltaY * 0.06, -34, 34); e.preventDefault(); }
+  else if (state === 'shop' && railScrollMax > 0) { railScrollV = clamp(railScrollV + (e.deltaY + e.deltaX) * 0.5, -40, 40); e.preventDefault(); }
 }, { passive: false });
 addEventListener('keydown', e => {
   if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; if (paused) sfx.pause(); else sfx.resume(); e.preventDefault(); return; }
   if (paused) { if (e.code === 'Space' || e.code === 'Enter') { paused = false; sfx.resume(); e.preventDefault(); } return; }
-  if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { const d=e.code==='ArrowLeft'?CHARACTER_REGISTRY.length-1:1; previewIdx=(previewIdx+d)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); e.preventDefault(); return; }
+  if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { const d=e.code==='ArrowLeft'?CHARACTER_REGISTRY.length-1:1; previewIdx=(previewIdx+d)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); railCenterOn(previewIdx); e.preventDefault(); return; }
   if (e.code==='Space'||e.code==='Enter'||e.code==='ArrowDown') {
     e.preventDefault();
     if (state === 'playing') drop(); else pressDown(null);
@@ -3166,6 +3200,17 @@ function update(dt) {
     mapScroll = clamp(mapScroll + mapScrollV * dt, 0, mapScrollMax);
     if (mapScroll <= 0 || mapScroll >= mapScrollMax) mapScrollV = 0;
     else { mapScrollV *= Math.pow(0.86, dt); if (Math.abs(mapScrollV) < 0.08) mapScrollV = 0; }
+  }
+  // v186 skin carousel: flick momentum, then a gentle snap so it rests on a tile
+  if (state === 'shop' && !railDrag && SHOP_RAIL && SHOP_RAIL.step && railScrollMax > 0) {
+    if (railScrollV) {
+      railScroll = clamp(railScroll + railScrollV * dt, 0, railScrollMax);
+      if (railScroll <= 0 || railScroll >= railScrollMax) railScrollV = 0;
+      else { railScrollV *= Math.pow(0.86, dt); if (Math.abs(railScrollV) < 0.5) railScrollV = 0; }
+    } else {
+      const step = SHOP_RAIL.step, target = clamp(Math.round(railScroll / step) * step, 0, railScrollMax), d = target - railScroll;
+      if (Math.abs(d) > 0.5) railScroll += d * Math.min(1, 0.22 * dt); else railScroll = target;
+    }
   }
   tick += dt;
   musicStep();
@@ -7691,18 +7736,21 @@ function drawShopTower(sk,r) {                        // beveled, glossy 3D bloc
 function shopVisibleCharacter(slot) {
   return CHARACTER_REGISTRY[(previewIdx+slot)%CHARACTER_REGISTRY.length];
 }
-function drawShopSkinTile(tile,sk,selected) {
-  shopPanel(tile.x,tile.y,tile.w,tile.h,{r:3,shadow:false,
-    fill:selected?'rgba(98,232,181,0.12)':'#0E1626',
-    border:selected?SUI.mint:SUI.borderSoft,
-    glow:selected?'rgba(98,232,181,0.7)':null, glowBlur:6});
-  const labelH=tile.h>=42?9:7,previewH=tile.h-labelH-3,bw=Math.max(7,tile.w-5),bh=Math.max(3,Math.floor((previewH-4)/3));
+function drawShopSkinTile(x,y,w,h,sk,selected) {   // v186: wide carousel tile, glossy blocks
+  shopPanel(x,y,w,h,{r:4,shadow:false,
+    fill:selected?'rgba(98,232,181,0.14)':'#101A2E',
+    border:selected?SUI.mint:SUI.border,
+    glow:selected?'rgba(98,232,181,0.6)':null, glowBlur:6});
+  const labelH=9, previewTop=y+4, previewH=h-labelH-6, bw=Math.max(10,w-10), bh=Math.max(4,Math.floor((previewH-4)/3)), bx=Math.round(x+w/2-bw/2);
   for(let i=0;i<3;i++){
-    const col=sk.base(i,tierHueAt(i));
-    drawBlock(Math.round(tile.x+tile.w/2-bw/2),tile.y+2+(2-i)*(bh+1),bw,bh,col,false,0,sk.style);
+    const col=sk.base(i,tierHueAt(i)), by=previewTop+(2-i)*(bh+2);
+    drawBlock(bx,by,bw,bh,col,false,0,sk.style);
+    ctx.save(); ctx.beginPath(); ctx.rect(bx,by,bw,bh); ctx.clip();
+    const g=ctx.createLinearGradient(0,by,0,by+bh); g.addColorStop(0,'rgba(255,255,255,0.22)'); g.addColorStop(.5,'rgba(255,255,255,0.04)'); g.addColorStop(1,'rgba(0,0,0,0.12)');
+    ctx.fillStyle=g; ctx.fillRect(bx,by,bw,bh); ctx.restore();
+    ctx.strokeStyle='rgba(0,0,0,0.28)'; ctx.lineWidth=.5; ctx.strokeRect(bx+.25,by+.25,bw-.5,bh-.5);
   }
-  const label=tile.w>=17?sk.name:sk.name.slice(0,3);
-  txt(label,tile.x+tile.w/2,tile.y+tile.h-labelH+(tile.h>=42?2:1),.5,selected?'#FFF6E8':SUI.muted,'center');
+  txt(sk.name,x+w/2,y+h-labelH+1,.5,selected?'#FFF6E8':SUI.muted,'center');
 }
 function drawShopPassiveIcon(x,y,col) {     // silver cog with a colored core
   ctx.save();
@@ -7730,17 +7778,19 @@ function shopBoostIcon(id,x,y){
     g.addColorStop(0,'#9BDCFF'); g.addColorStop(.55,'#4C9AD6'); g.addColorStop(1,'#255E92');
     ctx.fillStyle=g; ctx.fill();
     ctx.lineWidth=1; ctx.strokeStyle='#173F63'; ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.fillRect(x-.6,y-4,1.4,7);   // center gleam
-    ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=.75;
+    ctx.fillStyle='rgba(255,255,255,0.42)'; ctx.fillRect(x-0.75,y-4,1.5,7);   // centered gleam
+    ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=.75;
     ctx.beginPath(); ctx.moveTo(x-3.4,y-3.2); ctx.lineTo(x-3.4,y+1); ctx.stroke();  // rim light
   }
-  else if(id==='aura'){                                // green dashed reticle ring + plus
-    ctx.strokeStyle='#5BE0A0'; ctx.lineWidth=1.2; ctx.lineCap='round';
-    ctx.setLineDash([2.2,1.9]);
-    ctx.beginPath(); ctx.arc(x,y,5.4,0,Math.PI*2); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.strokeStyle='#95F2C4'; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.moveTo(x-2.6,y); ctx.lineTo(x+2.6,y); ctx.moveTo(x,y-2.6); ctx.lineTo(x,y+2.6); ctx.stroke();
+  else if(id==='aura'){                                // crisp reticle: solid ring + cardinal ticks + plus
+    ctx.strokeStyle='#5BE0A0'; ctx.lineWidth=1.3; ctx.lineCap='butt';
+    ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x,y-6.4); ctx.lineTo(x,y-4.3); ctx.moveTo(x,y+4.3); ctx.lineTo(x,y+6.4);
+    ctx.moveTo(x-6.4,y); ctx.lineTo(x-4.3,y); ctx.moveTo(x+4.3,y); ctx.lineTo(x+6.4,y);
+    ctx.stroke();
+    ctx.strokeStyle='#9EF3C8'; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(x-2.2,y); ctx.lineTo(x+2.2,y); ctx.moveTo(x,y-2.2); ctx.lineTo(x,y+2.2); ctx.stroke();
   }
   else if(id==='slow'){                                // purple hourglass
     ctx.fillStyle='rgba(199,126,255,0.9)';
@@ -7766,14 +7816,16 @@ function renderShop() {
   // v185 premium Skin Shop: deep-navy field, rounded raised panels with soft shadows,
   // one SKINS plate (Bases retired). Layout geometry unchanged; only the chrome is new.
   shopBackdrop();
-  shopPanel(SHOP_HEADER.x,SHOP_HEADER.y,SHOP_HEADER.w,SHOP_HEADER.h,{r:5});
+  shopPanel(SHOP_HEADER.x,SHOP_HEADER.y,SHOP_HEADER.w,SHOP_HEADER.h,{r:6});   // v186: header + page tabs are one unit
+  const titleH=SHOP_HEADER.titleH;
   shopBackArrow(SHOP_BACK_BTN,SUI.gold);
-  txt('SHOP',W/2,SHOP_HEADER.y+(SHOP_HEADER.h>=22?4:5),SHOP_HEADER.h>=22?2:1,SUI.gold,'center');
+  txt('SHOP',W/2,SHOP_HEADER.y+Math.round((titleH-14)/2),2,SUI.gold,'center');
   const coinText=coins>99999?Math.floor(coins/1000)+'K':coins,coinW=String(coinText).length*6-1,coinX=SHOP_HEADER.x+SHOP_HEADER.w-7-coinW-9;
-  drawCoin(coinX,SHOP_HEADER.y+Math.round(SHOP_HEADER.h/2)-2.5);
-  txt(coinText,coinX+9,SHOP_HEADER.y+Math.round((SHOP_HEADER.h-7)/2),1,'#FFF6E8','left');
+  drawCoin(coinX,SHOP_HEADER.y+Math.round(titleH/2)-2.5);
+  txt(coinText,coinX+9,SHOP_HEADER.y+Math.round((titleH-7)/2),1,'#FFF6E8','left');
+  ctx.fillStyle='rgba(255,246,232,0.08)'; ctx.fillRect(SHOP_HEADER.x+7,SHOP_HEADER.y+titleH,SHOP_HEADER.w-14,.75);   // hairline between title row and tabs
   const tab=SHOP_TABS[0];
-  shopPanel(tab.x,tab.y,tab.w,tab.h,{r:4,fill:SUI.panelActive,border:SUI.gold,glow:'rgba(255,215,94,0.45)',glowBlur:5});
+  shopPanel(tab.x,tab.y,tab.w,tab.h,{r:4,shadow:false,fill:SUI.panelActive,border:SUI.gold,glow:'rgba(255,215,94,0.4)',glowBlur:4});
   txt('SKINS',tab.x+tab.w/2,tab.y+Math.round((tab.h-7)/2),1,'#FFD75E','center');
 
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
@@ -7810,9 +7862,20 @@ function renderShop() {
   txt(passive.tradeoff,pbx+pbw+6,pby,.5,'rgba(255,246,232,0.62)','left');
   shopChevron(SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-10,passiveCy-5,'#5EC8F2');
 
-  shopPanel(SHOP_RAIL.x,SHOP_RAIL.y,SHOP_RAIL.w,SHOP_RAIL.h,{r:5});
-  shopArrow(SKIN_L,-1,'#FFD75E');shopArrow(SKIN_R,1,'#FFD75E');
-  for(const tile of SHOP_SKIN_TILES)drawShopSkinTile(tile,shopVisibleCharacter(tile.slot),tile.slot===0);
+  shopPanel(SHOP_RAIL.x,SHOP_RAIL.y,SHOP_RAIL.w,SHOP_RAIL.h,{r:6});   // v186: drag/swipe carousel, no arrows
+  ctx.save(); shopRR(SHOP_RAIL.x+SHOP_RAIL.padX-1,SHOP_RAIL.y+2,SHOP_RAIL.viewW+2,SHOP_RAIL.h-4,4); ctx.clip();
+  const railLeft=SHOP_RAIL.x+SHOP_RAIL.padX;
+  for(const t of SHOP_SKIN_TILES){
+    const sx=railLeft+t.sx-railScroll;
+    if(sx+t.w<SHOP_RAIL.x||sx>SHOP_RAIL.x+SHOP_RAIL.w)continue;   // cull off-screen tiles
+    drawShopSkinTile(sx,t.y,t.w,t.h,CHARACTER_REGISTRY[t.idx],t.idx===previewIdx);
+  }
+  ctx.restore();
+  if(railScrollMax>0){   // soft edge fades hint there is more to scroll
+    const efw=10, ry=SHOP_RAIL.y+2, rh=SHOP_RAIL.h-4;
+    if(railScroll>1){ const gl=ctx.createLinearGradient(SHOP_RAIL.x,0,SHOP_RAIL.x+efw,0); gl.addColorStop(0,'rgba(10,14,26,0.9)'); gl.addColorStop(1,'rgba(10,14,26,0)'); ctx.fillStyle=gl; ctx.fillRect(SHOP_RAIL.x+1,ry,efw,rh); }
+    if(railScroll<railScrollMax-1){ const gr=ctx.createLinearGradient(SHOP_RAIL.x+SHOP_RAIL.w-efw,0,SHOP_RAIL.x+SHOP_RAIL.w,0); gr.addColorStop(0,'rgba(10,14,26,0)'); gr.addColorStop(1,'rgba(10,14,26,0.9)'); ctx.fillStyle=gr; ctx.fillRect(SHOP_RAIL.x+SHOP_RAIL.w-efw-1,ry,efw,rh); }
+  }
 
   shopPanel(SHOP_IDENTITY.x,BOOST_TOP,SHOP_IDENTITY.w,BOOST_CARD_H,{r:5,border:SUI.gold});
   ctx.fillStyle='rgba(255,215,94,0.5)'; ctx.fillRect(W/2-52,BOOST_TOP+6,15,1); ctx.fillRect(W/2+37,BOOST_TOP+6,15,1);
