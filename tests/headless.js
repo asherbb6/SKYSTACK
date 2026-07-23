@@ -799,7 +799,7 @@ check('renderHome (hero card) runs for fresh, veteran and conquered profiles', (
 check('compact Home keeps title, hero details, climb button, and missions in separate lanes', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270]]){W=w;H=h;relayout();if(HERO_CARD.y<64||HERO_CARD.h<96||PLAY_BTN.y<HERO_CARD.y+70||PLAY_BTN.y+PLAY_BTN.h>HERO_CARD.y+HERO_CARD.h||MAP_BTN.y<=HERO_CARD.y+HERO_CARD.h||MODE_BTN.y+MODE_BTN.h>=MISS_PANEL.y||MISS_PANEL.y+MISS_PANEL.h>=INSTALL_BTN.y||INSTALL_BTN.y+INSTALL_BTN.h>=NAV_Y||MISS_PANEL.h!==30+MISS_PANEL.rowGap)return false;}return true; })()'));   // v94: h grows with the row gap; symmetric 5px padding still holds
 check('compact Missions and Shop detail surfaces render and remain dismissible', () => fresh.run(
-  '(() => { W=242;H=300;relayout();state="home";missionsOpen=true;renderMissionsOverlay();const mp={x:2,y:2};pos=()=>mp;pressDown({});if(missionsOpen)return false;state="shop";shopView="character";shopDetailOpen=true;renderShopDetail();pressDown({});if(shopDetailOpen)return false;shopView="base";shopDetailOpen=true;renderShopDetail();return SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h<190; })()'));
+  '(() => { W=242;H=300;relayout();state="home";missionsOpen=true;renderMissionsOverlay();const mp={x:2,y:2};pos=()=>mp;pressDown({});if(missionsOpen)return false;state="shop";shopView="character";shopDetailOpen=true;renderShopDetail();pressDown({});return !shopDetailOpen&&SHOP_DETAIL_BTN.y>SHOP_IDENTITY.y+SHOP_IDENTITY.h&&BOOST_TOP+BOOST_CARD_H<NAV_Y; })()'));
 check('Me volume mixer renders and stays above navigation on narrow portrait screens', () => fresh.run(
   '(() => { state="me"; renderMe(); return MIX_ROWS.length===2&&MIX_ROWS.every(r=>r.minus.x>=0&&r.plus.x+r.plus.w<=W&&r.y+r.plus.h<NAV_Y); })()'));
 check('Player Progress and Settings tabs render as bounded separate surfaces', () => fresh.run(
@@ -1137,10 +1137,11 @@ check('S3 Base save normalization repairs selection while preserving unknown own
   const g=makeGame({'skystack-save':JSON.stringify({version:2,data:{'skystack-bases':{owned:['runestone','future-base','runestone',7],selected:'missing'}}})}),b=saved(g,'skystack-bases');
   return g.run('baseId==="natural"&&ownedBases.includes("future-base")')&&b.selected==='natural'&&b.owned.includes('natural')&&b.owned.includes('runestone')&&b.owned.includes('future-base')&&b.owned.filter(x=>x==='runestone').length===1;
 });
-check('S3 Base Select unlocks, equips, charges once, and writes only the Base domain', () => {
+check('S3 the retired Base Select cannot be reached or mutate the preserved Base domain', () => {
   const g=makeGame({'skystack-coins':'500'});
-  g.run('state="shop";shopView="base";basePreviewIdx=BASE_REGISTRY.findIndex(b=>b.id==="runestone");relayout();var __p={x:EQUIP_BTN.x+2,y:EQUIP_BTN.y+2};pos=()=>__p;pressDown({});');
-  const b=saved(g,'skystack-bases'); return b.selected==='runestone'&&b.owned.includes('runestone')&&saved(g,'skystack-coins')===410&&saved(g,'skystack-characters').selected==='aurora';
+  const before=JSON.stringify(saved(g,'skystack-bases'));
+  g.run('state="shop";shopView="base";previewIdx=CHARACTER_REGISTRY.findIndex(c=>c.id==="lava");relayout();var __p={x:EQUIP_BTN.x+2,y:EQUIP_BTN.y+2};pos=()=>__p;pressDown({});');
+  return JSON.stringify(saved(g,'skystack-bases'))===before&&saved(g,'skystack-characters').selected==='lava'&&saved(g,'skystack-coins')===380;
 });
 check('S3 selected Base is immutable within a run and remains cosmetic in Pure and Daily', () => fresh.run(
   '(() => { baseId="rootbound";mode="pure";resetRun();const snap=runContext.baseSnapshot,before=JSON.stringify(snap);baseId="natural";try{snap.id="starforge"}catch(e){}const pure=runContext,daily=createRunContext({mode:"daily",campaignLevel:-1,startingAltitude:0,checkpointId:"ground",baseId:"starforge",seed:1,skill:.35,loadout:{shield:true},characterId:"neon",characterMastery:{},modifiers:[]});return snap.id==="rootbound"&&JSON.stringify(snap)===before&&pure.basePermissions.cosmetic&&!pure.basePermissions.effects&&!daily.basePermissions.effects&&adjustedRunScore(pure,100)===100&&adjustedRunScore(daily,100)===100&&!canUseLoadout(pure)&&!canUseLoadout(daily); })()'));
@@ -1391,8 +1392,8 @@ check('v93 Climb Orders panel budgets symmetric padding for both mission rows', 
 check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 everywhere)', () =>
   /drawCoin\(MISS_PANEL\.x \+ MISS_PANEL\.w - 24, rowY \+ \.5\)/.test(src) &&
   /drawCoin\(PAD, 5\.5\)/.test(src) && /drawCoin\(22, 7\.5\)/.test(src) &&
-  /drawCoin\(x\+w-27,rowY\+\.5\)/.test(src) && /drawCoin\(W\/2 \+ 8, EQUIP_BTN\.y\+5\.5\)/.test(src) &&
-  /drawCoin\(W\/2\+8,EQUIP_BTN\.y\+5\.5\)/.test(src) && /drawCoin\(c\.x\+14, c\.y\+13\.5\)/.test(src) &&
+  /drawCoin\(x\+w-27,rowY\+\.5\)/.test(src) && /drawCoin\(x0, EQUIP_BTN\.y \+ 5\.5\)/.test(src) &&
+  /drawCoin\(coinX,SHOP_HEADER\.y\+Math\.round\(SHOP_HEADER\.h\/2\)-2\.5\)/.test(src) &&
   // v159: the fail screen's coin moved from a fixed `by + 27.5` into the budgeted flow as
   // `iy + 0.5`, with its text at `iy` — the +0.5 centring rule this guard exists for is unchanged.
   /drawCoin\(W\/2 - 20, sy \+ 1\.5\)/.test(src) && /drawCoin\(W\/2 - 16, iy \+ 0\.5\)/.test(src) &&
@@ -1571,10 +1572,10 @@ check('v103 final gate, Earth limb, and gold fragments render across their bands
 // ---------- v97 shop page audit ----------
 check('v97 boost chips sit inside the Run Boosts card with breathing gaps', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
-  'const shopW=Math.min(W-16,220), shopX=Math.round((W-shopW)/2);' +
-  'if(LOAD_CHIPS[0].x < shopX+4) return false;' +   // v99: 4-5px comfortable clearance
-  'if(LOAD_CHIPS[2].x+LOAD_CHIPS[2].w > shopX+shopW-4) return false;' +
+  'if(LOAD_CHIPS[0].x < SHOP_IDENTITY.x+4) return false;' +
+  'if(LOAD_CHIPS[2].x+LOAD_CHIPS[2].w > SHOP_IDENTITY.x+SHOP_IDENTITY.w-4) return false;' +
   'for(let i2=1;i2<3;i2++) if(LOAD_CHIPS[i2].x - (LOAD_CHIPS[i2-1].x+LOAD_CHIPS[i2-1].w) < 3) return false;' +
+  'if(LOAD_CHIPS.some(c=>c.y<BOOST_TOP+10||c.y+c.h>BOOST_TOP+BOOST_CARD_H-2))return false;' +
   '} return true; })()'));
 
 // v133: with Bases switched off there is one tab, so the pair rule (6px gap, equal widths, centred
@@ -1587,27 +1588,29 @@ check('v97 shop tabs stay centred at every viewport', () => fresh.run(
   'if(b.x-(a.x+a.w)!==6 || a.w!==b.w) return false;' +   // v99: 6px gap
   'if(Math.abs((a.x + b.x+b.w)/2 - W/2) > 1) return false; } return true; })()'));
 
-check('v97 skin pager dots clear the card frame and match across both shop views', () =>
-  /ctx\.fillRect\(ddx\+i\*6, SHOP_TOP\+5, 4, 3\)/.test(src) && /ctx\.fillRect\(dx\+i\*6,SHOP_TOP\+5,4,3\)/.test(src));
+check('v184 the seven-skin rail stays inside its frame and the first tile is the selected skin', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();previewIdx=3;' +
+  'if(SHOP_SKIN_TILES.length!==7||shopVisibleCharacter(0).id!==CHARACTER_REGISTRY[previewIdx].id)return false;' +
+  'if(SHOP_SKIN_TILES.some(t=>t.x<SHOP_RAIL.x+12||t.x+t.w>SHOP_RAIL.x+SHOP_RAIL.w-12||t.y<SHOP_RAIL.y||t.y+t.h>SHOP_RAIL.y+SHOP_RAIL.h))return false;}return true;})()'));
 
-check('v97 equip/detail buttons nest inside the hero card with gaps', () => fresh.run(
+check('v184 identity, passive, rail, boosts, and navigation occupy separate ordered bands', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,300]]){W=w;H=h;relayout();' +
-  'if(EQUIP_BTN.y+EQUIP_BTN.h+2 > SHOP_DETAIL_BTN.y) return false;' +
-  'if(SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h > SHOP_TOP+140) return false;' +
-  'if(SKIN_L.x+SKIN_L.w >= SKIN_R.x) return false; } return true; })()'));
+  'if(EQUIP_BTN.x<SHOP_IDENTITY.x||EQUIP_BTN.x+EQUIP_BTN.w>SHOP_IDENTITY.x+SHOP_IDENTITY.w)return false;' +
+  'if(SHOP_STAGE.y+SHOP_STAGE.h>=SHOP_IDENTITY.y||SHOP_IDENTITY.y+SHOP_IDENTITY.h>=SHOP_DETAIL_BTN.y||SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h>=SHOP_RAIL.y||SHOP_RAIL.y+SHOP_RAIL.h>=BOOST_TOP||BOOST_TOP+BOOST_CARD_H>=NAV_Y)return false;' +
+  'if(SKIN_L.x+SKIN_L.w>=SHOP_SKIN_TILES[0].x||SHOP_SKIN_TILES[6].x+SHOP_SKIN_TILES[6].w>=SKIN_R.x)return false;}return true;})()'));
 
-// ---------- v99 centered shop/home layout + stacked boost chips ----------
-check('v99 shop cards center vertically: the void above equals the void below (±2)', () => fresh.run(
+// ---------- v184 approved Skin Shop hierarchy ----------
+check('v184 the shop hierarchy fills the available phone column without dead zones', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[180,520],[320,480]]){W=w;H=h;relayout();' +
-  'const above = SHOP_TOP - 40, below = NAV_Y - 4 - (BOOST_TOP + BOOST_CARD_H);' +
-  'if(above < 0 || Math.abs(above - below) > 2) return false;' +
-  'if(BOOST_TOP !== SHOP_TOP + 150) return false; } return true; })()'));
-check('v99 boost chips stack icon-over-name-over-price on tall screens', () => fresh.run(
+  'if(SHOP_HEADER.y!==3||SHOP_HEADER.x!==Math.round((W-SHOP_HEADER.w)/2))return false;' +
+  'const bottom=NAV_Y-(BOOST_TOP+BOOST_CARD_H);if(bottom<3||bottom>7)return false;' +
+  'if(SHOP_STAGE.h<112)return false;}return true;})()'));
+check('v184 boost chips use one horizontal icon-name-status family', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[180,520],[320,480]]){W=w;H=h;relayout();' +
-  'if(LOAD_CHIPS[0].h !== 34 || LOAD_CHIPS[0].w !== 44) return false;' +
-  'if(LOAD_CHIPS[1].x - LOAD_CHIPS[0].x !== 54) return false;' +
-  'if(LOAD_CHIPS[2].y + LOAD_CHIPS[2].h > BOOST_TOP + BOOST_CARD_H - 4) return false;} return true; })()') &&
-  /v99 stacked chip: badge over name over price/.test(src));
+  'if(!LOAD_CHIPS.every(c=>c.y===LOAD_CHIPS[0].y&&c.h===LOAD_CHIPS[0].h))return false;' +
+  'if(LOAD_CHIPS[1].x-(LOAD_CHIPS[0].x+LOAD_CHIPS[0].w)!==4)return false;' +
+  'if(LOAD_CHIPS[2].y+LOAD_CHIPS[2].h>BOOST_TOP+BOOST_CARD_H-2)return false;}return true;})()') &&
+  /function drawShopBoostChip/.test(src));
 check('v99 home column splits its lower space into equal thirds on tall screens', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[180,520],[242,300]]){W=w;H=h;relayout();' +
   'const g1 = MISS_PANEL.y - (MAP_BTN.y + MAP_BTN.h);' +
@@ -1640,11 +1643,9 @@ check('v94 Home Climb Orders panel grows with available room instead of leaving 
   'if(H > 280 && above > 110) return false;' +
   'if(MISS_PANEL.y + MISS_PANEL.h >= INSTALL_BTN.y || INSTALL_BTN.y + INSTALL_BTN.h >= NAV_Y) return false;} return true; })()'));
 
-check('v94 Shop Run Boosts card grows with available room instead of capping at 78', () => fresh.run(
+check('v184 Shop reserves a compact or full-height Run Boosts band without overflow', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[242,300],[320,480],[480,270],[480,300],[180,427],[180,520]]){W=w;H=h;relayout();state="shop";shopView="character";renderShop();' +
-  'const avail = NAV_Y - 198;' +
-  'if(BOOST_CARD_H !== Math.min(clamp(Math.round(avail*.55),84,160), avail)) return false;' +   // v99: min 84 fits the stacked chip column
-  'if(BOOST_CARD_H < Math.min(84, avail)) return false;' +   // never below the stacked minimum when room allows
+  'const expected=(NAV_Y-7)<330?34:43;if(BOOST_CARD_H!==expected)return false;' +
   'if(LOAD_CHIPS.some(c => c.y + c.h > BOOST_TOP + BOOST_CARD_H - 2 || c.y + c.h >= NAV_Y)) return false;} return true; })()'));
 
 check('v94 Me Progress tab distributes its card across available room instead of leaving it empty', () => fresh.run(
@@ -1993,8 +1994,8 @@ check('v110 map cards stay inside the column and never overlap', () => fresh.run
 check('v110 sky map renders card grammar; trail and full-size islands gone from the world layer', () =>
   /Extra Modes-style level cards/.test(src) && !/winding dotted trail/.test(src) &&
   !/const wv = i => midX \+ Math\.round\(amp/.test(src));
-check('v110 shop INFO label yields to a long passive name on both detail rows', () =>
-  (src.match(/the INFO label yields|same INFO yield rule/g) || []).length === 2 &&
+check('v184 shop passive row uses a dedicated icon and chevron without an overlapping INFO label', () =>
+  /function drawShopPassiveIcon/.test(src) && /function shopChevron/.test(src) &&
   !/txt\('INFO >',SHOP_DETAIL_BTN/.test(src));
 
 // ---------- v111: sky map postcards + polish ----------
@@ -2143,13 +2144,13 @@ check('v119 headless has no Image, so coverImg stays null and the map still rend
 });
 
 // ---------- v120: "coins to go" gauge on locked shop unlock buttons ----------
-check('v120 coins-to-go gauge: helper + both shops wire it in; the afford branch keeps the pinned coin line', () =>
+check('v184 coins-to-go gauge remains wired to the reachable Skin unlock button', () =>
   /function coinsToGo\(cost\)/.test(src) &&
   /const frac = clamp\(coins \/ cost, 0, 1\)/.test(src) &&
   /ctx\.fillRect\(EQUIP_BTN\.x \+ 1, EQUIP_BTN\.y \+ 1, Math\.round\(\(EQUIP_BTN\.w - 2\) \* frac\), EQUIP_BTN\.h - 2\)/.test(src) &&
   /const lbl = coins \+ '\/' \+ cost/.test(src) &&
-  /} else coinsToGo\(sk\.cost\);/.test(src) && /else coinsToGo\(b\.cost\);/.test(src) &&
-  /drawCoin\(W\/2 \+ 8, EQUIP_BTN\.y\+5\.5\)/.test(src) && /drawCoin\(W\/2\+8,EQUIP_BTN\.y\+5\.5\)/.test(src));
+  /} else coinsToGo\(sk\.cost\);/.test(src) &&
+  /drawCoin\(x0, EQUIP_BTN\.y \+ 5\.5\)/.test(src));
 check('v120 a locked, unaffordable shop item shows a have/cost gauge label; affordable keeps UNLOCK', () => {
   const g = makeGame();
   const gauge = g.run('(() => { W=242;H=300;relayout(); state="shop"; shopView="character";' +
@@ -3995,7 +3996,8 @@ const SCREENS = [
   ['renderChallengePicker', 'state="home";'],
   ['renderModePicker',      'state="home";'],
   ['renderDifficultyPicker','state="home";'],
-  ['renderBaseShop',        'state="shop";'],
+  // v184: renderBaseShop is intentionally excluded. The retired Base system remains preserved as
+  // rollback data, but no player-facing route renders that obsolete screen.
   ['renderGameOver',        'prog=5; startLevel(2); score=420; while(blocks.length<40) blocks.push({x:0,w:96,col:"#fff"}); gameOver("topple"); overT=80;'],
   ['renderSplash',          'state="splash";'],
   ['renderRegionIntro',     'prog=5; startLevel(2); startRegionIntro(3); regionIntro.t=30;']

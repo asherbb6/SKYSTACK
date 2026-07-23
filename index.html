@@ -2771,7 +2771,8 @@ function shareScore() {
 const PAD = 6;
 const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, DIFF_BTN, DIFF_ROWS, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
-    SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
+    SHOP_TABS, SHOP_HEADER, SHOP_BACK_BTN, SHOP_STAGE, SHOP_IDENTITY, SHOP_RAIL, SHOP_SKIN_TILES,
+    SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H, ME_PROG, SHOP_TOP, BOOST_TOP,
     DEV_LEVEL_L, DEV_LEVEL_R, DEV_LEVEL_PLAY, DEV_TARGET_L, DEV_TARGET_R, DEV_TARGET_PLAY, DEV_EXIT, DEV_HUD_BTN, DEV_TOP;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
@@ -2845,33 +2846,35 @@ function relayout() {
   DEV_TARGET_L={x:devX+8,y:DEV_TOP+135,w:26,h:22}; DEV_TARGET_R={x:devX+devW-34,y:DEV_TOP+135,w:26,h:22};
   DEV_TARGET_PLAY={x:devX+42,y:DEV_TOP+161,w:devW-84,h:20};
   DEV_EXIT={x:devX+42,y:DEV_TOP+210,w:devW-84,h:20}; DEV_HUD_BTN={x:W-54,y:H-20,w:50,h:16};
-  // shop — v99: the two cards float vertically CENTERED between the tabs and the nav (SHOP_OFF),
-  // the tab pair splits around center with a 6px gap (still aligned with the cards' inner edges
-  // at the phone width), and every button keeps 4-5px clearance from its card frame
-  const shopTabW=Math.min(80,Math.floor((W-24)/2));
-  // v133: with Bases switched off there is only one tab, so it centres instead of sitting in a pair.
-  const shopTabIds=FEATURE_FLAGS.bases?['character','base']:['character'];
-  SHOP_TABS=shopTabIds.map((id,i)=>({id,
-    x:shopTabIds.length===1?Math.round((W-shopTabW)/2):Math.round(W/2)+(i?3:-shopTabW-3),
-    y:22,w:shopTabW,h:14}));
-  // v94 grow rule kept; min 78→84 so the stacked chip column always fits when it engages
-  BOOST_CARD_H = Math.min(clamp(Math.round((NAV_Y-198)*.55),84,160), NAV_Y-198);
-  const SHOP_OFF = Math.max(0, Math.floor((NAV_Y - 40 - (150 + BOOST_CARD_H) - 4) / 2));
-  SHOP_TOP = 40 + SHOP_OFF;          // hero card top (was fixed 40)
-  BOOST_TOP = SHOP_TOP + 150;        // boosts card top (was fixed 190)
-  SKIN_L = { x: Math.max(PAD, Math.round(W/2)-78), y:SHOP_TOP+28, w:18, h:22 };   // arrows hug the preview, not the screen edge
-  SKIN_R = { x: Math.min(W-PAD-18, Math.round(W/2)+60), y:SHOP_TOP+28, w:18, h:22 };
-  EQUIP_BTN = { x:W/2-42, y:SHOP_TOP+100, w:84, h:16 };
-  SHOP_DETAIL_BTN = { x:W/2-66, y:SHOP_TOP+121, w:132, h:16 };
-  // v99 stacked boost chips (icon over name over price) whenever the card affords the 34px
-  // column; the v97 horizontal 24px chip remains the short-viewport fallback
-  const chipStacked = BOOST_CARD_H >= 84;
-  const chipW = chipStacked ? 44 : 50, chipH = chipStacked ? 34 : 24, chipStep = chipW + (chipStacked ? 10 : 4);
-  const chipsW = chipW*3 + (chipStep-chipW)*2;
-  const boostChipY = BOOST_TOP + (chipStacked
-    ? 18 + Math.max(0, Math.round((BOOST_CARD_H - 84) * .3))
-    : 20 + Math.max(0, Math.round((BOOST_CARD_H - 78) * .35)));
-  LOAD_CHIPS = LOADOUT.map((l, i) => ({ x: Math.round(W/2 - chipsW/2 + i * chipStep), y: boostChipY, w: chipW, h: chipH, id: l.id, cost: l.cost }));
+  // v184: the approved Skin Shop is one deliberate vertical instrument panel. Bases were retired
+  // before this pass, so there is exactly one SKINS plate — never an empty second tab. The same
+  // hierarchy scales from the 180x390 phone reference down to the 242x300 technical minimum.
+  const shopW=Math.min(W-8,240),shopX=Math.round((W-shopW)/2),shopRoom=NAV_Y-7;
+  const shopCompact=shopRoom<330,gap=shopCompact?2:3;
+  const headerH=shopCompact?18:22,tabH=shopCompact?14:16,identityH=shopCompact?28:35,
+        passiveH=shopCompact?22:28,railH=shopCompact?38:50;
+  BOOST_CARD_H=shopCompact?34:43;
+  const fixed=headerH+tabH+identityH+passiveH+railH+BOOST_CARD_H+gap*6;
+  const stageH=Math.max(shopCompact?72:112,shopRoom-fixed);
+  let sy=3;
+  SHOP_HEADER={x:shopX,y:sy,w:shopW,h:headerH}; sy+=headerH+gap;
+  const shopTabW=Math.min(86,shopW-28);
+  SHOP_TABS=[{id:'character',x:Math.round(W/2-shopTabW/2),y:sy,w:shopTabW,h:tabH}]; sy+=tabH+gap;
+  SHOP_STAGE={x:shopX,y:sy,w:shopW,h:stageH}; SHOP_TOP=sy; sy+=stageH+gap;
+  SHOP_IDENTITY={x:shopX,y:sy,w:shopW,h:identityH}; sy+=identityH+gap;
+  SHOP_DETAIL_BTN={x:shopX,y:sy,w:shopW,h:passiveH}; sy+=passiveH+gap;
+  SHOP_RAIL={x:shopX,y:sy,w:shopW,h:railH}; sy+=railH+gap;
+  BOOST_TOP=sy;
+  SHOP_BACK_BTN={x:SHOP_HEADER.x+3,y:SHOP_HEADER.y+2,w:shopCompact?18:22,h:SHOP_HEADER.h-4};
+  const equipW=shopCompact?48:56,equipH=shopCompact?18:22;
+  EQUIP_BTN={x:SHOP_IDENTITY.x+SHOP_IDENTITY.w-equipW-5,y:SHOP_IDENTITY.y+Math.round((SHOP_IDENTITY.h-equipH)/2),w:equipW,h:equipH};
+  SKIN_L={x:SHOP_RAIL.x+2,y:SHOP_RAIL.y+Math.round((SHOP_RAIL.h-18)/2),w:10,h:18};
+  SKIN_R={x:SHOP_RAIL.x+SHOP_RAIL.w-12,y:SKIN_L.y,w:10,h:18};
+  const tileCount=7,tileGap=3,tileW=shopCompact?14:18,tilesW=tileW*tileCount+tileGap*(tileCount-1);
+  const tileX=Math.round(W/2-tilesW/2);
+  SHOP_SKIN_TILES=Array.from({length:tileCount},(_,i)=>({slot:i,x:tileX+i*(tileW+tileGap),y:SHOP_RAIL.y+3,w:tileW,h:SHOP_RAIL.h-6}));
+  const chipsGap=4,chipsW=SHOP_IDENTITY.w-12,chipW=Math.floor((chipsW-chipsGap*2)/3);
+  LOAD_CHIPS=LOADOUT.map((l,i)=>({x:SHOP_IDENTITY.x+6+i*(chipW+chipsGap),y:BOOST_TOP+12,w:chipW,h:BOOST_CARD_H-15,id:l.id,cost:l.cost}));
   // me
   const meW = Math.min(W - PAD*2-16, 200), meX = Math.round((W - meW)/2);
   const meTabW=Math.floor(meW/2);
@@ -3055,22 +3058,15 @@ function pressDown(e) {
   } else if (state === 'shop') {
     if (!p) return;
     if (shopDetailOpen) { shopDetailOpen=false; sfx.tap(); return; }
+    if (inR(p,SHOP_BACK_BTN,3)) { state='home'; fadeT=reduceMotion?0:1; sfx.tap(); return; }
     if (navHit(p)) return;
-    for (const tab of SHOP_TABS) if (inR(p,tab,2)) { shopView=tab.id; shopDetailOpen=false; sfx.tap(); return; }
-    const catalog=shopView==='base'?BASE_REGISTRY:CHARACTER_REGISTRY;
-    if (inR(p, SKIN_L, 6)) { if(shopView==='base')basePreviewIdx=(basePreviewIdx+catalog.length-1)%catalog.length;else previewIdx=(previewIdx+catalog.length-1)%catalog.length; demo.n=1; sfx.tap(); return; }
-    if (inR(p, SKIN_R, 6)) { if(shopView==='base')basePreviewIdx=(basePreviewIdx+1)%catalog.length;else previewIdx=(previewIdx+1)%catalog.length; demo.n=1; sfx.tap(); return; }
+    if (inR(p, SKIN_L, 6)) { previewIdx=(previewIdx+CHARACTER_REGISTRY.length-1)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); return; }
+    if (inR(p, SKIN_R, 6)) { previewIdx=(previewIdx+1)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); return; }
+    for (const tile of SHOP_SKIN_TILES) if (inR(p,tile,2)) {
+      previewIdx=(previewIdx+tile.slot)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); return;
+    }
     if (inR(p,SHOP_DETAIL_BTN,3)) { shopDetailOpen=true; sfx.tap(); return; }
     if (inR(p, EQUIP_BTN, 3)) {
-      if (shopView==='base') {
-        const b=BASE_REGISTRY[basePreviewIdx];
-        if (ownedBases.indexOf(b.id)===-1) {
-          const buy=purchaseUnlock(b,ownedBases);
-          if (buy.status==='purchased') { baseId=b.id; persistBases(); const done=reconcileCollections(true); sfx.unlock(); toast(done.length?'COLLECTION! +'+done[0].reward+' COINS':'BASE UNLOCKED!'); }
-          else { sfx.deny(); toast(buy.status==='locked'?'NOT AVAILABLE':'NEED MORE COINS'); }
-        } else if (b.id!==baseId) { baseId=b.id; persistBases(); sfx.tap(); toast('BASE EQUIPPED'); }
-        return;
-      }
       const sk = CHARACTER_REGISTRY[previewIdx];
       if (owned.indexOf(sk.id) === -1) {
         const buy=purchaseUnlock(sk,owned);
@@ -3079,7 +3075,7 @@ function pressDown(e) {
       } else if (sk.id !== skinId) { skinId = sk.id; persistCharacters(); sfx.tap(); toast('EQUIPPED'); }
       return;
     }
-    if (shopView==='character' && canUseLoadout(mode)) for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
+    if (canUseLoadout(mode)) for (const c of LOAD_CHIPS) if (inR(p, c, 2)) {
       shopInfo = POW_DESC[c.id];
       if (loadout[c.id]) { loadout[c.id] = false; transactCoins(c.cost,false); sfx.tap(); }
       else if (canAfford(c.cost)) { loadout[c.id] = true; transactCoins(-c.cost,false); sfx.coin(); }
@@ -3145,7 +3141,7 @@ canvas.addEventListener('wheel', e => {
 addEventListener('keydown', e => {
   if ((state === 'playing' || state === 'dropping') && e.code === 'Escape') { paused = !paused; if (paused) sfx.pause(); else sfx.resume(); e.preventDefault(); return; }
   if (paused) { if (e.code === 'Space' || e.code === 'Enter') { paused = false; sfx.resume(); e.preventDefault(); } return; }
-  if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { const a=shopView==='base'?BASE_REGISTRY:CHARACTER_REGISTRY, d=e.code==='ArrowLeft'?a.length-1:1; if(shopView==='base')basePreviewIdx=(basePreviewIdx+d)%a.length;else previewIdx=(previewIdx+d)%a.length; demo.n=1; sfx.tap(); e.preventDefault(); return; }
+  if (state === 'shop' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { const d=e.code==='ArrowLeft'?CHARACTER_REGISTRY.length-1:1; previewIdx=(previewIdx+d)%CHARACTER_REGISTRY.length; demo.n=4; sfx.tap(); e.preventDefault(); return; }
   if (e.code==='Space'||e.code==='Enter'||e.code==='ArrowDown') {
     e.preventDefault();
     if (state === 'playing') drop(); else pressDown(null);
@@ -3712,8 +3708,8 @@ function drawNav() {
   ctx.fillStyle = 'rgba(255,246,232,0.16)'; ctx.fillRect(0, NAV_Y, W, 1);
   for (const t of NAV_TABS) {
     const active = state === t.id;
-    const col=active?UI_HEX():'rgba(255,246,232,0.46)',cx=Math.round(t.x+t.w/2);
-    if(active){ctx.fillStyle=uiA(.12);ctx.fillRect(t.x+3,NAV_Y+2,t.w-6,NAV_H-3);ctx.fillStyle=UI_HEX();ctx.fillRect(t.x+12,NAV_Y,t.w-24,2);ctx.fillRect(cx-7,NAV_Y+22,14,1);}   // v98: underline sits 1px clear of the label (glyphs end at +21)
+    const activeCol=state==='shop'?'#FFD75E':UI_HEX(),col=active?activeCol:'rgba(255,246,232,0.46)',cx=Math.round(t.x+t.w/2);
+    if(active){ctx.fillStyle=state==='shop'?'rgba(255,215,94,0.10)':uiA(.12);ctx.fillRect(t.x+3,NAV_Y+2,t.w-6,NAV_H-3);ctx.fillStyle=activeCol;ctx.fillRect(t.x+12,NAV_Y,t.w-24,2);ctx.fillRect(cx-7,NAV_Y+22,14,1);}   // v98: underline sits 1px clear of the label (glyphs end at +21)
     drawNavGlyph(t.id,cx,NAV_Y+3,col);
     txt(t.label,cx,NAV_Y+14,1,col,'center');
     if(t!==NAV_TABS[NAV_TABS.length-1]){ctx.fillStyle='rgba(255,246,232,0.07)';ctx.fillRect(t.x+t.w-1,NAV_Y+5,1,NAV_H-10);}
@@ -7537,94 +7533,139 @@ function coinsToGo(cost) {
   const frac = clamp(coins / cost, 0, 1);
   ctx.fillStyle = 'rgba(255,215,94,0.18)';
   ctx.fillRect(EQUIP_BTN.x + 1, EQUIP_BTN.y + 1, Math.round((EQUIP_BTN.w - 2) * frac), EQUIP_BTN.h - 2);
-  const lbl = coins + '/' + cost, tw = lbl.length*6 - 1, x0 = Math.round(W/2 - (tw + 11)/2);
+  const lbl = coins + '/' + cost, tw = lbl.length*6 - 1, center=EQUIP_BTN.x+EQUIP_BTN.w/2, x0 = Math.round(center - (tw + 11)/2);
   drawCoin(x0, EQUIP_BTN.y + 5.5); txt(lbl, x0 + 11, EQUIP_BTN.y + 5, 1, 'rgba(255,246,232,0.7)', 'left');
 }
+function shopArrow(r,dir,col) {
+  const cx=Math.round(r.x+r.w/2),cy=Math.round(r.y+r.h/2),s=dir<0?-1:1;
+  ctx.fillStyle=col;
+  ctx.fillRect(cx-s*4,cy-1,s*5,3);
+  for(let i=0;i<4;i++)ctx.fillRect(cx-s*(4-i),cy-4+i,s,8-i*2);
+}
+function shopChevron(x,y,col) {
+  ctx.fillStyle=col;
+  for(let i=0;i<4;i++){ctx.fillRect(x+i,y+i,1,2);ctx.fillRect(x+i,y+8-i,1,2);}
+}
+function shopStageBackdrop(r) {
+  const x=r.x+1,y=r.y+1,w=r.w-2,h=r.h-2;
+  ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+  const bands=['#071124','#0A1935','#0D2447','#143058','#293963','#5A4168','#A75E72'];
+  for(let i=0;i<bands.length;i++){
+    const y0=Math.round(y+i*h/bands.length),y1=Math.round(y+(i+1)*h/bands.length);
+    ctx.fillStyle=bands[i];ctx.fillRect(x,y0,w,y1-y0+1);
+  }
+  ctx.fillStyle='rgba(255,246,232,0.62)';
+  for(let i=0;i<14;i++){const sx=x+5+((i*37)%Math.max(8,w-10)),sy=y+5+((i*23)%Math.max(12,Math.round(h*.48)));ctx.fillRect(sx,sy,i%4===0?1.5:.5,i%4===0?1.5:.5);}
+  const base=y+h;
+  ctx.fillStyle='#101B38';ctx.beginPath();ctx.moveTo(x,base);ctx.lineTo(x,base-h*.22);ctx.lineTo(x+w*.12,base-h*.36);ctx.lineTo(x+w*.23,base-h*.18);ctx.lineTo(x+w*.34,base-h*.31);ctx.lineTo(x+w*.48,base-h*.14);ctx.lineTo(x+w*.61,base-h*.28);ctx.lineTo(x+w*.72,base-h*.15);ctx.lineTo(x+w*.86,base-h*.35);ctx.lineTo(x+w,base-h*.2);ctx.lineTo(x+w,base);ctx.fill();
+  ctx.fillStyle='#18264A';ctx.beginPath();ctx.moveTo(x,base);ctx.lineTo(x,base-h*.12);ctx.lineTo(x+w*.16,base-h*.25);ctx.lineTo(x+w*.31,base-h*.1);ctx.lineTo(x+w*.47,base-h*.22);ctx.lineTo(x+w*.64,base-h*.08);ctx.lineTo(x+w*.81,base-h*.24);ctx.lineTo(x+w,base-h*.1);ctx.lineTo(x+w,base);ctx.fill();
+  ctx.restore();
+}
+function drawShopPlinth(r,baseY) {
+  const cx=Math.round(r.x+r.w/2),wide=Math.min(94,r.w-24);
+  ctx.fillStyle='#11182E';ctx.fillRect(cx-wide/2,baseY-7,wide,8);
+  ctx.fillStyle='#34415E';ctx.fillRect(cx-wide/2+6,baseY-12,wide-12,6);
+  ctx.fillStyle='#65718D';ctx.fillRect(cx-wide/2+6,baseY-12,wide-12,1);
+  ctx.fillStyle='#202A45';ctx.fillRect(cx-wide/2,baseY-7,wide,2);
+  ctx.fillStyle='rgba(0,0,0,0.32)';ctx.fillRect(cx-wide/2+4,baseY+1,wide-8,2);
+}
+function drawShopTower(sk,r) {
+  const compact=r.h<112,bh=compact?11:14,bw=compact?38:48,gap=1;
+  const baseY=r.y+r.h-(compact?13:18);
+  drawShopPlinth(r,baseY);
+  for(let i=0;i<4;i++){
+    const col=sk.base(i,tierHueAt(i)),w2=bw-(i%2?1:0);
+    drawBlock(Math.round(W/2-w2/2),baseY-(i+1)*bh-i*gap,w2,bh,col,false,0,sk.style);
+  }
+}
+function shopVisibleCharacter(slot) {
+  return CHARACTER_REGISTRY[(previewIdx+slot)%CHARACTER_REGISTRY.length];
+}
+function drawShopSkinTile(tile,sk,selected) {
+  const accent=selected?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.18)';
+  pixelFrame(tile.x,tile.y,tile.w,tile.h,selected?'rgba(98,232,181,0.08)':'rgba(5,8,20,0.72)',accent,selected);
+  const labelH=tile.h>=42?9:7,previewH=tile.h-labelH-3,bw=Math.max(7,tile.w-5),bh=Math.max(3,Math.floor((previewH-4)/3));
+  for(let i=0;i<3;i++){
+    const col=sk.base(i,tierHueAt(i));
+    drawBlock(Math.round(tile.x+tile.w/2-bw/2),tile.y+2+(2-i)*(bh+1),bw,bh,col,false,0,sk.style);
+  }
+  const label=tile.w>=17?sk.name:sk.name.slice(0,3);
+  txt(label,tile.x+tile.w/2,tile.y+tile.h-labelH+(tile.h>=42?2:1),.5,selected?'#FFF6E8':'rgba(255,246,232,0.72)','center');
+}
+function drawShopPassiveIcon(x,y,col) {
+  ctx.fillStyle='rgba(255,246,232,0.16)';ctx.fillRect(x-5,y-5,11,11);
+  ctx.fillStyle=col;ctx.fillRect(x-3,y-1,7,3);ctx.fillRect(x-1,y-3,3,7);
+  ctx.fillStyle='#0B0E1A';ctx.fillRect(x,y,1,1);
+}
+function drawShopBoostChip(c) {
+  const on=loadout[c.id],afford=canAfford(c.cost),accent=on?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.20)';
+  pixelFrame(c.x,c.y,c.w,c.h,on?'rgba(98,232,181,0.12)':'rgba(5,8,20,0.74)',accent,on);
+  const iconY=c.y+5,iconX=c.x+7;
+  pixDisc(iconX+4,iconY+4,5,on?'#08301F':POW[c.id].c2);
+  pixDisc(iconX+4,iconY+4,4,'rgba(7,8,15,0.58)');
+  drawIcon(c.id,iconX,iconY,true);
+  txt(POW_NAME[c.id],c.x+16,c.y+5,.75,on?VISUAL_SYSTEM.palette.mint:'#FFF6E8','left');
+  const pipY=c.y+c.h-6;
+  for(let i=0;i<3;i++){ctx.fillStyle=i<(on?3:afford?2:1)?(on?VISUAL_SYSTEM.palette.mint:POW[c.id].c):'rgba(255,246,232,0.13)';ctx.fillRect(c.x+16+i*5,pipY,3,3);}
+}
 function renderShop() {
-  topBar('SHOP');
-  for(const tab of SHOP_TABS){
-    const on=shopView===tab.id;
-    pixelFrame(tab.x,tab.y,tab.w,tab.h,on?uiA(.16):'rgba(11,14,26,0.72)',on?UI_HEX():'rgba(255,246,232,0.22)',on);
-    txt(tab.id==='character'?'CHARACTERS':'BASES',tab.x+tab.w/2,tab.y+4,1,on?UI_HEX():'rgba(255,246,232,0.62)','center');
-  }
-  if(shopView==='base'){renderBaseShop();return;}
-  // functional Character Select; current block skins are the temporary character art
+  // Approved v184 Skin Shop: one strong preview, one readable choice rail, no retired Bases entry.
+  pixelFrame(SHOP_HEADER.x,SHOP_HEADER.y,SHOP_HEADER.w,SHOP_HEADER.h,'rgba(5,8,20,0.90)','#34415E',false);
+  shopArrow(SHOP_BACK_BTN,-1,'#FFD75E');
+  txt('SHOP',W/2,SHOP_HEADER.y+(SHOP_HEADER.h>=22?4:5),SHOP_HEADER.h>=22?2:1,'#FFD75E','center');
+  const coinText=coins>99999?Math.floor(coins/1000)+'K':coins,coinW=String(coinText).length*6-1,coinX=SHOP_HEADER.x+SHOP_HEADER.w-7-coinW-9;
+  drawCoin(coinX,SHOP_HEADER.y+Math.round(SHOP_HEADER.h/2)-2.5);
+  txt(coinText,coinX+9,SHOP_HEADER.y+Math.round((SHOP_HEADER.h-7)/2),1,'#FFF6E8','left');
+  const tab=SHOP_TABS[0];
+  pixelFrame(tab.x,tab.y,tab.w,tab.h,'rgba(11,14,26,0.88)','#FFD75E',true);
+  txt('SKINS',tab.x+tab.w/2,tab.y+Math.round((tab.h-7)/2),1,'#FFD75E','center');
+
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
-  const shopW=Math.min(W-16,220),shopX=Math.round((W-shopW)/2);
-  pixelFrame(shopX,SHOP_TOP,shopW,144,'rgba(11,14,26,0.78)',RARE_COL[sk.rare],false);
-  pixelFrame(shopX,BOOST_TOP,shopW,BOOST_CARD_H,'rgba(11,14,26,0.78)',VISUAL_SYSTEM.palette.gold,false);
-  const dotsW = CHARACTER_REGISTRY.length*6-2, ddx = Math.round(W/2 - dotsW/2);
-  for (let i=0;i<CHARACTER_REGISTRY.length;i++) { ctx.fillStyle = i===previewIdx ? '#FFF6E8' : 'rgba(255,246,232,0.3)'; ctx.fillRect(ddx+i*6, SHOP_TOP+5, 4, 3); }   // v97: clear of the card's top frame
-  for (let i = 0; i < Math.min(demo.n, 4); i++) {
-    const col = sk.base(i, tierHueAt(i));   // v134: previews use the locked place palette too
-    const w2 = 50 - i*6;
-    drawBlock(Math.round(W/2-w2/2), SHOP_TOP+52 - i*10, w2, 9, col, false, 0, sk.style);
-  }
-  if (!isOwned) { const ly = SHOP_TOP+13; ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-6,ly,12,10); ctx.fillStyle='#FFF6E8'; ctx.fillRect(W/2-4,ly-3,8,4); ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(W/2-2,ly-2,4,3); ctx.fillStyle='#FFD75E'; ctx.fillRect(W/2-1,ly+3,2,4); }
-  pixelFrame(SKIN_L.x,SKIN_L.y,SKIN_L.w,SKIN_L.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
-  pixelFrame(SKIN_R.x,SKIN_R.y,SKIN_R.w,SKIN_R.h,'rgba(11,14,26,0.74)','rgba(255,246,232,0.26)',false);
-  txt('<', SKIN_L.x+SKIN_L.w/2, SKIN_L.y+8, 1, 'rgba(255,246,232,0.85)', 'center');
-  txt('>', SKIN_R.x+SKIN_R.w/2, SKIN_R.y+8, 1, 'rgba(255,246,232,0.85)', 'center');
-  txt(sk.name, W/2, SHOP_TOP+68, 1, '#FFF6E8', 'center');
-  txt(sk.rare+' - '+sk.role, W/2, SHOP_TOP+78, 1, RARE_COL[sk.rare], 'center');
-  txt('MASTERY '+masteryLevel(sk.id), W/2, SHOP_TOP+88, 1, 'rgba(255,246,232,0.55)', 'center');
+  shopStageBackdrop(SHOP_STAGE);
+  pixelFrame(SHOP_STAGE.x,SHOP_STAGE.y,SHOP_STAGE.w,SHOP_STAGE.h,'rgba(0,0,0,0)',RARE_COL[sk.rare],false);
+  drawShopTower(sk,SHOP_STAGE);
+
+  pixelFrame(SHOP_IDENTITY.x,SHOP_IDENTITY.y,SHOP_IDENTITY.w,SHOP_IDENTITY.h,'rgba(5,8,20,0.91)','#34415E',false);
+  const nameMax=EQUIP_BTN.x-SHOP_IDENTITY.x-10;
+  txtFit(sk.name,SHOP_IDENTITY.x+7,SHOP_IDENTITY.y+(SHOP_IDENTITY.h>=35?5:4),SHOP_IDENTITY.h>=35?2:1,'#FFF6E8','left',nameMax,1);
+  txt(sk.rare+' - '+sk.role,SHOP_IDENTITY.x+7,SHOP_IDENTITY.y+SHOP_IDENTITY.h-10,.75,RARE_COL[sk.rare],'left');
 
   if (isEquipped) {
-    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)','rgba(255,246,232,0.26)',false);
-    txt('EQUIPPED', W/2, EQUIP_BTN.y+5, 1, 'rgba(255,246,232,0.6)', 'center');
+    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(98,232,181,0.88)',VISUAL_SYSTEM.palette.mint,true);
+    txt('EQUIPPED',EQUIP_BTN.x+EQUIP_BTN.w/2,EQUIP_BTN.y+Math.round((EQUIP_BTN.h-7)/2),1,'#08301F','center');
   } else if (isOwned) {
-    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',VISUAL_SYSTEM.palette.mint,true);
-    txt('EQUIP', W/2, EQUIP_BTN.y+5, 1, VISUAL_SYSTEM.palette.mint, 'center');
+    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.88)',VISUAL_SYSTEM.palette.mint,true);
+    txt('EQUIP',EQUIP_BTN.x+EQUIP_BTN.w/2,EQUIP_BTN.y+Math.round((EQUIP_BTN.h-7)/2),1,VISUAL_SYSTEM.palette.mint,'center');
   } else {
     const afford = coins >= sk.cost;
-    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.76)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);
+    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.88)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);
     if (afford) {
       const ic = VISUAL_SYSTEM.palette.gold;
-      txt('UNLOCK', W/2 - 14, EQUIP_BTN.y+5, 1, ic, 'center');
-      drawCoin(W/2 + 8, EQUIP_BTN.y+5.5); txt(sk.cost, W/2 + 17, EQUIP_BTN.y+5, 1, ic, 'left');
+      txt('UNLOCK',EQUIP_BTN.x+EQUIP_BTN.w/2,EQUIP_BTN.y+Math.round((EQUIP_BTN.h-7)/2),1,ic,'center');
     } else coinsToGo(sk.cost);   // v120: coins-to-go gauge until you can afford it
   }
 
-  pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(7,8,15,0.66)',isEquipped?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.22)',false);
-  txt(passive.name,SHOP_DETAIL_BTN.x+7,SHOP_DETAIL_BTN.y+5,1,isEquipped?'#62E8B5':'#FFF6E8','left');
-  // v110: the INFO label yields to a long passive name (collapses to the bare chevron)
-  txt(SHOP_DETAIL_BTN.w >= (passive.name.length*6-1)+22+35 ? 'INFO >' : '>',
-      SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-7,SHOP_DETAIL_BTN.y+5,1,'rgba(255,246,232,0.52)','right');
+  pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(5,8,20,0.91)',isEquipped?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.20)',false);
+  const passiveCy=Math.round(SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h/2);
+  drawShopPassiveIcon(SHOP_DETAIL_BTN.x+12,passiveCy,isEquipped?VISUAL_SYSTEM.palette.mint:RARE_COL[sk.rare]);
+  txt(passive.name,SHOP_DETAIL_BTN.x+23,SHOP_DETAIL_BTN.y+4,1,isEquipped?VISUAL_SYSTEM.palette.mint:'#FFF6E8','left');
+  txt(passive.benefit+' - '+passive.tradeoff,SHOP_DETAIL_BTN.x+23,SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h-9,.5,'rgba(255,246,232,0.62)','left');
+  shopChevron(SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-10,passiveCy-5,'#5EC8F2');
 
-  // boosts section
-  txt('RUN BOOSTS', W/2, BOOST_TOP+4, 1, '#FFD75E', 'center');
+  pixelFrame(SHOP_RAIL.x,SHOP_RAIL.y,SHOP_RAIL.w,SHOP_RAIL.h,'rgba(5,8,20,0.90)','#34415E',false);
+  shopArrow(SKIN_L,-1,'#FFD75E');shopArrow(SKIN_R,1,'#FFD75E');
+  for(const tile of SHOP_SKIN_TILES)drawShopSkinTile(tile,shopVisibleCharacter(tile.slot),tile.slot===0);
+
+  pixelFrame(SHOP_IDENTITY.x,BOOST_TOP,SHOP_IDENTITY.w,BOOST_CARD_H,'rgba(5,8,20,0.91)',VISUAL_SYSTEM.palette.gold,false);
+  txt('RUN BOOSTS',W/2,BOOST_TOP+3,1,'#FFD75E','center');
   if (!canUseLoadout(mode) && mode === 'pure') {
-    txt(W<220?'PURE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PURE', W/2, LOAD_CHIPS[0].y+10, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt(W<220?'SKILL ONLY - 1.5X SCORE':'PURE IS SKILL ONLY - 1.5X SCORE', W/2, LOAD_CHIPS[0].y+22, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt('PURE: LOADOUT OFF',W/2,LOAD_CHIPS[0].y+8,1,'rgba(255,246,232,0.52)','center');
   } else if (!canUseLoadout(mode) && mode === 'practice') {
-    txt(W<220?'PRACTICE: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN PRACTICE', W/2, LOAD_CHIPS[0].y+10, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt(W<220?'GUIDED CLASSIC RULES':'GUIDED RUNS USE CLASSIC RULES', W/2, LOAD_CHIPS[0].y+22, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt('PRACTICE: LOADOUT OFF',W/2,LOAD_CHIPS[0].y+8,1,'rgba(255,246,232,0.52)','center');
   } else if (canUseLoadout(mode)) {
-    for (const c of LOAD_CHIPS) {
-      const on = loadout[c.id], afford = coins >= c.cost;
-      pixelFrame(c.x,c.y,c.w,c.h,on?'rgba(98,232,181,0.14)':'rgba(7,8,15,0.72)',on?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.18)',on);
-      const IP = POW[c.id];                            // circular badge, same style as in-world pickups
-      if (c.h >= 34) {   // v99 stacked chip: badge over name over price — nothing sits side-by-side
-        pixDisc(c.x+c.w/2, c.y+9, 5, on ? '#08301F' : IP.c2);
-        pixDisc(c.x+c.w/2, c.y+9, 4, on ? 'rgba(0,0,0,0.35)' : '#141022');
-        drawIcon(c.id, c.x+c.w/2-4, c.y+5, true);
-        txt(POW_NAME[c.id], c.x+c.w/2, c.y+16, 1, on ? VISUAL_SYSTEM.palette.mint : '#FFF6E8', 'center');
-        if (on) txt('OK', c.x+c.w/2, c.y+25, 1, VISUAL_SYSTEM.palette.mint, 'center');
-        else { drawCoin(c.x+c.w/2-10, c.y+25.5); txt(c.cost, c.x+c.w/2-2, c.y+25, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
-      } else {           // v97 horizontal chip: the short-viewport fallback
-        pixDisc(c.x+7, c.y+7, 5, on ? '#08301F' : IP.c2);   // v97: r5 badge clears the chip frame
-        pixDisc(c.x+7, c.y+7, 4, on ? 'rgba(0,0,0,0.35)' : '#141022');
-        drawIcon(c.id, c.x+3, c.y+3, true);
-        txt(POW_NAME[c.id], c.x+14, c.y+4, 1, on ? VISUAL_SYSTEM.palette.mint : '#FFF6E8', 'left');
-        if (on) txt('OK', c.x+c.w/2, c.y+13, 1, VISUAL_SYSTEM.palette.mint, 'center');
-        else { drawCoin(c.x+14, c.y+13.5); txt(c.cost, c.x+23, c.y+13, 1, afford ? '#FFD75E' : 'rgba(255,215,94,0.4)', 'left'); }
-      }
-    }
-    const chipBot = LOAD_CHIPS[0].y + LOAD_CHIPS[0].h;
-    if (chipBot + 27 <= BOOST_TOP + BOOST_CARD_H - 3) { txt(shopInfo, W/2, chipBot+8, 1, 'rgba(255,246,232,0.6)', 'center'); txt('LOCKS WHEN CLIMB STARTS', W/2, chipBot+20, 1, 'rgba(255,246,232,0.4)', 'center'); }
+    for(const c of LOAD_CHIPS)drawShopBoostChip(c);
   } else {
-    txt(W<220?'DAILY: LOADOUT OFF':'PASSIVES + BOOSTS OFF IN DAILY', W/2, LOAD_CHIPS[0].y+10, 1, 'rgba(255,246,232,0.5)', 'center');
-    txt(W<220?'SAME FAIR RUN FOR ALL':'EVERYONE GETS THE SAME FAIR RUN', W/2, LOAD_CHIPS[0].y+22, 1, 'rgba(255,246,232,0.4)', 'center');
+    txt('DAILY: LOADOUT OFF',W/2,LOAD_CHIPS[0].y+8,1,'rgba(255,246,232,0.52)','center');
   }
 }
 
