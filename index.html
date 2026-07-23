@@ -994,13 +994,16 @@ const LEVEL_BANDS = deepFreeze([
   { t0:6,  t1:6,  name:null,         cover:'stratosphere' },
   { t0:7,  t1:7,  name:null,         cover:'aurora'       },
   { t0:8,  t1:8,  name:null,         cover:'space'        },
-  { t0:9,  t1:9,  name:null,         cover:'orbit'        },
+  // v177: ORBIT's repeated-read coast made the old 100-placement campaign segment punitive.
+  // The campaign now clears after 60 placements; the art band and all three coast chapters still
+  // exist through altitude 359 in Endless/Practice, and SUMMIT keeps its established 360 checkpoint.
+  { t0:9,  t1:9,  name:null,         cover:'orbit', goal:320 },
   { t0:10, t1:10, name:null,         cover:'thestars'     }
 ]);
 const LEVEL_COUNT = LEVEL_BANDS.length;
 const TIER_LEVEL = deepFreeze((() => { const m = []; LEVEL_BANDS.forEach((L, i) => { for (let t = L.t0; t <= L.t1; t++) m[t] = i; }); return m; })());
 const levelBand   = i => LEVEL_BANDS[clamp(i | 0, 0, LEVEL_COUNT - 1)];
-const levelGoalA  = i => TIERS[levelBand(i).t1].n;                                             // the altitude that WINS the level
+const levelGoalA  = i => { const L=levelBand(i); return Number.isFinite(L.goal) ? L.goal : TIERS[L.t1].n; }; // campaign win altitude; may end inside an art band
 const levelStartA = i => { const L = levelBand(i); return L.t0 <= 0 ? 0 : TIERS[L.t0 - 1].n; };
 const levelName   = i => levelBand(i).name || TIERS[levelBand(i).t1].name;
 const levelColor  = i => TIERS[levelBand(i).t0].c;                                             // a level wears its OPENING biome's colour
@@ -1250,7 +1253,7 @@ const LEVEL_BLUEPRINTS = deepFreeze([
   { identity:'THIN AIR',        focus:'GLASS CONTROL',      duration:{min:38,target:47,max:58},   difficulty:6,  pace:'QUICK',    speedScale:1 },
   { identity:'ICE TEMPO',       focus:'QUICK RECOVERY',     duration:{min:43,target:52,max:65},   difficulty:7,  pace:'QUICK',    speedScale:1 },
   { identity:'LOW GRAVITY',     focus:'COSMIC WOBBLE',      duration:{min:80,target:95,max:115},  difficulty:8,  pace:'STANDARD', speedScale:1 },
-  { identity:'ORBITAL ENDURANCE',focus:'LONG-FORM CONTROL', duration:{min:150,target:175,max:210},difficulty:9,  pace:'LONG',     speedScale:1 },
+  { identity:'ORBITAL CONTROL',  focus:'REPEATED COAST READS',duration:{min:88,target:105,max:125},difficulty:9, pace:'STANDARD', speedScale:1 },
   { identity:'SUMMIT RUN',      focus:'FINAL PRECISION',    duration:{min:210,target:240,max:270},difficulty:10, pace:'SUMMIT',   speedScale:1.25 }
 ]);
 // v126: each level's stars test that level's own declared identity/focus, instead of all 11 levels
@@ -1267,7 +1270,7 @@ const STAR_OBJECTIVES = deepFreeze([
   { two:{type:'perfects',n:13},   three:{type:'streak',n:6} },        // 5  THIN AIR - glass control
   { two:{type:'recover',n:6},     three:{type:'streak',n:7} },        // 6  ICE TEMPO (v131: 8->6, the stronger slide cuts recovery chances)
   { two:{type:'perfects',n:22},   three:{type:'streak',n:8} },        // 7  LOW GRAVITY - cosmic wobble
-  { two:{type:'perfects',n:40},   three:{type:'streak',n:10} },       // 8  ORBITAL ENDURANCE
+  { two:{type:'perfects',n:24},   three:{type:'streak',n:10} },       // 8  ORBITAL CONTROL - v177 preserves the old 40% perfect target over 60 blocks
   { two:{type:'ratio',n:45},      three:{type:'cleanFinish',n:4} }    // 9  SUMMIT RUN - final precision
 ]);
 // v129: `short` gives a compact form for tight cards — txtFit bottoms out at scale 1, so a long
