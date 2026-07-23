@@ -1126,9 +1126,9 @@ function spacePhaseAt(h) { return SPACE_PHASES.find(p => h >= p.start && h <= p.
 // tower stay untouched: this is a coast through micro-gravity, never a return of high-altitude wind.
 // Each chapter raises the same readable rule instead of piling unrelated obstacles on top of it.
 const ORBIT_PHASES = deepFreeze([
-  { index:0, id:'insertion',      name:'INSERTION',      rule:'LEAD THE DROP', start:260, end:289, speed:0.42, color:'#62E8B5' },
-  { index:1, id:'satellite-belt', name:'SATELLITE BELT', rule:'COAST FASTER',  start:290, end:324, speed:0.62, color:'#8FB8FF' },
-  { index:2, id:'high-orbit',     name:'HIGH ORBIT',     rule:'COMMIT EARLY',  start:325, end:359, speed:0.82, color:'#C8A0FF' }
+  { index:0, id:'insertion',      name:'INSERTION',      rule:'LEAD THE DROP', start:260, end:289, speed:0.85, span:15, color:'#62E8B5' },
+  { index:1, id:'satellite-belt', name:'SATELLITE BELT', rule:'COAST FASTER',  start:290, end:324, speed:1.15, span:10, color:'#8FB8FF' },
+  { index:2, id:'high-orbit',     name:'HIGH ORBIT',     rule:'COMMIT EARLY',  start:325, end:359, speed:1.45, span:7,  color:'#C8A0FF' }
 ]);
 function orbitPhaseAt(h) { return ORBIT_PHASES.find(p => h >= p.start && h <= p.end) || null; }
 // A private integer mix for SPACE events. It never touches rnd(), so adding or tuning a hazard
@@ -1140,10 +1140,14 @@ function spaceHazardUnit(seed, n) {
 }
 function orbitCoastPlan(h, seed, difficulty, shielded) {
   const phase=orbitPhaseAt(h);
-  if (!phase) return { phase:null, phaseIndex:-1, dir:0, vx:0, speed:0 };
-  const dir=spaceHazardUnit(seed,1200+phase.index)<.5?-1:1;
+  if (!phase) return { phase:null, phaseIndex:-1, sector:-1, dir:0, vx:0, speed:0 };
+  const sector=Math.floor((h-phase.start)/phase.span), baseDir=spaceHazardUnit(seed,1200+phase.index)<.5?-1:1;
+  // v176: one held direction for 30–35 blocks became a memorized correction. Each visible orbital
+  // sector now reverses that direction deterministically; the HUD, flow field, and entry note all
+  // read this same plan before the next release, so added pressure never becomes hidden randomness.
+  const dir=sector%2?-baseDir:baseDir;
   const scale=(difficulty&&difficulty.drift)||1, shieldScale=shielded?.42:1;
-  return { phase:phase.id, phaseIndex:phase.index, dir, vx:dir*phase.speed*scale*shieldScale, speed:phase.speed };
+  return { phase:phase.id, phaseIndex:phase.index, sector, dir, vx:dir*phase.speed*scale*shieldScale, speed:phase.speed };
 }
 function spaceHazardPlan(phase, serial, seed, wy) {
   const u0=spaceHazardUnit(seed,serial*4), u1=spaceHazardUnit(seed,serial*4+1), u2=spaceHazardUnit(seed,serial*4+2);
@@ -1978,10 +1982,11 @@ function orbitCoastEnabled() {
 function updateOrbitCoastPhase() {
   const phase=orbitPhaseAt(blocks.length);
   if (!orbitCoastEnabled()||!phase) { orbitPhaseSeen=-1; return; }
-  if (orbitPhaseSeen!==phase.index) {
-    orbitPhaseSeen=phase.index;
-    const coast=orbitCoastPlan(blocks.length,runContext.seed,activeDifficulty(),shield>0);
-    note(phase.rule+' - COAST '+(coast.dir>0?'>':'<'),phase.color,1,110);
+  const coast=orbitCoastPlan(blocks.length,runContext.seed,activeDifficulty(),shield>0), key=phase.index+':'+coast.sector;
+  if (orbitPhaseSeen!==key) {
+    const flipped=typeof orbitPhaseSeen==='string'&&orbitPhaseSeen.startsWith(phase.index+':');
+    orbitPhaseSeen=key;
+    note((flipped?'ORBIT FLIP':phase.rule)+' - COAST '+(coast.dir>0?'>':'<'),phase.color,flipped?2:1,flipped?90:110);
   }
 }
 function updateSpaceHazards(dt) {
@@ -2186,10 +2191,11 @@ function landFx(w) {
 }
 function land() {
   const top = blocks[blocks.length - 1], f = faller;
-  // v125: on EASY/MEDIUM drift may cost you a perfect, but it may never steal a block you had aimed
-  // correctly. Expressed at landing (not as a per-frame clamp) because whether a drop misses depends
-  // on where the player aimed, which only the un-drifted release position x0 knows.
-  if (f && !activeDifficulty().driftCanMiss && f.x0 !== undefined) {
+  // v125: on EASY/MEDIUM intermittent wind/SPACE drift may cost a perfect, but may not steal a
+  // correctly aimed block. v176 deliberately excludes ORBIT's constant, continuously announced
+  // coast: forcing a 2px save there let players ignore COAST arrows and finish on a meaningless
+  // sliver. Leading the visible direction is the level's rule; Easy scaling and shields still help.
+  if (f && !f.orbitV && !activeDifficulty().driftCanMiss && f.x0 !== undefined) {
     const wouldHave = Math.min(f.x0 + f.w, top.x + top.w) - Math.max(f.x0, top.x);
     const now = Math.min(f.x + f.w, top.x + top.w) - Math.max(f.x, top.x);
     if (wouldHave > 1 && now <= 1) f.x = f.x > top.x ? top.x + top.w - 2 : top.x - f.w + 2;
@@ -2217,7 +2223,12 @@ function land() {
     setExpr('sad', 999); gameOver('miss'); return;
   }
 
-  const isPerfect = Math.abs(offset) <= effPerfect();
+  // v176: adaptive assist still slows the ORBIT slider and forgives tower balance, but does not
+  // expand away the biome's visible lead requirement. Aura and Character precision remain real.
+  const perfectWindow=f.orbitV
+    ? PERFECT_PX*(auraBlocks>0?2:1)*passiveEffect(runContext,'perfect',1)
+    : effPerfect();
+  const isPerfect = Math.abs(offset) <= perfectWindow;
   let nx = oL, nw = overlap;
   // v163: the catch recovers a FRACTION of the overhang, never all of it. The old flat 8px grow
   // FULLY refunded any drop within 8px of centre — and the perfect window is only ~3.4px — so every

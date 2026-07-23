@@ -3370,7 +3370,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v175', () => /const CACHE = 'skystack-v175'/.test(sw));
+check('sw.js cache bumped to v176', () => /const CACHE = 'skystack-v176'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4603,6 +4603,33 @@ check('v175 ORBIT keeps its chapter and coast direction visible in HUD and scene
   return /ORBIT/.test(hud) && /COAST/.test(hud) && /phase\.name/.test(hud) && /renderOrbitPhaseHUD\(h\)/.test(src) &&
     /drawOrbitCoastFlow\(/.test(bg) ? true : 'ORBIT coast is not continuously telegraphed in both HUD and world';
 });
+
+// ---------- v176 ORBIT — harder than one memorized correction ----------
+check('v176 ORBIT chapters declare stronger coast and progressively shorter reversal sectors', () => fresh.run(
+  'ORBIT_PHASES.map(p=>p.span).join(",")==="15,10,7" && ORBIT_PHASES[0].speed>=.85 && ' +
+  'ORBIT_PHASES[1].speed>=1.15 && ORBIT_PHASES[2].speed>=1.45'));
+check('v176 every orbital sector boundary guarantees a visible direction reversal', () => fresh.run(
+  '(() => { const d=DIFFICULTY_TIERS.medium,s=0x176,pairs=[[274,275],[299,300],[331,332],[338,339]];' +
+  'return pairs.every(([a,b])=>{const x=orbitCoastPlan(a,s,d,false),y=orbitCoastPlan(b,s,d,false);' +
+  'return x.phaseIndex===y.phaseIndex && y.sector===x.sector+1 && y.dir===-x.dir;}); })()'));
+check('v176 an orbital reversal is announced before the next block can be released', () => fresh.run(
+  '(() => { runContext=createRunContext({mode:"level",campaignLevel:8,startingAltitude:260,seed:0x176,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:274},()=>({x:73,w:96,col:{h:0,s:0,l:50}}));state="playing";tier=9;assist=0;shield=0;notes=[];curNote=null;orbitPhaseSeen=-1;' +
+  'updateOrbitCoastPhase();notes=[];blocks.push({x:73,w:96,col:{h:0,s:0,l:50}});updateOrbitCoastPhase();' +
+  'return notes.some(n=>/ORBIT FLIP/.test(n.text)); })()'));
+check('v176 repeatedly ignoring the coast now fails before HIGH ORBIT', () => {
+  const normal = makeGame({'skystack-difficulty':JSON.stringify({level:'medium'})});
+  return normal.run(
+    '(() => { startLevel(8,"checkpoint-8",0x176);let frames=0;' +
+    'while(frames++<14000&&state!=="levelwin"&&state!=="levelfail"&&state!=="gameover"){' +
+    'if(state==="playing"&&slider){const top=blocks[blocks.length-1],target=top.x+top.w/2-slider.w/2;' +
+    'if(Math.abs(slider.x-target)<=Math.max(2,slider.speed))releaseBlock();}update(1);}' +
+    'return state==="levelfail"&&blocks.length<325; })()');
+});
+check('v176 adaptive assist cannot turn an ignored ORBIT lead into a perfect', () => fresh.run(
+  '(() => { startLevel(8,"checkpoint-8",0x176);assist=.85;shield=0;combo=0;state="dropping";tier=9;' +
+  'const top=blocks[blocks.length-1],before=top.w;faller={x:top.x+4,x0:top.x,w:top.w,y:towerTopY()-BH,vx:0,orbitV:.85,vy:0,col:{h:0,s:0,l:50},golden:false};' +
+  'land();return combo===0&&blocks[blocks.length-1].w<before; })()'));
 
 // ---------- report ----------
 let pass = 0, fail = 0;
