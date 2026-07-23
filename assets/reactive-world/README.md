@@ -5,7 +5,7 @@ This directory contains the small, reviewed subset loaded by the private
 
 ## Runtime contract
 
-- All four PNG files are exact, unmodified archive entries from official Kenney
+- All five PNG files are exact, unmodified archive entries from official Kenney
   releases.
 - Every sheet is sampled with nearest-neighbor filtering at its original tile
   grid.
@@ -29,6 +29,8 @@ official URLs, release versions, and original archive hashes remain in
 - Farm Expansion: richer foreground flora and wind-reactive leaf shapes.
 - UI Pack Pixel Adventure: reserved for the developer preview surface after the
   environment slice proves readable.
+- Pixel Shmup: space hazard bodies plus compact power-up and repair-balloon
+  cargo cores. Existing procedural marks remain guarded loading/offline fallbacks.
 
 No generated concept bitmap is used as game art. The approved concepts remain
 composition and hierarchy targets only.

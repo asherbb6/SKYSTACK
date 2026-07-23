@@ -42,6 +42,16 @@
       "columns": 23,
       "rows": 7,
       "runtimeUse": ["developer preview controls", "compact focus states", "effect toggles"]
+    },
+    "shmup": {
+      "file": "kenney-pixel-shmup.png",
+      "sourceArchive": "../../third_party/upstream/kenney/pixel-shmup/pixel-shmup.zip",
+      "sourcePath": "Tilemap/tiles_packed.png",
+      "sha256": "F02A6E2A453F42B26894C1D466D36E6E34EB18AAF0B2408F23A124D749D8049A",
+      "tile": 16,
+      "columns": 12,
+      "rows": 10,
+      "runtimeUse": ["space hazard bodies", "power-up cores", "repair balloon cargo"]
     }
   }
 }

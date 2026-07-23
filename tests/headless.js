@@ -4904,7 +4904,8 @@ check('overhaul runtime atlas is an exact, licensed, manifest-verified Kenney su
     platformer:['kenney-pixel-platformer.png','A3BBFF36594BAA36C803A67E9152A20A80F2FAEB3C22CA84AC06E0A70F56553D',18,20,9],
     farm:['kenney-farm-expansion.png','786B530E175495563A3C60BD611FC650F3C5953C9B2D2721A11ACA557AC222D5',18,16,7],
     dungeon:['kenney-tiny-dungeon.png','D24E60A41E4AC7A745C0304DFDE121143688557F40215F23221C29CFE683825F',16,12,11],
-    ui:['kenney-ui-pixel-adventure.png','E11A08ABB13DDEE96F01612CED167C944B30F3DF4E22B4E301F0464129C7F254',16,23,7]
+    ui:['kenney-ui-pixel-adventure.png','E11A08ABB13DDEE96F01612CED167C944B30F3DF4E22B4E301F0464129C7F254',16,23,7],
+    shmup:['kenney-pixel-shmup.png','F02A6E2A453F42B26894C1D466D36E6E34EB18AAF0B2408F23A124D749D8049A',16,12,10]
   };
   if(manifest.license!=='CC0-1.0'||!fs.existsSync(path.join(dir,'KENNEY-CC0-LICENSE.txt'))) return 'license record missing';
   for(const [id,[file,hash,tile,columns,rows]] of Object.entries(expected)){
@@ -4915,7 +4916,7 @@ check('overhaul runtime atlas is an exact, licensed, manifest-verified Kenney su
   return true;
 });
 check('overhaul atlas loader is optional, nearest-neighbor, and leaves simulation unblocked', () => fresh.run(
-  'WORLD_DETAIL==="full"&&Object.keys(WORLD_SHEETS).join(",")==="platformer,farm,dungeon,ui"&&' +
+  'WORLD_DETAIL==="full"&&Object.keys(WORLD_SHEETS).join(",")==="platformer,farm,dungeon,ui,shmup"&&' +
   'Object.values(WORLD_SHEETS).every(s=>s.ready===false)&&drawWorldTile("dungeon",90,0,0,1,false,1)===false&&' +
   'WORLD_FX_LIMITS.full.ambientSprites>WORLD_FX_LIMITS.low.ambientSprites&&' +
   'WORLD_FX_LIMITS.low.ambientSprites>WORLD_FX_LIMITS["reduced-motion"].ambientSprites'));
@@ -4948,6 +4949,35 @@ check('overhaul DEV LAB exposes compact independent art, air, and ray controls',
     'tap(DEV_ART_BTN);tap(DEV_AMBIENT_BTN);tap(DEV_LIGHT_BTN);' +
     'return DEV_ART_BTN.y+DEV_ART_BTN.h<=DEV_EXIT.y&&DEV_EXIT.y+DEV_EXIT.h<=H&&' +
     'WORLD_PREVIEW.assets===!before[0]&&WORLD_PREVIEW.ambient===!before[1]&&WORLD_PREVIEW.light===!before[2]; })()');
+});
+check('overhaul visual director budgets ambient, telegraph, event, and light independently', () => fresh.run(
+  '(() => { const p=worldFxPlan(70,"lower-sky");return p.detail==="full"&&p.ambient.families===2&&p.ambient.sprites===10&&' +
+  'p.telegraph.sprites===30&&p.event.bursts===1&&p.event.sprites===12&&p.light.rays===3&&' +
+  'WORLD_FX_LIMITS.full.telegraphSprites>WORLD_FX_LIMITS.low.telegraphSprites&&' +
+  'WORLD_FX_LIMITS.low.telegraphSprites>WORLD_FX_LIMITS["reduced-motion"].telegraphSprites; })()'));
+check('overhaul ambient preview can hide decoration but never gameplay truth', () => fresh.run(
+  '(() => { WORLD_PREVIEW.ambient=false;WORLD_PREVIEW.light=false;return !worldFxEnabled("ambient")&&!worldFxEnabled("light")&&' +
+  'worldFxEnabled("telegraph")&&worldFxEnabled("event")&&worldFxPlan(205,"space").telegraph.enabled; })()'));
+check('overhaul Lower Sky spends one cloud family first and adds bounded wind seeds only in full detail', () => {
+  const body=src.slice(src.indexOf('function drawLowerSkyAir'),src.indexOf('\n// Authored altitude-owned birds'));
+  return /worldFxPlan\(\(A0\+A1\)\/2,'lower-sky'\)/.test(body)&&/cloudBudget=Math\.min\(6,fx\.ambient\.sprites\)/.test(body)&&
+    /fx\.ambient\.families>1/.test(body)&&/windWaveAt\(sx\)/.test(body)&&/const edge=clamp/.test(body)
+    ? true : 'Lower Sky bypasses the director or loses truthful wind coupling';
+});
+check('overhaul SPACE bodies use the exact Shmup sheet with procedural fallbacks', () => {
+  const body=src.slice(src.indexOf('function drawSpaceHazard'),src.indexOf('\nfunction drawPastColumn'));
+  return /drawWorldTile\('shmup',4/.test(body)&&/drawWorldTile\('shmup',8/.test(body)&&
+    /worldFxCount\('telegraphSprites'/.test(body)&&/if \(!drawWorldTile/.test(body)
+    ? true : 'Space lost its licensed bodies, budget, or guarded fallback';
+});
+check('overhaul event bursts are deterministic, local, and capped by the director', () => fresh.run(
+  '(() => { particles=[];const n=worldEventBurst(20,30,"#fff",77,99,0),a=JSON.stringify(particles);' +
+  'particles=[];const n2=worldEventBurst(20,30,"#fff",77,99,0);return n===12&&n2===12&&particles.length===12&&JSON.stringify(particles)===a; })()'));
+check('overhaul licensed power cores serve pickups and balloon cargo without replacing their gameplay signatures', () => {
+  const body=src.slice(src.indexOf('const SHMUP_POWER_TILES'),src.indexOf('\nconst MASCOT_BODY'));
+  return /repair:24/.test(body)&&/shield:25/.test(body)&&/drawShmupPowerCore\(p\.type/.test(body)&&
+    /drawShmupPowerCore\(balloon\.type/.test(body)&&/drawPowerSignature\(p\.type/.test(body)&&/drawIcon\(p\.type/.test(body)
+    ? true : 'power or balloon presentation no longer has asset plus fallback continuity';
 });
 
 // ---------- report ----------

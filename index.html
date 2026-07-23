@@ -64,17 +64,36 @@ const WORLD_PREVIEW = {
   ambient: WORLD_QUERY.get('ambient') !== '0',
   light: WORLD_QUERY.get('light') !== '0'
 };
+// One visual director owns every non-structural effect. Ambient detail may scale down or be
+// disabled in the private preview, but TELEGRAPHS never do: if physics can move a block, its tell
+// remains visible. Event bursts are short and local; light is decorative and separately gated.
 const WORLD_FX_LIMITS = deepFreeze({
-  full:{ambientFamilies:2,ambientSprites:10,eventSprites:6},
-  low:{ambientFamilies:1,ambientSprites:5,eventSprites:3},
-  'reduced-motion':{ambientFamilies:1,ambientSprites:4,eventSprites:1}
+  full:{ambientFamilies:2,ambientSprites:10,telegraphFamilies:2,telegraphSprites:30,eventBursts:1,eventSprites:12,lightRays:3},
+  low:{ambientFamilies:1,ambientSprites:5,telegraphFamilies:1,telegraphSprites:18,eventBursts:1,eventSprites:6,lightRays:2},
+  'reduced-motion':{ambientFamilies:1,ambientSprites:4,telegraphFamilies:1,telegraphSprites:10,eventBursts:1,eventSprites:3,lightRays:1}
 });
 function worldFxLimit(key) { return WORLD_FX_LIMITS[WORLD_DETAIL][key] || 0; }
+function worldFxEnabled(channel) {
+  if (channel === 'ambient') return WORLD_PREVIEW.ambient;
+  if (channel === 'light') return WORLD_PREVIEW.light;
+  return channel === 'telegraph' || channel === 'event';                 // gameplay truth is never a preview toggle
+}
+function worldFxCount(key, requested) { return Math.max(0,Math.min(Math.max(0,requested|0),worldFxLimit(key))); }
+function worldFxPlan(altitude, phase) {
+  return {
+    detail:WORLD_DETAIL,altitude:altitude|0,phase:phase||'none',
+    ambient:{enabled:worldFxEnabled('ambient'),families:worldFxLimit('ambientFamilies'),sprites:worldFxLimit('ambientSprites')},
+    telegraph:{enabled:true,families:worldFxLimit('telegraphFamilies'),sprites:worldFxLimit('telegraphSprites')},
+    event:{enabled:true,bursts:worldFxLimit('eventBursts'),sprites:worldFxLimit('eventSprites')},
+    light:{enabled:worldFxEnabled('light'),rays:worldFxLimit('lightRays')}
+  };
+}
 const WORLD_SHEETS = {
   platformer:{src:'assets/reactive-world/kenney-pixel-platformer.png',tile:18,cols:20,rows:9,img:null,ready:false},
   farm:{src:'assets/reactive-world/kenney-farm-expansion.png',tile:18,cols:16,rows:7,img:null,ready:false},
   dungeon:{src:'assets/reactive-world/kenney-tiny-dungeon.png',tile:16,cols:12,rows:11,img:null,ready:false},
-  ui:{src:'assets/reactive-world/kenney-ui-pixel-adventure.png',tile:16,cols:23,rows:7,img:null,ready:false}
+  ui:{src:'assets/reactive-world/kenney-ui-pixel-adventure.png',tile:16,cols:23,rows:7,img:null,ready:false},
+  shmup:{src:'assets/reactive-world/kenney-pixel-shmup.png',tile:16,cols:12,rows:10,img:null,ready:false}
 };
 if (typeof Image !== 'undefined') for (const S of Object.values(WORLD_SHEETS)) {
   const im = new Image();
@@ -2269,6 +2288,18 @@ function addCoins(n, x, y) {
   if (x !== undefined) for (let i = 0; i < n && i < 6; i++) coinFx.push({ x, y, t: 0, delay: i * 3 });
   sfx.coin();
 }
+// Magic UI's bounded particle model, translated into SKYSTACK's native canvas/runtime: each event
+// gets one short local burst and the director caps its sprites by detail mode. Deterministic hashes
+// keep this presentation layer out of the seeded gameplay RNG.
+function worldEventBurst(x,y,color,seed,requested,dirX) {
+  if (!worldFxEnabled('event') || worldFxLimit('eventBursts') < 1) return 0;
+  const n=worldFxCount('eventSprites',requested),base=((seed===undefined?tick*997+x*31+y*17:seed)|0)>>>0;
+  for (let i=0;i<n;i++) {
+    const a=spaceHazardUnit(base,i*2)*Math.PI*2,spd=.75+spaceHazardUnit(base,i*2+1)*1.85;
+    particles.push({x,y,vx:Math.cos(a)*spd+(dirX||0),vy:Math.sin(a)*spd,life:reduceMotion?.55:.8,color});
+  }
+  return n;
+}
 function applyPower(type, cx, cy2, silent) {
   const P = POW[type];
   if (type === 'coin') { addCoins(5, cx, cy2); }
@@ -2290,14 +2321,10 @@ function applyPower(type, cx, cy2, silent) {
   else if (type === 'gold') { goldenNext = true; if (slider) slider.golden = true; if (!silent) sfx.golden(); }
   else if (type === 'fever') { combo += 4; if (!silent) sfx.power(); if (combo >= feverThreshold(runContext) && !fever) { enterFever(); } if (fever) feverT = 180; }
   floaters.push({ text: P.label, x: cx, y: cy2, vy: -.4, life: 1.2, color: P.c1 });
-  if (type !== 'coin') for (let i = 0; i < 12; i++) particles.push({ x: cx, y: cy2, vx:(Math.random()-.5)*2.6, vy:(Math.random()-.5)*2.6, life: 1, color: P.c1 });
 }
 function collectPickup(p, cx, cy2) {
   p.got = true; runPowerups++;
-  for (let i = 0; i < 10; i++) {                     // badge shatters outward in a ring
-    const a = i / 10 * 6.283;
-    particles.push({ x: cx, y: cy2, vx: Math.cos(a)*1.8, vy: Math.sin(a)*1.8, life: .7, color: POW[p.type].c1 });
-  }
+  worldEventBurst(cx,cy2,POW[p.type].c1,p.row*131+(p.type.length*17),12,0);
   applyPower(p.type, cx, cy2);
 }
 function enterFever() {
@@ -2362,36 +2389,36 @@ function popBalloon() {
   const bx = balloon.x, by = balloonWorldY(), kind = balloon.kind || 'gift';
   if (kind === 'dud') {                                   // fake-out: a puff of nothing
     floaters.push({ text:'DUD', x:bx, y:by, vy:-.4, life:1.1, color:'rgba(200,205,214,0.9)' });
-    for (let i = 0; i < 8; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*2.2, vy:(Math.random()-.5)*2.2, life: .7, color:'#8A8F9C' });
+    worldEventBurst(bx,by,'#8A8F9C',blocks.length*97+1,8,0);
     sfx.pop(); balloon = null; return;
   }
   if (kind === 'trap') {                                  // ~2s slider rush — mild, recoverable
     rushT = BALANCE_REGISTRY.balloon.rushFrames;
     floaters.push({ text:'RUSH!', x:bx, y:by, vy:-.4, life:1.3, color:'#FF7E6B' });
-    for (let i = 0; i < 10; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life: 1, color:'#FF6B5A' });
+    worldEventBurst(bx,by,'#FF6B5A',blocks.length*97+2,10,0);
     shake = Math.max(shake, reduceMotion?2:4); sfx.pop(); balloon = null; return;
   }
   if (kind === 'gas') {                                   // hazard: lingering cloud shrinks the top block
     gasCloud = { wy: by, t: BALANCE_REGISTRY.balloon.gas.cloudFrames };
     note('GAS! CLIMB OUT', '#FF5E7E', 3, 150);
-    for (let i = 0; i < 14; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life: 1.2, color:'#9BD44A' });
+    worldEventBurst(bx,by,'#9BD44A',blocks.length*97+3,14,0);
     shake = Math.max(shake, reduceMotion?2:4); sfx.pop(); balloon = null; return;
   }
   if (kind === 'storm') {                                 // short directional gust; announced and fully recoverable
     const B=BALANCE_REGISTRY.balloon,dir=balloon.vx>=0?1:-1;
     wind={dir,str:B.stormStrength,dur:B.stormFrames,t:0,balloon:true};
     note(dir>0?'SQUALL >':'< SQUALL','#BFE8FF',3,120);
-    for (let i=0;i<14;i++) particles.push({x:bx,y:by,vx:dir*(.8+Math.random()*2.4),vy:(Math.random()-.5)*1.4,life:1,color:'#BFE8FF'});
+    worldEventBurst(bx,by,'#BFE8FF',blocks.length*97+4,14,dir*1.25);
     shake=Math.max(shake,reduceMotion?1:3); sfx.wind(); sfx.pop(); balloon=null; return;
   }
   runBalloons++; runPowerups++; stats.balloons++;         // gift + golden + repair are the "good pops"
   if (kind === 'golden') {
     addCoins(BALANCE_REGISTRY.balloon.goldenCoins, bx, by);
     applyPower(balloon.type, bx, by);                     // type is a forced top power (gold/fever)
-    for (let i = 0; i < 16; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*3.4, vy:(Math.random()-.5)*3.4, life: 1.1, color:'#FFE28A' });
+    worldEventBurst(bx,by,'#FFE28A',blocks.length*97+5,16,0);
   } else {
     applyPower(balloon.type, bx, by);
-    for (let i = 0; i < 10; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life: 1, color: POW[balloon.type].c1 });
+    worldEventBurst(bx,by,POW[balloon.type].c1,blocks.length*97+6,10,0);
   }
   sfx.pop(); balloon = null;
 }
@@ -3547,6 +3574,13 @@ function drawPowerSignature(type,cx2,cy3,pulse,row) {
   else if (type==='fever') { ctx.fillRect(cx2-8,cy3+5,2,2);ctx.fillRect(cx2+7,cy3-7,2,2);ctx.fillRect(cx2-1,cy3-11,2,3); }
   ctx.globalAlpha=1;
 }
+// Exact CC0 Kenney Pixel Shmup tile IDs. The badge/signature around each core is still SKYSTACK's
+// authored gameplay language; the licensed sprite supplies the recognizable object at its center.
+const SHMUP_POWER_TILES=deepFreeze({shield:25,wide:26,repair:24,slow:27,aura:30,gold:28,fever:4});
+function drawShmupPowerCore(type,cx2,cy2,alpha) {
+  const id=SHMUP_POWER_TILES[type];
+  return id!==undefined && drawWorldTile('shmup',id,cx2-8,cy2-8,1,false,alpha==null?1:alpha);
+}
 function drawPow(p, cy) {
   if (p.got) return;
   const y = GROUND_Y - p.row*BH - BH/2 - cy + Math.sin(tick*.08 + p.row)*2;
@@ -3557,7 +3591,7 @@ function drawPow(p, cy) {
   pixDisc(cx2, cy3, 7, P.c2);                                          // rim base
   ctx.globalAlpha = .35 + pulse*.5; pixDisc(cx2, cy3, 7, P.c1); ctx.globalAlpha = 1;  // rim pulses bright
   pixDisc(cx2, cy3, 5, '#141022');                                     // dark coin face
-  drawIcon(p.type, cx2-4, cy3-4, true);
+  if (!drawShmupPowerCore(p.type,cx2,cy3,.96)) drawIcon(p.type, cx2-4, cy3-4, true);
   ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(cx2-3, cy3-5, 2, 1); ctx.fillRect(cx2-5, cy3-3, 1, 1);  // glint
   if (!reduceMotion) {                               // single pixel orbits the rim
     const oa = tick*.09 + p.row;
@@ -3630,7 +3664,9 @@ function drawBalloon(cy) {
   }
   const gx = bx + Math.round(sway*pend), gy = by + 16;
   pixDisc(gx, gy, 6, P.c2); pixDisc(gx, gy, 5, '#141022');
-  if (kind === 'gift' || kind === 'repair') drawIcon(balloon.type, gx-4, gy-4, true);
+  if (kind === 'gift' || kind === 'repair') {
+    if (!drawShmupPowerCore(balloon.type,gx,gy,.96)) drawIcon(balloon.type, gx-4, gy-4, true);
+  }
   else if (kind === 'gas') {                              // pixel skull badge
     ctx.fillStyle='#E8F2D8';
     ctx.fillRect(gx-2,gy-3,4,3); ctx.fillRect(gx-3,gy-2,6,2); ctx.fillRect(gx-2,gy,1,2); ctx.fillRect(gx+1,gy,1,2);
@@ -5989,9 +6025,14 @@ const LSKY_DECKS = [
 ];
 function drawLowerSkyAir(cy, ph) {
   const A0 = TIERS[2].n - 2, A1 = TIERS[3].n + 4;                                              // 58..84
+  const fx=worldFxPlan((A0+A1)/2,'lower-sky');
+  if (!fx.ambient.enabled || fx.ambient.families < 1 || fx.ambient.sprites < 1) return;
+  let drawn=0;
+  const cloudBudget=Math.min(6,fx.ambient.sprites);
   for (let d = 0; d < LSKY_DECKS.length; d++) {
     const D = LSKY_DECKS[d];
     for (let k = 0; k < D.n; k++) {
+      if (drawn>=cloudBudget) break;
       const sd = d * 31 + k * 7;
       const A = A0 + (A1 - A0) * (D.at + (bhash(sd * 401) - 0.5) * 0.16);
       const y = worldY(A, cy);
@@ -6001,7 +6042,27 @@ function drawLowerSkyAir(cy, ph) {
       const gw = wind ? windWaveAt(bx0) : 0;
       const bx = Math.round(bx0 + (wind ? gw * wind.dir * 22 : 0));                             // banks are shoved downwind too
       drawCloudBank(bx, Math.round(y), Math.round(D.halfW * (1 + gw * 0.28)), D.h, D.a, sd);    // and stretched by the gust
+      drawn++;
     }
+  }
+  // A second ambient family exists only in FULL detail: four altitude-owned wind seeds. Their
+  // edge fade and bounded respawn adapt Magic UI Particles; their horizontal lean comes from the
+  // same wind field that moves blocks, so ambience quietly teaches the real mechanic.
+  if (fx.ambient.families>1) {
+    const seeds=Math.max(0,Math.min(4,fx.ambient.sprites-drawn));
+    for (let k=0;k<seeds;k++) {
+      const sd=811+k*173,A=A0+3+bhash(sd)*(A1-A0-6),y=Math.round(worldY(A,cy));
+      if (y<-8||y>H+8) continue;
+      const travel=reduceMotion?0:ph*(.025+k*.004),span=W+50;
+      let sx=(bhash(sd*7)*span+travel)%span-25;
+      const gw=wind?windWaveAt(sx):0;
+      sx+=wind?gw*wind.dir*(12+wind.str*6):0;
+      const edge=clamp(Math.min(sx+10,W-sx+10)/18,0,1);
+      ctx.globalAlpha=(.18+.12*gw)*edge;ctx.fillStyle=k&1?'#FFFDF4':'#DCEEFF';
+      ctx.fillRect(Math.round(sx),y,2,1);
+      if (wind&&Math.abs(gw)>.18) ctx.fillRect(Math.round(sx-wind.dir*3),y,2,1);
+    }
+    ctx.globalAlpha=1;
   }
 }
 // Authored altitude-owned birds: every bird keeps its own cruise/flap/lift state, but screen y is
@@ -6451,7 +6512,7 @@ function gustVisEnv() {
   return Math.max(force, lead);
 }
 function drawGustFront(cy) {
-  if (!wind || reduceMotion) return;
+  if (!wind || !worldFxEnabled('telegraph')) return;
   const env = gustVisEnv();
   if (env <= 0.02) return;
   const altMid = (GROUND_Y - (cy + H / 2)) / BH;                       // altitude at the middle of the screen
@@ -6459,10 +6520,11 @@ function drawGustFront(cy) {
   if (open <= 0) return;
   ctx.fillStyle = GUST_STREAK_COL;
   const span = W + 80;
-  for (let k = 0; k < GUST_STREAKS; k++) {
+  const streakCount=worldFxCount('telegraphSprites',GUST_STREAKS);
+  for (let k = 0; k < streakCount; k++) {
     const hs = (k * 2654435761) >>> 0;                                 // stable per-streak hash: no RNG, DAILY unaffected
     const y = ((hs >>> 7) % Math.max(1, H | 0));
-    const speed = 2.0 + ((hs >>> 13) % 9) * 0.5;
+    const speed = reduceMotion?0:2.0 + ((hs >>> 13) % 9) * 0.5;
     let x = (((hs >>> 5) % span) + wind.dir * wind.t * speed) % span;  // travels; never stops at a wall
     if (x < 0) x += span;
     x -= 40;
@@ -6494,7 +6556,9 @@ function drawSpaceHazard(cy) {
   if (warning) {
     const pulse=reduceMotion ? .72 : (.58+Math.sin(h.t*.18)*.20);
     ctx.globalAlpha=pulse; ctx.fillStyle=h.kind==='asteroid'?'#FFD75E':'#BFE8FF';
-    for (let x=5;x<W-4;x+=13) {
+    const dashCount=worldFxCount('telegraphSprites',Math.max(1,Math.ceil((W-9)/13)));
+    for (let i=0;i<dashCount;i++) {
+      const x=Math.round(5+(W-10)*(dashCount===1?.5:i/(dashCount-1)));
       const routeP=h.dir>0?x/Math.max(1,W):1-x/Math.max(1,W), y=Math.round(spaceHazardRouteY(h,routeP)-cy);
       if (y>-2&&y<H+2) ctx.fillRect(x,y,5,1);
     }
@@ -6513,7 +6577,7 @@ function drawSpaceHazard(cy) {
     // The long tapered trail IS the shove volume. v170 drew ~20px while its already-small force
     // sampled only the head; v171 exposes the full h.trail so the player sees exactly where it acts.
     if (!reduceMotion) {
-      const n=Math.ceil(h.trail/7), span=W+(h.kind==='asteroid'?36:56);
+      const n=worldFxCount('telegraphSprites',Math.ceil(h.trail/7)), span=W+(h.kind==='asteroid'?36:56);
       for (let i=n;i>=1;i--) {
         const d=Math.min(h.trail,i*7), p=spaceHazardProgress(h)-d/Math.max(1,span);
         const tx=Math.round(hx-h.dir*d), ty=Math.round(spaceHazardRouteY(h,p)-cy), strength=1-d/h.trail;
@@ -6521,16 +6585,20 @@ function drawSpaceHazard(cy) {
         ctx.fillRect(tx,ty-1,Math.max(1,Math.round(2+strength*5)),strength>.5?2:1);
       }
     }
-    ctx.globalAlpha=1; ctx.fillStyle='#FFF6E8'; ctx.fillRect(hx-2,hy-2,5,5);
-    ctx.fillStyle='#BFE8FF'; ctx.fillRect(hx-4,hy,2,1); ctx.fillRect(hx+3,hy,2,1); ctx.fillRect(hx,hy-4,1,2); ctx.fillRect(hx,hy+3,1,2);
-    ctx.fillStyle='#FFD75E'; ctx.fillRect(hx-1,hy-1,2,2);
+    ctx.globalAlpha=1;
+    if (!drawWorldTile('shmup',4,hx-8,hy-8,1,h.dir<0,1)) {
+      ctx.fillStyle='#FFF6E8'; ctx.fillRect(hx-2,hy-2,5,5);
+      ctx.fillStyle='#BFE8FF'; ctx.fillRect(hx-4,hy,2,1); ctx.fillRect(hx+3,hy,2,1); ctx.fillRect(hx,hy-4,1,2); ctx.fillRect(hx,hy+3,1,2);
+      ctx.fillStyle='#FFD75E'; ctx.fillRect(hx-1,hy-1,2,2);
+    }
   } else {
     // Dotted gravity well: two broad ellipses derived from the SAME fieldX/fieldY sampled by
     // spaceWakeAt. Sparse points keep the lane readable while making attraction impossible to miss.
     const spin=reduceMotion?0:h.t*.035;
     ctx.fillStyle='#FFD75E';
+    const wellPoints=worldFxCount('telegraphSprites',30),inner=Math.min(12,Math.ceil(wellPoints*.4)),outer=Math.max(0,wellPoints-inner);
     for (let ring=0;ring<2;ring++) {
-      const scale=ring ? .74 : .46, count=ring ? 18 : 12;
+      const scale=ring ? .74 : .46, count=ring ? outer : inner;
       for (let i=0;i<count;i++) {
         const a=i/count*Math.PI*2+spin*(ring?1:-1);
         ctx.globalAlpha=ring ? .20 : .28;
@@ -6539,11 +6607,14 @@ function drawSpaceHazard(cy) {
     }
     ctx.globalAlpha=.35; ctx.fillStyle='#8FA8FF';
     if (!reduceMotion) for (let i=1;i<=3;i++) ctx.fillRect(hx-h.dir*(8+i*4),hy+(i&1),5-i,1);
-    ctx.globalAlpha=1; ctx.fillStyle='#3A3648'; ctx.fillRect(hx-5,hy-3,10,7); ctx.fillRect(hx-3,hy-5,6,11);
-    ctx.fillStyle='#7E7890'; ctx.fillRect(hx-3,hy-4,5,2); ctx.fillRect(hx-5,hy-2,2,3);
-    ctx.fillStyle='#282436'; ctx.fillRect(hx-3,hy+3,7,2); ctx.fillRect(hx+3,hy,3,3);
-    ctx.fillStyle='#B6AEC5'; ctx.fillRect(hx-2,hy-3,2,1);
-    ctx.fillStyle='#24202F'; ctx.fillRect(hx-2,hy,3,2); ctx.fillRect(hx+2,hy-2,2,2);
+    ctx.globalAlpha=1;
+    if (!drawWorldTile('shmup',8,hx-8,hy-8,1,h.dir<0,1)) {
+      ctx.fillStyle='#3A3648'; ctx.fillRect(hx-5,hy-3,10,7); ctx.fillRect(hx-3,hy-5,6,11);
+      ctx.fillStyle='#7E7890'; ctx.fillRect(hx-3,hy-4,5,2); ctx.fillRect(hx-5,hy-2,2,3);
+      ctx.fillStyle='#282436'; ctx.fillRect(hx-3,hy+3,7,2); ctx.fillRect(hx+3,hy,3,3);
+      ctx.fillStyle='#B6AEC5'; ctx.fillRect(hx-2,hy-3,2,1);
+      ctx.fillStyle='#24202F'; ctx.fillRect(hx-2,hy,3,2); ctx.fillRect(hx+2,hy-2,2,2);
+    }
   }
   // Draw the active coupling, not merely the hazard: gravity gets a dotted tether to the block;
   // a star wake gets directional streaks on the block itself. This appears only while spaceWakeAt
