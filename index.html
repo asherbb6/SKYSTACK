@@ -1873,14 +1873,29 @@ function advanceTutorial(h) {
 
 const stars = []; for (let i = 0; i < 80; i++) stars.push({ x: Math.random()*W, y: Math.random()*5000-4600, tw: Math.random()*6.28, sz: Math.random()<.2?2:1 });
 const clouds = []; for (let i = 0; i < 6; i++) clouds.push({ x: Math.random()*W, y: Math.random()*1100-850, s:.05+Math.random()*.1, w:20+Math.random()*24 });
-// v181: gameplay birds own absolute world altitudes, just like cave wildlife. The removed legacy
-// `birds` array stored a random SCREEN y, so the flock followed the camera into new biomes and then
-// vanished at a darkness cutoff. These authored flocks scroll out with their actual forest/sky home.
+// v182: gameplay birds own absolute world altitudes AND individual flight state. v181 fixed the
+// screen-anchoring bug but flattened the old living flock into a tiny formulaic V. These loose
+// skeins keep the correct habitat contract while restoring individual scale, flap, lift, cruise,
+// wind response and landing-startle physics.
 const SKY_FLOCKS = deepFreeze([
-  { a:52, phase:.12, speed:.035, count:4, spread:14, color:'#3E4A36' },   // canopy edge
-  { a:70, phase:.48, speed:.050, count:6, spread:17, color:'#41607A' },   // lower-sky skein
-  { a:94, phase:.81, speed:.042, count:5, spread:19, color:'#647C96' }    // cloud-sea travelers
+  { a:52, phase:.12, speed:.24, count:5, band:.7, color:'#34412F' },   // canopy edge
+  { a:70, phase:.48, speed:.32, count:6, band:1.0, color:'#334F69' },  // lower-sky skein
+  { a:94, phase:.81, speed:.27, count:5, band:1.2, color:'#536B86' }   // cloud-sea travelers
 ]);
+const skyBirds=[];
+for (let fi=0;fi<SKY_FLOCKS.length;fi++) {
+  const F=SKY_FLOCKS[fi];
+  for (let i=0;i<F.count;i++) {
+    const seed=fi*97+i*23+11,side=i%2?1:-1,rank=(i+1)>>1;
+    skyBirds.push({
+      flock:fi,a:F.a+(bhash(seed*13)-.5)*F.band,x:(F.phase*(W+90)+i*21+bhash(seed)*34)%(W+90)-45,
+      homeY:side*rank*(4+fi),yOff:side*rank*(4+fi),vy:0,
+      speed:F.speed*(.78+bhash(seed*29)*.44),scale:.76+bhash(seed*47)*.38,
+      ph:bhash(seed*61)*6.28,flap:.16+bhash(seed*71)*.10,float:2+bhash(seed*83)*3,
+      boost:0,color:F.color
+    });
+  }
+}
 let skyFlockStartle=0;
 // cave wildlife: bats, wall beetles + dirt worms live at absolute cave altitudes (a) so they stay underground
 const bats = []; for (let i = 0; i < 5; i++) bats.push({ a: 4+Math.random()*26, x: Math.random()*W, vx:(Math.random()<.5?-1:1)*(.4+Math.random()*.5), ph: Math.random()*6.28, wob: Math.random()*6.28 });
@@ -1997,6 +2012,7 @@ function resetRun() {
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
   balance = 0; swayX = 0; paused = false; dropPending = 0; squashPow = 0; toppleHideTop = 0; resetStarRun();
   skyFlockStartle=0;
+  for (const b of skyBirds) { b.yOff=b.homeY; b.vy=0; b.boost=0; }
   faller = null;   // v125: a fresh run must not inherit a stale faller — it now carries lateral drift state (vx/x0)
   timeLeft = activeChallenge()&&activeChallenge().duration?activeChallenge().duration:(m.time || 0);
   PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
@@ -2056,10 +2072,17 @@ function drop() {
 // starts falling straight, bends into the gust, and is moving sideways fastest as it lands. Uses the
 // wind the game already simulates (str already carries the biome's MATERIALS[i].wind exposure), so
 // there is no new per-biome knob and NO new randomness (DAILY stays bit-identical for its seed).
-const DRIFT_ACCEL = 0.6;
+const DRIFT_ACCEL = 1.15;
+const WIND_FORCE_FLOOR = 0.45, WIND_SLIDER_MUL = 1.65, WIND_RELEASE_KICK = 1.0;
+function windForceEnvelope() {
+  if (!wind) return 0;
+  const life=clamp(wind.t/wind.dur,0,1),curve=Math.sin(life*Math.PI);
+  const edge=clamp(Math.min(wind.t,wind.dur-wind.t)/10,0,1);  // short fair ramp at both ends
+  return Math.max(WIND_FORCE_FLOOR,curve)*edge;               // an announced gust always has felt force
+}
 function driftForce() {
   if (!wind) return 0;
-  const env = Math.sin(Math.min(wind.t/wind.dur, 1) * Math.PI);
+  const env = windForceEnvelope();
   return wind.dir * wind.str * env * DRIFT_ACCEL * activeDifficulty().drift;
 }
 function spaceHazardsEnabled() {
@@ -2162,12 +2185,28 @@ function treeBend(tx) {
   const ambient = Math.sin(tick * 0.018 + tx * 3.4) * 2;
   return ambient + (wind ? windWaveAt(tx * W) * wind.dir * 5 : 0);
 }
+function updateSkyBirds(dt) {
+  if (reduceMotion) return;
+  for (const b of skyBirds) {
+    const localWind=wind?windWaveAt(b.x)*wind.dir*wind.str*1.25:0;
+    b.x+=(b.speed*(1+b.boost*.9)+localWind)*dt;
+    b.ph+=b.flap*(1+b.boost*.75)*dt;
+    const target=b.homeY+Math.sin(b.ph*.43+b.flock*1.7)*b.float;
+    b.vy+=(target-b.yOff)*.035*dt;
+    b.vy*=Math.pow(.82,dt);
+    b.yOff=clamp(b.yOff+b.vy*dt,b.homeY-12,b.homeY+12);
+    b.boost=Math.max(0,b.boost-.035*dt);
+    if (b.x>W+28) b.x=-28-b.flock*9;
+    if (b.x<-36) b.x=W+28;
+  }
+}
 function releaseBlock() {
   if (!slider) return;
   if (spaceHazard) spaceHazard.routeLocked = true;
   const orbit=orbitCoastEnabled()?orbitCoastPlan(blocks.length,runContext.seed,activeDifficulty(),shield>0):null;
   // launch with downward velocity so the tap reads as instant, not delayed
-  faller = { x: slider.x, x0: slider.x, w: slider.w, y: slider.y, vx: 0, orbitV:orbit?orbit.vx:0, vy: dropPhysicsFor(tier).initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
+  const windKick=wind?wind.dir*wind.str*windForceEnvelope()*WIND_RELEASE_KICK*activeDifficulty().drift:0;
+  faller = { x: slider.x, x0: slider.x, w: slider.w, y: slider.y, vx: windKick, orbitV:orbit?orbit.vx:0, vy: dropPhysicsFor(tier).initialVelocity, col: slider.golden ? {h:46,s:92,l:60} : blockCol(blocks.length), golden: slider.golden };
   slider = null; state = 'dropping';
   if (tutStep === 0) tutStep = 1;
 }
@@ -2322,8 +2361,17 @@ function popBalloon() {
 function landFx(w) {
   squash = 1;
   squashPow = clamp(0.42 + (w / BASE_W) * 0.30 + Math.min(combo, 10) * 0.028, 0.42, 1);
-  // v181: the world-altitude flocks scatter in proportion to the slam, then settle in place.
-  if (!reduceMotion) skyFlockStartle=Math.max(skyFlockStartle,(squashPow-.5)*1.6);
+  // v182: every world-owned bird receives its own bounded lift/boost impulse, then returns to the
+  // same authored altitude. A heavy landing feels alive without letting the flock follow the camera.
+  if (!reduceMotion) {
+    const kick=Math.max(0,(squashPow-.5)*1.6);
+    skyFlockStartle=Math.max(skyFlockStartle,kick);
+    for (let i=0;i<skyBirds.length;i++) {
+      const b=skyBirds[i],side=i%2?1:-1;
+      b.boost=Math.max(b.boost,kick*(.7+(i%4)*.12));
+      b.vy-=kick*(1.4+(i%3)*.35)*side;
+    }
+  }
 }
 function land() {
   const top = blocks[blocks.length - 1], f = faller;
@@ -2879,6 +2927,7 @@ function adaptToScreen() {
   for (const cf of coinFx) { cf.x += dx; cf.y += dgy; }
   for (const st of stars) st.x *= kx;
   for (const cl of clouds) cl.x *= kx;
+  for (const b of skyBirds) b.x *= kx;
   for (const fl of evFlakes) { fl.x *= kx; fl.y *= ky; }
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY; camVel = 0;
   canvasRect = null; fitCanvas();
@@ -3151,7 +3200,7 @@ function update(dt) {
 
   const idle = Math.sin(tick*0.03) * Math.min(blocks.length*0.12, 4) * (m.id==='zen'?0.5:1);
   let windPush = 0;
-  if (wind) { const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI); windPush = wind.dir * env * 4; }
+  if (wind) windPush = wind.dir * windForceEnvelope() * 4;
   const leanTarget = playing ? (balance * 0.28 + idle + windPush) : 0;
   swayX += (leanTarget - swayX) * 0.12 * dt;
 
@@ -3215,7 +3264,7 @@ function update(dt) {
     const spaceMove=spaceSliderInfluence(spaceHazard,slider,activeDifficulty(),shield > 0,dt);
     // v117: constant drift — the old high-altitude sin() speed wobble is gone (fever/rush still scale it)
     slider.x += slider.dir * slider.speed * feverSlow * (rushT > 0 ? BALANCE_REGISTRY.balloon.rushMul : 1) * spaceMove.travelScale * starsPulseSpeedScale() * dt;
-    if (wind) { const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI); slider.x += wind.dir * wind.str * env * dt; }
+    if (wind) slider.x += wind.dir * wind.str * windForceEnvelope() * WIND_SLIDER_MUL * dt;
     slider.x+=spaceMove.vx*dt;
     if (spaceMove.wake) {
       if (spaceMove.first) {
@@ -3266,6 +3315,7 @@ function update(dt) {
   const wEnv = wind ? Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI) : 0;
   for (const c of clouds) { c.x += (c.s + (wind ? wind.dir * wEnv * 0.5 : 0))*dt; if (c.x > W+30) c.x = -30; if (c.x < -30) c.x = W+30; }
   if (skyFlockStartle>0) skyFlockStartle=Math.max(0,skyFlockStartle-.06*dt);
+  updateSkyBirds(dt);
   for (const b of bats) { b.x += b.vx*dt; b.ph += 0.32*dt; b.wob += 0.05*dt; if (b.x > W+14) b.x = -14; if (b.x < -14) b.x = W+14; }
   for (const bt of beetles) bt.ph += 0.02*dt;
   for (const wm of worms) wm.ph += 0.03*dt;
@@ -5841,23 +5891,13 @@ function drawLowerSkyAir(cy, ph) {
     }
   }
 }
-// Authored altitude-owned flocks: the camera can pass them, but they can never follow it between
-// biomes. Horizontal loops complete fully off-screen; vertical visibility comes only from worldY.
+// Authored altitude-owned birds: every bird keeps its own cruise/flap/lift state, but screen y is
+// always worldY(absolute altitude) plus a tightly bounded local flight offset.
 function drawWorldFlocks(cy,ph) {
-  for (let fi=0;fi<SKY_FLOCKS.length;fi++) {
-    const F=SKY_FLOCKS[fi],y=worldY(F.a,cy);
-    if (y < -28 || y > H+28) continue;
-    const margin=56,span=W+margin*2;
-    const baseX=reduceMotion?W*(.32+F.phase*.36):((ph*(F.speed+skyFlockStartle*.035)+F.phase*span)%span)-margin;
-    const gw=wind?windWaveAt(baseX):0,lead=baseX+(wind?gw*wind.dir*26:0);
-    for (let b=0;b<F.count;b++) {
-      const side=b%2?1:-1,rank=(b+1)>>1;
-      const bx=Math.round(lead-rank*F.spread-(b%2)*5);
-      const scatter=reduceMotion?0:skyFlockStartle*(5+rank*3);
-      const by=Math.round(y+side*rank*(6+fi)+Math.sin(ph*.09+b*1.7)*scatter);
-      if (bx < -10 || bx > W+10) continue;
-      drawBird(bx,by,.48+fi*.06,ph*.22+b*.9,F.color);
-    }
+  for (const b of skyBirds) {
+    const bx=Math.round(b.x),by=worldY(b.a,cy)+Math.round(b.yOff);
+    if (bx<-18||bx>W+18||by<-24||by>H+24) continue;
+    drawBird(bx,by,b.scale,reduceMotion?b.flock*1.2:b.ph,b.color);
   }
 }
 

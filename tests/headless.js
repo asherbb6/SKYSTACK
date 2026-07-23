@@ -3379,7 +3379,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v181', () => /const CACHE = 'skystack-v181'/.test(sw));
+check('sw.js cache bumped to v182', () => /const CACHE = 'skystack-v182'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4848,6 +4848,45 @@ check('v181 all balloon kinds and power signatures render without throwing', () 
   const g=makeGame();
   return g.run('(() => { try { for(const kind of ["gift","golden","repair","dud","trap","gas","storm"]){balloon={x:W/2,wy:100,ph:1,type:kind==="repair"?"repair":"shield",kind,skin:"stripe",bobAmp:3,bobRate:.05,pendulum:2,windV:.1};drawBalloon(0);}' +
     'for(const type of Object.keys(POW))drawPowerSignature(type,40,40,.8,3);return true;}catch(e){return String(e);} })()');
+});
+
+// ---------- v182: restore living birds + make ordinary wind unmistakably mechanical ----------
+check('v182 every sky bird has individual detailed flight state inside an authored habitat', () => fresh.run(
+  'skyBirds.length===SKY_FLOCKS.reduce((n,f)=>n+f.count,0)&&skyBirds.every(b=>{' +
+  'const f=SKY_FLOCKS[b.flock];return Number.isFinite(b.a)&&Math.abs(b.a-f.a)<=f.band/2&&b.scale>=.7&&' +
+  'Number.isFinite(b.speed)&&Number.isFinite(b.flap)&&Number.isFinite(b.yOff)&&b.y===undefined;})'));
+check('v182 birds cruise, flap, and lift independently without changing absolute altitude', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="endless";resetRun();state="playing";wind=null;const before=skyBirds.map(b=>[b.x,b.ph,b.yOff,b.a]);' +
+    'for(let i=0;i<20;i++)update(1);let moved=0,lifted=0,flapped=0;for(let i=0;i<skyBirds.length;i++){' +
+    'const b=skyBirds[i],a=before[i];if(b.x!==a[0])moved++;if(b.ph!==a[1])flapped++;if(b.yOff!==a[2])lifted++;if(b.a!==a[3])return false;}' +
+    'return moved===skyBirds.length&&flapped===skyBirds.length&&lifted>skyBirds.length/2; })()');
+});
+check('v182 heavy landings give each bird bounded physical impulses that settle at the same habitat', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="endless";resetRun();state="playing";combo=10;const alt=skyBirds.map(b=>b.a);landFx(BASE_W);' +
+    'if(!skyBirds.some(b=>b.boost>0)||!skyBirds.some(b=>b.vy!==0))return false;for(let i=0;i<240;i++)update(1);' +
+    'return skyBirds.every((b,i)=>b.a===alt[i]&&b.boost===0&&Math.abs(b.yOff-b.homeY)<=12); })()');
+});
+check('v182 reduced motion freezes bird cruise, flap, and lift while keeping world ownership', () => {
+  const g=makeGame(null,true);
+  return g.run('(() => { mode="endless";resetRun();state="playing";const before=skyBirds.map(b=>[b.x,b.ph,b.yOff,b.a]);' +
+    'landFx(BASE_W);for(let i=0;i<30;i++)update(1);return skyBirds.every((b,i)=>b.x===before[i][0]&&b.ph===before[i][1]&&' +
+    'b.yOff===before[i][2]&&b.a===before[i][3]&&b.boost===0); })()');
+});
+check('v182 an ordinary LOWER SKY gust moves the waiting block and bends the released block downwind', () => {
+  const g=makeGame({'skystack-difficulty':JSON.stringify({level:'medium'})});
+  return g.run('(() => { startLevel(2,"checkpoint-3",0x182);regionIntro=null;state="playing";wind=null;windTimer=0;update(1);' +
+    'if(!wind)return "natural gust did not spawn";const dir=wind.dir;slider.x=W/2;const before=slider.x,base=slider.dir*slider.speed;' +
+    'update(1);const extra=slider.x-before-base;if(!(extra*dir>0))return "waiting block ignored wind: "+extra;' +
+    'for(let i=0;i<14;i++)update(1);const top=blocks[blocks.length-1];slider.x=top.x+top.w/2-slider.w/2;releaseBlock();' +
+    'const x0=faller.x,kick=faller.vx;let last=x0,frames=0;while(state==="dropping"&&frames++<30){update(1);if(faller)last=faller.x;}' +
+    'const drift=(last-x0)*dir;return kick*dir>0&&drift>1.4?true:"faller drift too small: kick="+kick+" drift="+drift; })()');
+});
+check('v182 an announced gust reaches a non-trivial force floor after its short ramp', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="endless";resetRun();state="playing";wind={dir:1,str:.25,dur:150,t:10};' +
+    'return windForceEnvelope()>=WIND_FORCE_FLOOR&&driftForce()>0&&WIND_SLIDER_MUL>1&&DRIFT_ACCEL>.6; })()');
 });
 
 // ---------- report ----------
