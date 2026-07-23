@@ -987,7 +987,7 @@ const TIERS = [
 // regions without pretending that TREETOPS is still a separate level.
 const AREA_NAMES = deepFreeze(['CAVES','FOREST FLOOR','HIGH CANOPY','LOWER SKY','CLOUD NINE','JET STREAM','STRATOSPHERE','AURORA','SPACE','ORBIT','THE STARS']);
 const AREA_TAGS = deepFreeze(['ESCAPE THE DEEP','ENTER THE FOREST','THE FOREST CONTINUES','LEAVE THE TREES','ENTER THE CLOUD SEA','RIDE THE FAST WIND','CLIMB INTO THIN AIR','RISE THROUGH THE LIGHTS','LEAVE THE ATMOSPHERE','ABOVE THE WORLD','REACH THE FINAL GATE']);
-const AREA_RULES = deepFreeze(['THE LANE NARROWS UNDERGROUND','','PERFECTS SPRING WIDER','GUSTS PUSH FALLING BLOCKS','CLOUDS SOFTEN CUT LANDINGS','STRONG GUSTS PUSH FALLING BLOCKS','','OFF-CENTER LANDINGS SLIDE','STAR ROUTES SWEEP; ASTEROIDS PULL','LEAD EACH DROP INTO ITS COAST','PULSES REVERSE THE WAITING BLOCK']);
+const AREA_RULES = deepFreeze(['NARROW LANE','','PERFECTS SPRING WIDER','GUSTS PUSH FALLING BLOCKS','CLOUDS SOFTEN CUTS','STRONG GUSTS PUSH BLOCKS','','OFF-CENTER DROPS SLIDE','STARS SWEEP; ROCKS PULL','LEAD DROPS INTO THE COAST','PULSES REVERSE SLIDER']);
 // v134: the place palette is LOCKED. One designed hue per tier (taken from the tier colours
 // above), never Math.random() — colour identifies place (ART_BIBLE), and no deliberate game
 // rolls its palette on load. Blocks, previews and the splash tower all draw from this table.
@@ -1022,8 +1022,7 @@ const levelStartA = i => { const L = levelBand(i); return L.t0 <= 0 ? 0 : TIERS[
 const levelName   = i => levelBand(i).name || TIERS[levelBand(i).t1].name;
 const levelColor  = i => TIERS[levelBand(i).t0].c;                                             // a level wears its OPENING biome's colour
 const levelArtTier = i => levelBand(i).t0;                                                     // which biome's art represents the level on cards/HUD
-const LEVEL_TAGS = deepFreeze(['CLIMB TO DAYLIGHT','FOREST FLOOR TO CANOPY','LEAVE THE TREES','CROSS THE CLOUD SEA','RIDE THE FAST WIND','CLIMB THROUGH THIN AIR','RISE THROUGH THE LIGHTS','SURVIVE THE HAZARD FIELD','MASTER THE ORBITAL COAST','REACH THE FINAL GATE']);
-const LEVEL_RULES = deepFreeze(['THE LANE NARROWS UNDERGROUND','PERFECTS SPRING WIDER IN THE CANOPY','GUSTS PUSH FALLING BLOCKS','CLOUDS SOFTEN CUT LANDINGS','STRONG GUSTS PUSH FALLING BLOCKS','PRECISION RISES IN THIN AIR','OFF-CENTER LANDINGS SLIDE','STAR ROUTES SWEEP; ASTEROIDS PULL','LEAD EACH DROP INTO ITS COAST','PULSES REVERSE THE WAITING BLOCK']);
+const LEVEL_RULES = deepFreeze(['NARROW LANE','PERFECTS SPRING IN CANOPY','GUSTS PUSH FALLING BLOCKS','CLOUDS SOFTEN CUTS','STRONG GUSTS PUSH BLOCKS','THIN AIR NEEDS PRECISION','OFF-CENTER DROPS SLIDE','STARS SWEEP; ROCKS PULL','LEAD DROPS INTO THE COAST','PULSES REVERSE SLIDER']);
 function tierHueAt(a) { for (let i = 0; i < TIERS.length; i++) if (a < TIERS[i].n) return TIER_HUES[i]; return TIER_HUES[TIER_HUES.length - 1]; }
 
 // v124: the PLAYER-facing difficulty. A pure multiplier layer over the raw knobs — the adaptive
@@ -1161,16 +1160,16 @@ const STARS_PHASES = deepFreeze([
 ]);
 function starsPhaseAt(h) { return STARS_PHASES.find(p=>h>=p.start&&h<=p.end)||null; }
 const DEV_TARGETS = deepFreeze([
-  { id:'space-stars',    name:'SPACE I - SHOOTING STARS', altitude:205, campaignLevel:7 },
-  { id:'space-asteroid', name:'SPACE II - ASTEROIDS',     altitude:221, campaignLevel:7 },
-  { id:'space-storm',    name:'SPACE III - STARSTORM',    altitude:241, campaignLevel:7 },
-  { id:'orbit-entry',    name:'ORBIT I - INSERTION',      altitude:260, campaignLevel:8 },
-  { id:'orbit-belt',     name:'ORBIT II - SATELLITE BELT',altitude:290, campaignLevel:8 },
-  { id:'orbit-high',     name:'ORBIT III - HIGH ORBIT',   altitude:325, campaignLevel:8 },
-  { id:'stars-entry',    name:'STARS I - STELLAR PULSE',  altitude:360, campaignLevel:9 },
-  { id:'stars-mid',      name:'STARS II - CONSTELLATION', altitude:420, campaignLevel:9 },
-  { id:'final-gate',     name:'STARS III - GATE PULSE',   altitude:480, campaignLevel:9 },
-  { id:'gate-approach',  name:'FINAL GATE APPROACH',      altitude:520, campaignLevel:9 }
+  { id:'space-stars',    name:'SPACE I - SHOOTING STARS', short:'STAR SWEEP',  altitude:205, campaignLevel:7 },
+  { id:'space-asteroid', name:'SPACE II - ASTEROIDS',     short:'ASTEROIDS',   altitude:221, campaignLevel:7 },
+  { id:'space-storm',    name:'SPACE III - STARSTORM',    short:'STARSTORM',   altitude:241, campaignLevel:7 },
+  { id:'orbit-entry',    name:'ORBIT I - INSERTION',      short:'INSERTION',   altitude:260, campaignLevel:8 },
+  { id:'orbit-belt',     name:'ORBIT II - SATELLITE BELT',short:'SATELLITES',  altitude:290, campaignLevel:8 },
+  { id:'orbit-high',     name:'ORBIT III - HIGH ORBIT',   short:'HIGH ORBIT',  altitude:325, campaignLevel:8 },
+  { id:'stars-entry',    name:'STARS I - STELLAR PULSE',  short:'FIRST PULSE',altitude:360, campaignLevel:9 },
+  { id:'stars-mid',      name:'STARS II - CONSTELLATION', short:'STAR DRIVE',  altitude:420, campaignLevel:9 },
+  { id:'final-gate',     name:'STARS III - GATE PULSE',   short:'GATE PULSE',  altitude:480, campaignLevel:9 },
+  { id:'gate-approach',  name:'FINAL GATE APPROACH',      short:'FINAL GATE',  altitude:520, campaignLevel:9 }
 ]);
 const DEV_QUERY=new URLSearchParams(location.search);
 let devSelectedLevel=clamp((parseInt(DEV_QUERY.get('level'),10)||10)-1,0,LEVEL_COUNT-1),
@@ -1580,7 +1579,7 @@ function updateModifiersForPlacement(h,outcome) {
     const p=modifierRuntime(m); if (!p||p.status==='complete'||p.status==='failed') continue;
     if (h>=m.announceAltitude&&p.status==='pending') { p.status='announced'; }   // the bottom strip carries the telegraph — no duplicate banner
     if (h>=m.startAltitude&&h<=m.endAltitude) {
-      if (p.status!=='active') { p.status='active'; const bn='BONUS: '+m.rule+' +'+m.rewardCoins, bp=m.rule+' +'+m.rewardCoins; note(bn.length*6+16<=W-16?bn:bp,'#FFD75E',2,140); }   // one self-contained pop-up; drop the BONUS: prefix at phone width so the reward never truncates
+      if (p.status!=='active') p.status='active';   // the shared context lane already changes from countdown to live progress
       p.placements++;
       if (outcome&&outcome.perfect) { p.perfects++; p.streak++; p.bestStreak=Math.max(p.bestStreak,p.streak); }
       else { p.streak=0; p.misses++; }
@@ -2058,7 +2057,7 @@ function updateOrbitCoastPhase() {
   if (orbitPhaseSeen!==key) {
     const flipped=typeof orbitPhaseSeen==='string'&&orbitPhaseSeen.startsWith(phase.index+':');
     orbitPhaseSeen=key;
-    note((flipped?'ORBIT FLIP':phase.rule)+' - COAST '+(coast.dir>0?'>':'<'),phase.color,flipped?2:1,flipped?90:110);
+    if (flipped) note('ORBIT FLIP - COAST '+(coast.dir>0?'>':'<'),phase.color,2,90);
   }
 }
 function starsPulseEnabled() {
@@ -2069,14 +2068,13 @@ function updateStarsPulse(dt) {
   if (!starsPulseEnabled()||!phase) { starsPhaseSeen=-1;starsPulseTimer=0;starsPulseBoost=0;return; }
   if (starsPhaseSeen!==phase.index) {
     starsPhaseSeen=phase.index;starsPulseTimer=phase.first;starsPulseBoost=0;
-    note(phase.rule,phase.color,1,110);
   }
   if (starsPulseBoost>0) starsPulseBoost=Math.max(0,starsPulseBoost-dt);
   if (state!=='playing'||!slider) return; // release commits the route; no pulse can alter a faller
   starsPulseTimer-=dt;
   if (starsPulseTimer<=0) {
     slider.dir*=-1;starsPulseTimer=phase.gap;starsPulseBoost=phase.boostFrames;starsPulseFlash=1;starsPulseCount++;
-    note('STAR PULSE - REVERSE!',phase.color,2,72);shake=Math.max(shake,reduceMotion?0:2);sfx.golden();
+    note('PULSE! REVERSE',phase.color,2,72);shake=Math.max(shake,reduceMotion?0:2);sfx.golden();
   }
 }
 function starsPulseSpeedScale() {
@@ -2088,7 +2086,6 @@ function updateSpaceHazards(dt) {
   if (!spaceHazardsEnabled()||!phase) { spaceHazard=null; spaceHazardTimer=0; return; }
   if (spacePhaseSeen!==phase.index) {
     spacePhaseSeen=phase.index; spaceHazard=null; spaceHazardTimer=phase.first;
-    note(phase.rule,phase.color,1,100);
   }
   if (spaceHazard) {
     spaceHazard.t+=dt;
@@ -2681,13 +2678,12 @@ const PAD = 6;
 const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, DIFF_BTN, DIFF_ROWS, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
-    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, NOTIFY_CHIP_Y, BOOST_CARD_H, ME_PROG, SHOP_TOP, BOOST_TOP,
+    WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H, ME_PROG, SHOP_TOP, BOOST_TOP,
     DEV_LEVEL_L, DEV_LEVEL_R, DEV_LEVEL_PLAY, DEV_TARGET_L, DEV_TARGET_R, DEV_TARGET_PLAY, DEV_EXIT, DEV_HUD_BTN, DEV_TOP;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
-  NOTIFY_Y = 74;   // directly under the full HUD column (combo lane ends 62, wind glyphs end 69)
-  NOTIFY_CHIP_Y = NOTIFY_Y + 16;   // persistent modifier chip row, under the message lane
+  NOTIFY_Y = 68;   // one reserved message lane below the goal/progress/balance column
   NAV_TABS = [
     { id:'home', label:'HOME' },
     { id:'shop', label:'SHOP' },
@@ -5825,26 +5821,24 @@ function drawBiomeDecor(cy) {
 }
 
 // ---------- level + area entry cinematics ----------
-// v179: campaign LEVELS and world-art AREAS are separate vocabulary. A campaign run opens with the
-// real ten-level chapter name; later art transitions are shorter NEW AREA beats. Gameplay continues
-// underneath, but a delayed milestone note now waits until the card has finished instead of talking
-// over it. reduceMotion keeps the same resting card with a shorter static hold.
+// v180: entry cards carry one idea only: where you are and, when useful, the mechanic that changed.
+// Level starts get three lines, area changes stay shorter, and retries do not reteach the rule.
 function startRegionIntro(ti,kind) {
   if (ti < 0 || ti >= TIERS.length) return null;
   kind=kind==='level'||kind==='retry'?kind:'area';
   const isLevel=kind!=='area';
-  regionIntro={ti,t:0,kind,level:isLevel?runLevel:null,dur:reduceMotion?(kind==='level'?50:kind==='retry'?30:38):(kind==='level'?96:kind==='retry'?44:68)};
+  regionIntro={ti,t:0,kind,level:isLevel?runLevel:null,dur:reduceMotion?(kind==='level'?42:kind==='retry'?24:30):(kind==='level'?88:kind==='retry'?36:58)};
   if (state === 'playing' || state === 'dropping') sfx.region(ti);
   return regionIntro;
 }
 function regionIntroCopy(R) {
-  if (!R) return {eyebrow:'',title:'',tag:'',rule:'',color:'#FFF6E8'};
+  if (!R) return {eyebrow:'',title:'',detail:'',color:'#FFF6E8'};
   if ((R.kind==='level'||R.kind==='retry')&&R.level>=0) {
     const lv=clamp(R.level|0,0,LEVEL_COUNT-1);
-    return {eyebrow:R.kind==='retry'?'RETRY':'LEVEL '+(lv+1),title:levelName(lv),tag:R.kind==='retry'?'CLIMB AGAIN':LEVEL_TAGS[lv],rule:LEVEL_RULES[lv],color:levelColor(lv)};
+    return {eyebrow:R.kind==='retry'?'RETRY':'LEVEL '+(lv+1),title:levelName(lv),detail:R.kind==='retry'?'':LEVEL_RULES[lv],color:levelColor(lv)};
   }
   const ti=clamp(R.ti|0,0,TIERS.length-1);
-  return {eyebrow:'NEW AREA',title:AREA_NAMES[ti],tag:AREA_TAGS[ti],rule:AREA_RULES[ti],color:TIERS[ti].c};
+  return {eyebrow:'NEW AREA',title:AREA_NAMES[ti],detail:AREA_RULES[ti]||AREA_TAGS[ti],color:TIERS[ti].c};
 }
 // the per-region signature flourish (screen-space, procedural — no persistent particle arrays)
 function drawIntroFx(ti, p, env, ph) {
@@ -5894,15 +5888,14 @@ function renderRegionIntro() {
   const R=regionIntro,C=regionIntroCopy(R),p=clamp(R.t/R.dur,0,1);
   const env = Math.min(clamp(R.t / (R.dur*0.18), 0, 1), clamp((R.dur - R.t) / (R.dur*0.3), 0, 1));
   if (!reduceMotion) drawIntroFx(R.ti, p, env, tick);
-  const cx=Math.round(W/2),cy=Math.round(H*.30),cardH=C.rule?61:49,
-        wanted=Math.max(124,C.title.length*12+20,C.tag.length*6+20,C.rule.length*6+20),cardW=Math.min(W-16,wanted),x=Math.round(cx-cardW/2),y=Math.round(cy-cardH/2);
+  const cx=Math.round(W/2),cy=Math.round(H*.30),cardH=C.detail?50:38,
+        wanted=Math.max(124,C.title.length*12+20,C.detail.length*6+20),cardW=Math.min(W-16,wanted),x=Math.round(cx-cardW/2),y=Math.round(cy-cardH/2);
   ctx.globalAlpha=env*.76;ctx.fillStyle='rgba(11,14,26,0.9)';ctx.fillRect(x,y,cardW,cardH);
   ctx.globalAlpha=env;ctx.fillStyle=C.color;
   ctx.fillRect(x,y,cardW,2);ctx.fillRect(x,y+cardH-2,cardW,2);ctx.fillRect(x,y,2,cardH);ctx.fillRect(x+cardW-2,y,2,cardH);
   txt(C.eyebrow,cx,y+6,1,'rgba(255,246,232,0.62)','center');
   txtFit(C.title,cx,y+18,2,C.color,'center',cardW-18);
-  ctx.globalAlpha=env*.88;txtFit(C.tag,cx,y+37,1,'rgba(255,246,232,0.9)','center',cardW-14);
-  if (C.rule) {ctx.globalAlpha=env*.98;txtFit(C.rule,cx,y+50,1,VISUAL_SYSTEM.palette.gold,'center',cardW-14,2);}
+  if (C.detail) {ctx.globalAlpha=env*.94;txtFit(C.detail,cx,y+38,1,VISUAL_SYSTEM.palette.gold,'center',cardW-14);}
   ctx.globalAlpha = 1;
 }
 
@@ -6513,7 +6506,9 @@ function renderWorld(cy, shX) {
 
 // ---------- HOME ----------
 function renderDeveloper() {
-  const L=LEVEL_REGISTRY[devSelectedLevel],T=DEV_TARGETS[devSelectedTarget],x=DEV_LEVEL_L.x-8,w=DEV_LEVEL_R.x+DEV_LEVEL_R.w-x;
+  const L=LEVEL_REGISTRY[devSelectedLevel],T=DEV_TARGETS[devSelectedTarget],x=DEV_LEVEL_L.x-8,w=DEV_LEVEL_R.x+DEV_LEVEL_R.w-x,
+        targetParts=T.name.split(' - '),targetBand=targetParts.length>1?targetParts.shift():'WORLD TARGET '+(devSelectedTarget+1)+' / '+DEV_TARGETS.length,
+        targetName=T.short||(targetParts.length?targetParts.join(' - '):T.name);
   txt('DEV LAB',W/2,DEV_TOP,2,'#62E8B5','center');
   txt('PUBLIC TEST TOOLS - NO SAVE',W/2,DEV_TOP+18,1,'rgba(255,246,232,0.58)','center');
 
@@ -6524,8 +6519,8 @@ function renderDeveloper() {
   pixelButton(DEV_LEVEL_L,'<',false); pixelButton(DEV_LEVEL_R,'>',false); pixelButton(DEV_LEVEL_PLAY,'PLAY LEVEL',true);
 
   pixelFrame(x,DEV_TOP+123,w,62,'rgba(11,14,26,0.82)','#8FA8FF',false);
-  txt('WORLD TARGET '+(devSelectedTarget+1)+' / '+DEV_TARGETS.length,W/2,DEV_TOP+128,1,'rgba(255,246,232,0.55)','center');
-  txtFit(T.name,W/2,DEV_TOP+142,1,'#FFF6E8','center',w-76);
+  txt(targetBand,W/2,DEV_TOP+128,1,'rgba(255,246,232,0.55)','center');
+  txtFit(targetName,W/2,DEV_TOP+142,1,'#FFF6E8','center',w-76);
   txt(T.altitude*METERS_PER+'M - NO FAIL',W/2,DEV_TOP+153,1,'rgba(98,232,181,0.75)','center');
   pixelButton(DEV_TARGET_L,'<',false); pixelButton(DEV_TARGET_R,'>',false); pixelButton(DEV_TARGET_PLAY,'JUMP HERE',true);
 
@@ -7918,67 +7913,64 @@ function renderLevelFail() {
 }
 
 // ---------- in-run HUD ----------
-function renderModifierHUD(h) {
-  if (regionIntro||!runContext||!runContext.modifierPermissions.enabled) return;
-  const m=runContext.modifiers.find(x=>{const p=modifierRuntime(x);return p&&(p.status==='active'||p.status==='announced');});
-  if (!m) return;
-  const p=modifierRuntime(m), active=p.status==='active';
-  const y=NOTIFY_CHIP_Y;   // the tutorial is one line now — the chip never drops (v109)
-  const blocksLeft=Math.max(0,m.endAltitude-h+1), inN=Math.max(0,m.startAltitude-h);
-  let t=active?m.name+' '+blocksLeft+' LEFT':m.name+' IN '+inN+' BLOCKS';
-  if (t.length*6-1>W-40) t=active?m.name+' - '+blocksLeft:m.name+' IN '+inN;
-  if (t.length*6-1>W-40) t=m.name;
-  const tw=Math.min(W-16,t.length*6-1+14), x=Math.round(W/2-tw/2);
-  ctx.fillStyle='rgba(11,14,26,0.82)';ctx.fillRect(x,y,tw,13);
-  ctx.fillStyle=active?'rgba(255,215,94,0.8)':'rgba(94,200,242,0.75)';   // full 1px outline
-  ctx.fillRect(x,y,tw,1);ctx.fillRect(x,y+12,tw,1);ctx.fillRect(x,y,1,13);ctx.fillRect(x+tw-1,y,1,13);
-  txt(t,W/2,y+3,1,active?'#FFD75E':'#BFE8FF','center');
-  if (m.family==='gust' && (m.direction>0 ? x+tw+9<=W : x-9>=0))   // arrow only when it fits on screen
-    txt(m.direction>0?'>':'<',m.direction>0?x+tw+4:x-4,y+3,1,'#BFE8FF',m.direction>0?'left':'right');
-  if (m.family==='gust'||m.family==='target'||m.family==='visibility') {   // corridor bar only where a lane means something (v109)
-    const lane=modifierLaneBounds(m,active&&(m.family==='target'));
-    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(8,y+15,W-16,2);
-    ctx.fillStyle=active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(lane.left),y+15,Math.max(2,Math.round(lane.right-lane.left)),2);
-  }
+// v180: every contextual system shares this single lane. Priority is bonus, tutorial, final-world
+// phase, then wind; urgent queued notes replace the lane entirely instead of stacking over it.
+function fitContextText() {
+  const options=Array.from(arguments);
+  return options.find(t=>t&&t.length*6+16<=W-16)||options.filter(Boolean).pop()||'';
 }
-function renderSpacePhaseHUD(h) {
-  if (regionIntro) return;
-  const phase=spacePhaseAt(h);
-  if (!phase||!spaceHazardsEnabled()) return;
-  const roman=['I','II','III'][phase.index], label='SPACE '+roman+' - '+phase.name;
-  ctx.globalAlpha=.76;
-  txtFit(label,W/2,62,1,phase.color,'center',W-50);
-  ctx.globalAlpha=1;
+function modifierHUDInfo(h) {
+  if (!runContext||!runContext.modifierPermissions.enabled) return null;
+  const mod=runContext.modifiers.find(x=>{const p=modifierRuntime(x);return p&&(p.status==='active'||p.status==='announced');});
+  if (!mod) return null;
+  const p=modifierRuntime(mod),active=p.status==='active',inN=Math.max(0,mod.startAltitude-h);
+  const text=active
+    ?fitContextText(mod.name+': '+modifierProgressText(mod,p),modifierProgressText(mod,p),mod.name)
+    :fitContextText('BONUS IN '+inN+': '+mod.name,mod.name+' IN '+inN,'BONUS IN '+inN);
+  const lane=(mod.family==='gust'||mod.family==='target'||mod.family==='visibility')
+    ?modifierLaneBounds(mod,active&&mod.family==='target'):null;
+  return {text,accent:active?'#FFD75E':'#BFE8FF',alpha:.92,lane,active};
 }
-function renderOrbitPhaseHUD(h) {
-  if (regionIntro) return;
-  const phase=orbitPhaseAt(h);
-  if (!phase||!orbitCoastEnabled()) return;
-  const coast=orbitCoastPlan(h,runContext.seed,activeDifficulty(),shield>0), roman=['I','II','III'][phase.index];
-  let title='ORBIT '+roman+' '+phase.name;
-  ctx.globalAlpha=.78;
-  if (W>300) txtFit(title+'   COAST '+(coast.dir>0?'>':'<'),W/2,62,1,phase.color,'center',W-50);
-  else {
-    if (title.length*6-1>W-70) title='ORBIT '+roman+' '+phase.name.replace('SATELLITE ','').replace(' ORBIT','');
-    txtFit(title,8,62,1,phase.color,'left',W-70);
-    txt('COAST '+(coast.dir>0?'>':'<'),W-6,62,1,phase.color,'right');
-  }
-  ctx.globalAlpha=1;
+function tutorialHUDInfo(m) {
+  if (tutStep<0) return null;
+  const lesson=TUT_LESSONS[Math.min(tutStep,TUT_LESSONS.length-1)],pre=m.practice?'PRACTICE ':'';
+  return {text:fitContextText(pre+lesson.title+': '+lesson.body,pre+lesson.title+': '+lesson.compact,lesson.compact),accent:'#FFD75E',alpha:.92};
 }
-function renderStarsPhaseHUD(h) {
-  if (regionIntro) return;
-  const phase=starsPhaseAt(h);
-  if (!phase||!starsPulseEnabled()) return;
-  const roman=['I','II','III'][phase.index], secs=Math.max(0,starsPulseTimer/60).toFixed(1)+'S';
-  let title='STARS '+roman+' '+phase.name, pulse=starsPulseBoost>0?'FLARE':'PULSE '+secs;
-  ctx.globalAlpha=.82;
-  if (W>330) txtFit(title+'   '+pulse,W/2,62,1,phase.color,'center',W-50);
-  else {
-    if (title.length*6-1>W-78) title='STARS '+roman+' '+phase.name.replace('CONSTELLATION ','').replace('GATE ','');
-    txtFit(title,8,62,1,phase.color,'left',W-78);
-    txt(pulse,W-6,62,1,phase.color,'right');
+function phaseHUDInfo(h) {
+  const roman=['I','II','III'];
+  let phase=spacePhaseAt(h);
+  if (phase&&spaceHazardsEnabled()) return {text:fitContextText('SPACE '+roman[phase.index]+': '+phase.name,phase.name),accent:phase.color,alpha:.86};
+  phase=orbitPhaseAt(h);
+  if (phase&&orbitCoastEnabled()) {
+    const coast=orbitCoastPlan(h,runContext.seed,activeDifficulty(),shield>0),dir=coast.dir>0?'>':'<';
+    return {text:fitContextText('ORBIT '+roman[phase.index]+': '+phase.name+' '+dir,'ORBIT '+roman[phase.index]+': COAST '+dir,'COAST '+dir),accent:phase.color,alpha:.86};
   }
-  ctx.globalAlpha=1;
+  phase=starsPhaseAt(h);
+  if (phase&&starsPulseEnabled()) {
+    const pulse=starsPulseBoost>0?'FLARE':'PULSE '+Math.max(0,starsPulseTimer/60).toFixed(1)+'S';
+    return {text:fitContextText('STARS '+roman[phase.index]+': '+phase.name+' '+pulse,'STARS '+roman[phase.index]+': '+pulse,pulse),accent:phase.color,alpha:.9};
+  }
+  return null;
+}
+function contextHUDInfo(h,m,balanceDanger) {
+  if (regionIntro||curNote||balanceDanger) return null;
+  const modifier=modifierHUDInfo(h);
+  if (modifier) return modifier;
+  const tutorial=tutorialHUDInfo(m);
+  if (tutorial) return tutorial;
+  const phase=phaseHUDInfo(h);
+  if (phase) return phase;
+  if (wind) return {text:wind.dir>0?'WIND >':'< WIND',accent:'#BFE8FF',alpha:.82};
+  return null;
+}
+function renderContextHUD(info) {
+  if (!info) return;
+  drawNotifyStrip(info.text,info.alpha,info.accent);
+  if (info.lane) {
+    const y=NOTIFY_Y+16;
+    ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(8,y,W-16,2);
+    ctx.fillStyle=info.active?'#62E8B5':'#BFE8FF';ctx.fillRect(Math.round(info.lane.left),y,Math.max(2,Math.round(info.lane.right-info.lane.left)),2);
+  }
 }
 function drawStarsPulseSignal() {
   const phase=starsPhaseAt(blocks.length);
@@ -8016,16 +8008,7 @@ function renderHUD(h) {
   }
   if (runLevel >= 0) {   // campaign HUD: the goal + a slim progress bar
     const goal = levelGoalA(runLevel), from = runLaunch;
-    const cp=runContext.checkpointSnapshot;
-    let lft=cp.startAltitude?cp.name.split(' ')[0]+' CP':'GROUND',
-        mid='L'+(runLevel+1)+' GOAL '+goal*METERS_PER+'M',
-        rgt=(cp.scoreMultiplier+'X SCORE').replace('0.','.');
-    if (7+tW(lft)+5 > Math.round(W/2-tW(mid)/2) || Math.round(W/2+tW(mid)/2)+5 > W-7-tW(rgt)) {   // compact: three labels can't share the row
-      lft=cp.startAltitude?'CP':'GROUND'; mid='GOAL '+goal*METERS_PER+'M'; rgt=(cp.scoreMultiplier+'X').replace('0.','.');
-    }
-    txt(lft,7,33,1,'rgba(255,246,232,0.62)','left');
-    txt(mid, W/2, 33, 1, levelColor(runLevel), 'center');
-    txt(rgt,W-7,33,1,'rgba(255,246,232,0.62)','right');
+    txt('GOAL '+goal*METERS_PER+'M', W/2, 33, 1, levelColor(runLevel), 'center');
     const bw = Math.min(W - 80, 120), bx = Math.round(W/2 - bw/2);
     const pct = clamp((h - from) / (goal - from), 0, 1);
     ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(bx, 43, bw, 3);
@@ -8053,33 +8036,15 @@ function renderHUD(h) {
       if (balanceDanger && Math.floor(tick/10)%2===0) txt(m.practice ? 'AUTO STEADY' : 'BALANCE!', W/2, 55, 1, m.practice ? '#62E8B5' : '#FF5E7E', 'center');
     }
   }
-  if (combo > 1 && !balanceDanger) {   // one shared lane: the balance warning outranks the combo celebration
+  const contextInfo=contextHUDInfo(h,m,balanceDanger);
+  if (combo > 1 && !balanceDanger && !curNote && !regionIntro && !contextInfo) {
     const lbl = nova ? 'NOVA X' : fever ? 'FEVER X' : combo >= 7 ? 'BLAZING X' : 'COMBO X';
     const col2 = nova ? (Math.floor(tick/4)%2 ? '#FFFFFF' : 'hsl('+((tick*14)%360)+',100%,80%)')
                : fever ? ('hsl('+((tick*8)%360)+',100%,75%)')
                : combo >= 7 ? '#FF9E3D' : (combo>=5?'#FF7E6B':'#FFD75E');
     txt(lbl+combo, W/2, 55, 1, col2, 'center');
   }
-  if (wind) {
-    const env = Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI);
-    ctx.globalAlpha = .4 + env*.5;
-    txt(wind.dir>0?'WIND >':'< WIND', W/2, 62, 1, '#BFE8FF', 'center');
-    ctx.globalAlpha = 1;
-  }
-  renderSpacePhaseHUD(h);
-  renderOrbitPhaseHUD(h);
-  renderStarsPhaseHUD(h);
-  renderModifierHUD(h);
-  // first-run / PRACTICE onboarding: one compact line in the shared notification lane (v109)
-  if (tutStep >= 0 && !curNote && !regionIntro) {
-    const lesson = TUT_LESSONS[Math.min(tutStep, TUT_LESSONS.length-1)];
-    const pre = m.practice ? 'PRACTICE ' : '';
-    const fits = s => s.length * 6 + 16 <= W - 16;        // drawNotifyStrip's real limit
-    let line = pre + lesson.title + ': ' + lesson.body;
-    if (!fits(line)) line = pre + lesson.title + ': ' + lesson.compact;
-    if (!fits(line)) line = lesson.compact;
-    drawNotifyStrip(line, .92, 'rgba(255,215,94,0.55)');
-  }
+  renderContextHUD(contextInfo);
   if (developerRunActive()) pixelButton(DEV_HUD_BTN,'DEV LAB',false);
   // sound toggle
   ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(SND_BTN.x-1,SND_BTN.y-1,SND_BTN.w+2,SND_BTN.h+2);

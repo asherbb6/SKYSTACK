@@ -1171,8 +1171,8 @@ check('S4 gust windows use the seeded warned direction and existing wind physics
   '(() => { runContext=createRunContext({mode:"level",campaignLevel:3,startingAltitude:60,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();const m=runContext.modifiers.find(x=>x.id==="lower-gust");blocks=Array.from({length:m.startAltitude},()=>({x:0,w:96,col:"#fff"}));tier=3;state="playing";wind=null;slider=null;updateModifiersForPlacement(m.startAltitude,{perfect:true,cut:false,miss:false,center:W/2});update(1);return wind&&wind.modifierId===m.id&&wind.dir===m.direction&&wind.str>0&&modifierRuntime(m).status==="active"; })()'));
 check('S4 reset scrubs mutable modifier progress while preserving the immutable schedule contract', () => fresh.run(
   '(() => { mode="endless";resetRun();const first=runContext.modifiers.length,m=runContext.modifiers[0];modifierProgress[m.id].status="complete";modifierWins=4;modifierBonusCoins=99;resetRun();return first===MODIFIER_REGISTRY.length&&runContext.modifiers.length===first&&Object.keys(modifierProgress).length===first&&Object.values(modifierProgress).every(p=>p.status==="pending")&&modifierWins===0&&modifierBonusCoins===0&&modifierResults.length===0; })()'));
-check('S4 modifier HUD renders telegraph, rule, duration, reward lane, and gust direction at phone width', () => fresh.run(
-  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:3,startingAltitude:60,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();const m=runContext.modifiers[0],p=modifierRuntime(m);p.status="announced";renderModifierHUD(m.announceAltitude);p.status="active";renderModifierHUD(m.startAltitude);const b=modifierLaneBounds(m,false);return b.left>=0&&b.right<=W&&b.right>b.left; })()'));
+check('S4 modifier context renders announced and active progress with a bounded optional lane', () => fresh.run(
+  '(() => { W=242;H=300;runContext=createRunContext({mode:"level",campaignLevel:3,startingAltitude:60,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();const m=runContext.modifiers[0],p=modifierRuntime(m);p.status="announced";let info=modifierHUDInfo(m.announceAltitude);renderContextHUD(info);p.status="active";info=modifierHUDInfo(m.startAltitude);renderContextHUD(info);return info&&info.text&&(!info.lane||(info.lane.left>=0&&info.lane.right<=W&&info.lane.right>info.lane.left)); })()'));
 
 // ---------- S5 progression, economy, missions, achievements + collections ----------
 check('S5 defines one frozen coin-only direct-purchase economy with no gacha or premium currency', () => fresh.run(
@@ -1391,9 +1391,10 @@ check('v93 coin icons sit centered on their reward digits (y = text y + 0.5 ever
   /drawCoin\(W\/2 - 30, FAIL_REV\.y \+ 7\.5\)/.test(src) && /drawCoin\(W\/2-24, 127\.5\)/.test(src) &&
   /drawCoin\(W\/2 - 32, REVIVE_BTN\.y \+ 8\.5\)/.test(src));
 
-// ---------- v94 HUD margin + notification placement ----------
-check('v94 campaign HUD row keeps a 7px side margin (not edge-flush)', () =>
-  /txt\(lft,7,33/.test(src) && /txt\(rgt,W-7,33/.test(src));   // v96 parameterized the labels; the 7px anchors are the invariant
+// ---------- v94/v180 HUD margin + notification placement ----------
+check('v180 campaign HUD centers one goal label instead of packing three edge labels', () =>
+  /txt\('GOAL '\+goal\*METERS_PER\+'M', W\/2, 33/.test(src) &&
+  !/txt\(lft,7,33/.test(src) && !/txt\(rgt,W-7,33/.test(src));
 
 check('v105 all notifications render through one top-middle queue (no banner/toast pair)', () =>
   /function drawNotifyStrip\(/.test(src) &&
@@ -1406,8 +1407,9 @@ check('v94 notification strip sits directly under the HUD block, not mid-play-co
 // ---------- v95 in-run bottom overlays sit at the very bottom of the screen ----------
 check('v105 nothing textual renders at the screen bottom in-run: both bottom strips deleted', () =>
   !/ctx\.fillRect\(0, H-29, W, 29\)/.test(src) && !/y=H-\(tutStep>=0\?61:31\)/.test(src));
-check('v105 tutorial hint renders in the top-middle lane only while no note is showing', () =>
-  /tutStep >= 0 && !curNote/.test(src));
+check('v180 tutorial hint enters the shared lane only when no card or queued note is showing', () =>
+  /if \(regionIntro\|\|curNote\|\|balanceDanger\) return null;/.test(src) &&
+  /const tutorial=tutorialHUDInfo\(m\)/.test(src));
 
 // ---------- v96 in-run HUD overlap audit ----------
 // txt() is instrumented to capture every glyph box renderHUD draws; any pair of boxes that
@@ -1449,18 +1451,18 @@ check('v96 balance warning and combo share one lane: danger outranks the celebra
   'return at55.length===1 && at55[0]==="BALANCE!"; })()'));
 
 check('v96 notification boxes carry a full 1px outline, not just top/bottom lines', () =>
-  /ctx\.fillRect\(x, y, 1, 14\); ctx\.fillRect\(x \+ tw - 1, y, 1, 14\)/.test(src) &&
-  /ctx\.fillRect\(x,y,tw,1\);ctx\.fillRect\(x,y\+12,tw,1\);ctx\.fillRect\(x,y,1,13\);ctx\.fillRect\(x\+tw-1,y,1,13\)/.test(src));
+  /ctx\.fillRect\(x, y, 1, 14\); ctx\.fillRect\(x \+ tw - 1, y, 1, 14\)/.test(src));
 
-check('v106 modifier activation is one BONUS note with rule and reward; prefix drops at narrow width', () =>
-  /const bn='BONUS: '\+m\.rule\+' \+'\+m\.rewardCoins, bp=m\.rule\+' \+'\+m\.rewardCoins; note\(bn\.length\*6\+16<=W-16\?bn:bp,'#FFD75E',2,140\)/.test(src));
+check('v180 modifier activation changes the shared context instead of adding a duplicate BONUS note', () =>
+  /if \(p\.status!=='active'\) p\.status='active';/.test(src) &&
+  !/const bn='BONUS: '/.test(src));
 
 check('v96 notification strip clamps its text to the screen width', () =>
   /while \(text\.length > 1 && text\.length \* 6 \+ 16 > W - 16\) text = text\.slice\(0, -1\)/.test(src));
 
-check('v96 in-run surfaces share one 0.82 backing opacity (visibility pass)', () =>
-  /rgba\(11,14,26,0\.82\)'; ctx\.fillRect\(x, y, tw, 14\)/.test(src) &&           // queue strip
-  /rgba\(11,14,26,0\.82\)';ctx\.fillRect\(x,y,tw,13\)/.test(src));                 // modifier chip
+check('v180 in-run context uses one 0.82 backing surface', () =>
+  /rgba\(11,14,26,0\.82\)'; ctx\.fillRect\(x, y, tw, 14\)/.test(src) &&
+  /function renderContextHUD\(info\) \{[\s\S]*?drawNotifyStrip\(info\.text,info\.alpha,info\.accent\)/.test(src));
 
 // ---------- v98 icon/cloud/nav art detail ----------
 check('v98 shop nav glyph is a shopping cart with twin wheels, not a crate', () =>
@@ -1671,12 +1673,12 @@ check('v105 queue: resetRun clears queue and current note', () => nq.run(
   '(() => { note("X",null,1); update(1); resetRun(); return notes.length===0 && curNote===null; })()'));
 check('v105: legacy banner/toast state is gone from the source', () =>
   !/bannerT/.test(src) && !/toastT/.test(src) && !/bannerText/.test(src) && !/toastMsg/.test(src));
-check('v105/v109 modifier chip: docked at a fixed NOTIFY_CHIP_Y', () =>
-  /NOTIFY_CHIP_Y = NOTIFY_Y \+ 16/.test(src) &&
-  /const y=NOTIFY_CHIP_Y;/.test(src));
-check('v105 modifier chip keeps the corridor mini-map lane bar at real screen positions', () =>
-  /modifierLaneBounds\(m,active&&\(m\.family==='target'\)\)/.test(src) &&
-  /ctx\.fillRect\(8,y\+15,W-16,2\)/.test(src));
+check('v180 modifier, tutorial, phase, and wind copy share exactly one NOTIFY_Y lane', () =>
+  !/NOTIFY_CHIP_Y/.test(src) && /function contextHUDInfo/.test(src) &&
+  /renderContextHUD\(contextInfo\)/.test(src));
+check('v180 modifier context keeps the corridor mini-map at real screen positions', () =>
+  /modifierLaneBounds\(mod,active&&mod\.family==='target'\)/.test(src) &&
+  /const y=NOTIFY_Y\+16;/.test(src) && /ctx\.fillRect\(8,y,W-16,2\)/.test(src));
 
 // ---------- v106: pop-up copy clarity ----------
 check('v106 every reward pop-up names its currency or effect', () =>
@@ -1688,9 +1690,9 @@ check('v106 modifier win notes BONUS WON with coins; the old CLEAR/ENDED note is
   !/\+' ENDED'/.test(src) && !/' CLEAR \+'\+paid/.test(src));
 check('v106 registry rules are imperative and fit the BONUS note at phone width', () => fresh.run(
   'MODIFIER_REGISTRY.every(m => m.rule.length<=19 && ("BONUS: "+m.rule+" +"+m.rewardCoins).length<=31)'));
-check('v106 chip states its units with a fit fallback', () =>
-  /m\.name\+' '\+blocksLeft\+' LEFT'/.test(src) && /m\.name\+' IN '\+inN\+' BLOCKS'/.test(src) &&
-  /if \(t\.length\*6-1>W-40\) t=active\?m\.name\+' - '\+blocksLeft:m\.name\+' IN '\+inN;/.test(src));
+check('v180 bonus context states countdown or objective units with a phone-width fallback', () =>
+  /'BONUS IN '\+inN\+': '\+mod\.name/.test(src) &&
+  /modifierProgressText\(mod,p\)/.test(src) && /function fitContextText/.test(src));
 check('v106 collection toast names its coins', () =>
   !/'COLLECTION COMPLETE \+'/.test(src) && /'COLLECTION! \+'/.test(src));
 check('v106/v109 COMBO lesson teaches the fever threshold in plain words', () => fresh.run(
@@ -1879,8 +1881,8 @@ check('v109 drawGasCloud renders without throwing (active, fading, off-screen)',
   g.run('mode="endless"; resetRun(); state="playing";');
   return g.run('(() => { try { gasCloud={wy:GROUND_Y-9*BH,t:300}; render(); gasCloud.t=30; render();' +
     ' gasCloud={wy:-99999,t:300}; render(); gasCloud=null; return true; } catch(e) { return false; } })()'); });
-check('v109 tutorial is ONE strip: no second yOff-14 lesson call; merged TITLE: BODY form', () =>
-  !/drawNotifyStrip\(lbody/.test(src) && /lesson\.title \+ ': ' \+ lesson\.body/.test(src));
+check('v109/v180 tutorial is ONE strip with merged TITLE: BODY copy', () =>
+  !/drawNotifyStrip\(lbody/.test(src) && /lesson\.title\+': '\+lesson\.body/.test(src));
 check('v109 every lesson fits un-truncated at 180px (fit gate matches drawNotifyStrip)', () => bl.run(
   '(() => { const fits = s => s.length*6+16 <= 180-16;' +
   ' return TUT_LESSONS.every(l => fits(l.title+": "+l.compact) || fits(l.compact)); })()'));
@@ -1894,10 +1896,10 @@ check('v109 real-run tutorial progress persists; practice never writes it', () =
   const practiceSilent = saved(tp, 'skystack-tutstep') === 2;
   return savedStep && resumed && practiceSilent;
 });
-check('v109 chip fixed at NOTIFY_CHIP_Y (no tutorial drop)', () =>
-  /const y=NOTIFY_CHIP_Y;/.test(src) && !/NOTIFY_CHIP_Y\+\(tutStep>=0\?16:0\)/.test(src));
-check('v109 corridor bar only for lane-meaningful families', () =>
-  /family==='gust'\|\|m\.family==='target'\|\|m\.family==='visibility'/.test(src));
+check('v180 optional lane stays attached to the single context strip', () =>
+  /const y=NOTIFY_Y\+16;/.test(src) && !/NOTIFY_CHIP_Y/.test(src));
+check('v109/v180 corridor bar only exists for lane-meaningful families', () =>
+  /mod\.family==='gust'\|\|mod\.family==='target'\|\|mod\.family==='visibility'/.test(src));
 
 // ---------- v104: drifting balloon power-up ----------
 const bd = makeGame();
@@ -3371,7 +3373,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v179', () => /const CACHE = 'skystack-v179'/.test(sw));
+check('sw.js cache bumped to v180', () => /const CACHE = 'skystack-v180'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4446,9 +4448,9 @@ check('v170 SPACE hazards draw a warning route before either active body', () =>
   rec.rects.length = 0; g.run('drawSpaceHazard(0)'); const active = rec.rects.length;
   return warning >= 8 && active >= 5 ? true : 'warning=' + warning + ', active body=' + active;
 });
-check('v170 phase identity stays visible in the SPACE HUD', () => {
-  const seg = src.slice(src.indexOf('function renderSpacePhaseHUD'), src.indexOf('\nfunction renderHUD'));
-  return /SPACE/.test(seg) && /phase\.name/.test(seg) && /renderSpacePhaseHUD\(h\)/.test(src)
+check('v170/v180 phase identity stays visible in the SPACE context', () => {
+  const seg = src.slice(src.indexOf('function phaseHUDInfo'), src.indexOf('\nfunction contextHUDInfo'));
+  return /SPACE/.test(seg) && /phase\.name/.test(seg) && /phaseHUDInfo\(h\)/.test(src)
     ? true : 'SPACE phase name is not carried into the live HUD';
 });
 
@@ -4599,9 +4601,9 @@ check('v175 the live fall path applies orbital momentum separately from wind and
     ? true : 'the falling block does not carry a separate orbital velocity';
 });
 check('v175 ORBIT keeps its chapter and coast direction visible in HUD and scenery', () => {
-  const hud = src.slice(src.indexOf('function renderOrbitPhaseHUD'), src.indexOf('\nfunction renderHUD'));
+  const hud = src.slice(src.indexOf('function phaseHUDInfo'), src.indexOf('\nfunction contextHUDInfo'));
   const bg = src.slice(src.indexOf('function drawOrbitBg'), src.indexOf('\nfunction drawStarsBg'));
-  return /ORBIT/.test(hud) && /COAST/.test(hud) && /phase\.name/.test(hud) && /renderOrbitPhaseHUD\(h\)/.test(src) &&
+  return /ORBIT/.test(hud) && /COAST/.test(hud) && /phase\.name/.test(hud) && /phaseHUDInfo\(h\)/.test(src) &&
     /drawOrbitCoastFlow\(/.test(bg) ? true : 'ORBIT coast is not continuously telegraphed in both HUD and world';
 });
 
@@ -4686,6 +4688,8 @@ check('v178 developer target links can open a named world phase directly', () =>
   const g=makeGame(undefined,false,false,undefined,'?dev=1&target=8');
   return g.run('DEV_MODE && devSelectedTarget===7 && DEV_TARGETS[devSelectedTarget].id==="stars-mid" && startDeveloperTarget(devSelectedTarget) && blocks.length===420');
 });
+check('v180 every developer target has a one-line phone label', () => fresh.run(
+  'DEV_TARGETS.every(t=>t.short&&t.short.length*6-1<=76)'));
 check('v178 developer runs can never offer or spend a campaign revive', () => {
   const g=makeGame({'skystack-coins':'500'},false,false,undefined,'?dev=1');
   return g.run('startDeveloperLevel(9) && (overCause="miss",canOfferRevive()===false)');
@@ -4721,9 +4725,9 @@ check('v178 a normal campaign run can read and clear all three stellar pulse pha
     'return state==="levelwin"&&blocks.length===540&&phases===7&&starsPulseCount>=3; })()');
 });
 check('v178 THE STARS keeps its phase countdown and bounded pulse signal visible', () => {
-  const hud=src.slice(src.indexOf('function renderStarsPhaseHUD'),src.indexOf('\nfunction renderHUD'));
+  const hud=src.slice(src.indexOf('function phaseHUDInfo'),src.indexOf('\nfunction contextHUDInfo'));
   const signal=src.slice(src.indexOf('function drawStarsPulseSignal'),src.indexOf('\nfunction renderHUD'));
-  return /PULSE/.test(hud)&&/starsPulseTimer/.test(hud)&&/renderStarsPhaseHUD\(h\)/.test(src)&&
+  return /PULSE/.test(hud)&&/starsPulseTimer/.test(hud)&&/phaseHUDInfo\(h\)/.test(src)&&
     /phase\.warn/.test(signal)&&/drawStarPix/.test(signal)&&/drawStarsPulseSignal\(\)/.test(src)
     ? true : 'THE STARS pulse is missing a persistent countdown or bounded world tell';
 });
@@ -4732,22 +4736,22 @@ check('v178 THE STARS keeps its phase countdown and bounded pulse signal visible
 check('v179 player-facing areas preserve art tiers without exposing TREETOPS as a level', () => fresh.run(
   'AREA_NAMES.length===TIERS.length && AREA_NAMES[1]==="FOREST FLOOR" && AREA_NAMES[2]==="HIGH CANOPY" && ' +
   'CHECKPOINT_REGISTRY[3].name==="HIGH CANOPY" && !AREA_NAMES.some(n=>n==="TREETOPS")'));
-check('v179 every campaign start announces the actual level and its purpose', () => fresh.run(
-  '(() => { if(LEVEL_TAGS.length!==LEVEL_COUNT||LEVEL_RULES.length!==LEVEL_COUNT)return false;' +
+check('v180 every campaign start announces the actual level and one concise mechanic', () => fresh.run(
+  '(() => { if(LEVEL_RULES.length!==LEVEL_COUNT)return false;' +
   'for(let i=0;i<LEVEL_COUNT;i++){startLevel(i);const c=regionIntroCopy(regionIntro);' +
-  'if(regionIntro.kind!=="level"||regionIntro.level!==i||c.eyebrow!=="LEVEL "+(i+1)||c.title!==levelName(i)||!c.tag)return false;}' +
+  'if(regionIntro.kind!=="level"||regionIntro.level!==i||c.eyebrow!=="LEVEL "+(i+1)||c.title!==levelName(i)||!c.detail||c.detail.length>26)return false;}' +
   'return true; })()'));
-check('v179 THE FOREST continues into HIGH CANOPY as a shorter area beat', () => fresh.run(
+check('v180 THE FOREST continues into HIGH CANOPY as a shorter one-detail area beat', () => fresh.run(
   '(() => { startLevel(1);const levelDur=regionIntro.dur,start=regionIntroCopy(regionIntro);' +
-  'startRegionIntro(2,"area");const area=regionIntroCopy(regionIntro);return start.title==="THE FOREST" && start.tag==="FOREST FLOOR TO CANOPY" && ' +
-  'area.eyebrow==="NEW AREA" && area.title==="HIGH CANOPY" && area.tag==="THE FOREST CONTINUES" && regionIntro.dur<levelDur; })()'));
-check('v179 transition cards state accurate mechanics for forest, SPACE, ORBIT, and THE STARS', () => fresh.run(
-  'LEVEL_RULES[1].includes("CANOPY") && LEVEL_RULES[7].includes("ASTEROIDS PULL") && ' +
-  'LEVEL_RULES[8].includes("LEAD") && LEVEL_RULES[9].includes("WAITING BLOCK") && ' +
+  'startRegionIntro(2,"area");const area=regionIntroCopy(regionIntro);return start.title==="THE FOREST" && start.detail.includes("CANOPY") && ' +
+  'area.eyebrow==="NEW AREA" && area.title==="HIGH CANOPY" && area.detail==="PERFECTS SPRING WIDER" && regionIntro.dur<levelDur; })()'));
+check('v180 transition cards state accurate concise mechanics for forest, SPACE, ORBIT, and THE STARS', () => fresh.run(
+  'LEVEL_RULES[1].includes("CANOPY") && LEVEL_RULES[7].includes("ROCKS PULL") && ' +
+  'LEVEL_RULES[8].includes("LEAD") && LEVEL_RULES[9].includes("REVERSE") && ' +
   'AREA_RULES[2].includes("SPRING") && AREA_RULES[9].includes("COAST") && AREA_RULES[10].includes("PULSES")'));
-check('v179 retry is labeled honestly and shorter than a new-level entrance', () => fresh.run(
+check('v180 retry is labeled honestly, rule-free, and shorter than a new-level entrance', () => fresh.run(
   '(() => { startLevel(1);const full=regionIntro.dur;startLevel(1,checkpointForLevel(1).id,runContext.seed);const c=regionIntroCopy(regionIntro);' +
-  'return regionIntro.kind==="retry"&&c.eyebrow==="RETRY"&&c.title==="THE FOREST"&&c.tag==="CLIMB AGAIN"&&regionIntro.dur<full; })()'));
+  'return regionIntro.kind==="retry"&&c.eyebrow==="RETRY"&&c.title==="THE FOREST"&&c.detail===""&&regionIntro.dur<full; })()'));
 check('v179 delayed notifications wait their turn instead of competing with entry cards', () => fresh.run(
   '(() => { notes=[];curNote=null;regionIntro=null;note("AFTER ENTRY","#fff",1,30,20);updateNotes(10);if(curNote||notes[0].delay!==10)return false;' +
   'updateNotes(10);return curNote&&curNote.text==="AFTER ENTRY"&&notes.length===0; })()'));
@@ -4779,13 +4783,25 @@ check('v179 SPACE-family mechanics and phase HUDs wait until the entry card clea
   '(() => { const rows=[];for(const lv of [7,8,9]){startLevel(lv);const paused=' +
   '(lv===7?!spaceHazardsEnabled():lv===8?!orbitCoastEnabled():!starsPulseEnabled());regionIntro=null;const resumed=' +
   '(lv===7?spaceHazardsEnabled():lv===8?orbitCoastEnabled():starsPulseEnabled());rows.push(paused&&resumed);}return rows.every(Boolean); })()'));
-check('v179 every SPACE-family phase HUD has an explicit intro-card guard', () => {
-  const hud=src.slice(src.indexOf('function renderSpacePhaseHUD'),src.indexOf('\nfunction drawStarsPulseSignal'));
-  return ['renderSpacePhaseHUD','renderOrbitPhaseHUD','renderStarsPhaseHUD'].every(name=>{
-    const start=hud.indexOf('function '+name),next=hud.indexOf('\nfunction ',start+10),seg=hud.slice(start,next<0?hud.length:next);
-    return /if \(regionIntro\) return;/.test(seg);
-  }) ? true : 'a SPACE-family phase HUD can overlap the entry card';
-});
+check('v180 the shared context has one explicit intro-card guard for every phase', () =>
+  /function contextHUDInfo\(h,m,balanceDanger\) \{\s*if \(regionIntro\|\|curNote\|\|balanceDanger\) return null;/.test(src));
+check('v180 entry-card copy has at most three visible lines and retries do not repeat instructions', () => fresh.run(
+  '(() => { for(let i=0;i<LEVEL_COUNT;i++){startLevel(i);const c=regionIntroCopy(regionIntro);if(Object.keys(c).sort().join(",")!=="color,detail,eyebrow,title"||!c.detail)return false;' +
+  'startLevel(i,checkpointForLevel(i).id,runContext.seed);if(regionIntroCopy(regionIntro).detail!=="")return false;}return true; })()'));
+check('v180 shared context priority is bonus, tutorial, phase, then wind', () => fresh.run(
+  '(() => { W=242;H=390;relayout();runContext=createRunContext({mode:"level",campaignLevel:7,startingAltitude:200,seed:180,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();' +
+  'regionIntro=null;curNote=null;state="playing";blocks=Array.from({length:205},()=>({x:70,w:96}));wind={dir:1,t:1,dur:100};tutStep=0;' +
+  'const mod=runContext.modifiers[0],p=modifierRuntime(mod);p.status="active";const bonus=contextHUDInfo(205,activeMode(),false);p.status="pending";const tutorial=contextHUDInfo(205,activeMode(),false);' +
+  'tutStep=-1;const phase=contextHUDInfo(205,activeMode(),false);blocks.length=180;const breeze=contextHUDInfo(180,activeMode(),false);' +
+  'return bonus&&bonus.text.includes(modifierProgressText(mod,p))&&tutorial&&/TAP|DROP/.test(tutorial.text)&&phase&&phase.text.includes("SPACE")&&breeze&&breeze.text==="WIND >"; })()'));
+check('v180 entering SPACE, ORBIT, and THE STARS does not enqueue a duplicate phase-rule popup', () => fresh.run(
+  '(() => { const enter=(lv,h,fn)=>{runContext=createRunContext({mode:"level",campaignLevel:lv,startingAltitude:h,seed:180,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'regionIntro=null;state="playing";blocks=Array.from({length:h},()=>({x:70,w:96}));slider={x:70,y:120,w:24,dir:1,speed:1};notes=[];curNote=null;spacePhaseSeen=-1;orbitPhaseSeen=-1;starsPhaseSeen=-1;fn();return notes.length===0&&curNote===null;};' +
+  'return enter(7,205,()=>updateSpaceHazards(1))&&enter(8,260,()=>updateOrbitCoastPhase())&&enter(9,360,()=>updateStarsPulse(1)); })()'));
+check('v180 active bonus progress lives in context without an activation popup', () => fresh.run(
+  '(() => { runContext=createRunContext({mode:"level",campaignLevel:3,startingAltitude:60,seed:180,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();' +
+  'const m=runContext.modifiers[0],p=modifierRuntime(m);p.status="announced";notes=[];curNote=null;updateModifiersForPlacement(m.startAltitude,{perfect:true,cut:false,miss:false,center:W/2});' +
+  'const info=modifierHUDInfo(m.startAltitude);return p.status==="active"&&notes.length===0&&curNote===null&&!!(info&&info.text); })()'));
 
 // ---------- report ----------
 let pass = 0, fail = 0;
