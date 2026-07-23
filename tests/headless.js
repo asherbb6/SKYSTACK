@@ -3379,7 +3379,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v182', () => /const CACHE = 'skystack-v182'/.test(sw));
+check('sw.js cache bumped to v183', () => /const CACHE = 'skystack-v183'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4853,7 +4853,7 @@ check('v181 all balloon kinds and power signatures render without throwing', () 
 // ---------- v182: restore living birds + make ordinary wind unmistakably mechanical ----------
 check('v182 every sky bird has individual detailed flight state inside an authored habitat', () => fresh.run(
   'skyBirds.length===SKY_FLOCKS.reduce((n,f)=>n+f.count,0)&&skyBirds.every(b=>{' +
-  'const f=SKY_FLOCKS[b.flock];return Number.isFinite(b.a)&&Math.abs(b.a-f.a)<=f.band/2&&b.scale>=.7&&' +
+  'const f=SKY_FLOCKS[b.flock];return Number.isFinite(b.a)&&Math.abs(b.a-f.a)<=f.band/2&&b.scale>=.9&&' +
   'Number.isFinite(b.speed)&&Number.isFinite(b.flap)&&Number.isFinite(b.yOff)&&b.y===undefined;})'));
 check('v182 birds cruise, flap, and lift independently without changing absolute altitude', () => {
   const g=makeGame();
@@ -4873,6 +4873,12 @@ check('v182 reduced motion freezes bird cruise, flap, and lift while keeping wor
   return g.run('(() => { mode="endless";resetRun();state="playing";const before=skyBirds.map(b=>[b.x,b.ph,b.yOff,b.a]);' +
     'landFx(BASE_W);for(let i=0;i<30;i++)update(1);return skyBirds.every((b,i)=>b.x===before[i][0]&&b.ph===before[i][1]&&' +
     'b.yOff===before[i][2]&&b.a===before[i][3]&&b.boost===0); })()');
+});
+check('v183 every flock wraps fully off-screen and resumes instead of sticking at one edge', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="endless";resetRun();state="playing";wind=null;for(const b of skyBirds)b.x=W+29+b.flock*9;' +
+    'updateSkyBirds(1);const wrapped=skyBirds.map(b=>b.x);if(!skyBirds.every((b,i)=>wrapped[i]===-(28+b.flock*9)))return false;' +
+    'updateSkyBirds(2);return skyBirds.every((b,i)=>b.x>wrapped[i]&&b.x<W); })()');
 });
 check('v182 an ordinary LOWER SKY gust moves the waiting block and bends the released block downwind', () => {
   const g=makeGame({'skystack-difficulty':JSON.stringify({level:'medium'})});

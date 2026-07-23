@@ -1878,9 +1878,9 @@ const clouds = []; for (let i = 0; i < 6; i++) clouds.push({ x: Math.random()*W,
 // skeins keep the correct habitat contract while restoring individual scale, flap, lift, cruise,
 // wind response and landing-startle physics.
 const SKY_FLOCKS = deepFreeze([
-  { a:52, phase:.12, speed:.24, count:5, band:.7, color:'#34412F' },   // canopy edge
-  { a:70, phase:.48, speed:.32, count:6, band:1.0, color:'#334F69' },  // lower-sky skein
-  { a:94, phase:.81, speed:.27, count:5, band:1.2, color:'#536B86' }   // cloud-sea travelers
+  { a:52, phase:.12, speed:.24, count:5, band:.7, color:'#263522' },   // canopy edge
+  { a:70, phase:.48, speed:.32, count:6, band:1.0, color:'#253E58' },  // lower-sky skein
+  { a:94, phase:.81, speed:.27, count:5, band:1.2, color:'#435C78' }   // cloud-sea travelers
 ]);
 const skyBirds=[];
 for (let fi=0;fi<SKY_FLOCKS.length;fi++) {
@@ -1890,7 +1890,7 @@ for (let fi=0;fi<SKY_FLOCKS.length;fi++) {
     skyBirds.push({
       flock:fi,a:F.a+(bhash(seed*13)-.5)*F.band,x:(F.phase*(W+90)+i*21+bhash(seed)*34)%(W+90)-45,
       homeY:side*rank*(4+fi),yOff:side*rank*(4+fi),vy:0,
-      speed:F.speed*(.78+bhash(seed*29)*.44),scale:.76+bhash(seed*47)*.38,
+      speed:F.speed*(.78+bhash(seed*29)*.44),scale:.90+bhash(seed*47)*.44,
       ph:bhash(seed*61)*6.28,flap:.16+bhash(seed*71)*.10,float:2+bhash(seed*83)*3,
       boost:0,color:F.color
     });
@@ -2196,8 +2196,9 @@ function updateSkyBirds(dt) {
     b.vy*=Math.pow(.82,dt);
     b.yOff=clamp(b.yOff+b.vy*dt,b.homeY-12,b.homeY+12);
     b.boost=Math.max(0,b.boost-.035*dt);
-    if (b.x>W+28) b.x=-28-b.flock*9;
-    if (b.x<-36) b.x=W+28;
+    const edge=28+b.flock*9;
+    if (b.x>W+edge) b.x=-edge;
+    else if (b.x<-edge) b.x=W+edge;
   }
 }
 function releaseBlock() {
