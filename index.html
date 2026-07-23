@@ -7536,19 +7536,80 @@ function coinsToGo(cost) {
   const lbl = coins + '/' + cost, tw = lbl.length*6 - 1, center=EQUIP_BTN.x+EQUIP_BTN.w/2, x0 = Math.round(center - (tw + 11)/2);
   drawCoin(x0, EQUIP_BTN.y + 5.5); txt(lbl, x0 + 11, EQUIP_BTN.y + 5, 1, 'rgba(255,246,232,0.7)', 'left');
 }
-function shopArrow(r,dir,col) {
-  const cx=Math.round(r.x+r.w/2),cy=Math.round(r.y+r.h/2),s=dir<0?-1:1;
-  ctx.fillStyle=col;
-  ctx.fillRect(cx-s*4,cy-1,s*5,3);
-  for(let i=0;i<4;i++)ctx.fillRect(cx-s*(4-i),cy-4+i,s,8-i*2);
+// ── v185 Skin Shop premium chrome ────────────────────────────────────────────
+// Asher rejected the chunky-frame Shop (blocky shadows, sharp corners, weak icons).
+// New direction: smoother/premium look matching his reference mockup. These helpers
+// are SHOP-SCOPED (they do not touch global pixelFrame or other screens yet).
+const SUI = {
+  bg0:'#0C1226', bg1:'#070A13',           // deep-navy backdrop gradient
+  panel:'#121B2E', panelActive:'#17223C', // raised surfaces
+  border:'#2A3A57', borderSoft:'#1E2A42', // subtle keylines
+  gold:'#FFD75E', mint:'#62E8B5', blue:'#5EC8F2',
+  text:'#FFF6E8', muted:'#8B93A7', dim:'#5B6479'
+};
+function shopShade(hex,amt){                // amt -1(dark)..+1(light); returns rgb()
+  const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  const f=amt<0?0:255, p=Math.min(1,Math.abs(amt));
+  r=Math.round(r+(f-r)*p); g=Math.round(g+(f-g)*p); b=Math.round(b+(f-b)*p);
+  return 'rgb('+r+','+g+','+b+')';
 }
-function shopChevron(x,y,col) {
-  ctx.fillStyle=col;
-  for(let i=0;i<4;i++){ctx.fillRect(x+i,y+i,1,2);ctx.fillRect(x+i,y+8-i,1,2);}
+function shopRR(x,y,w,h,r){                 // rounded-rect path (arcTo: reliable + AA-smooth)
+  r=Math.max(0,Math.min(r,w/2,h/2));
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);     ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+// A raised panel: soft ambient shadow (not a hard bar), rounded body, top sheen, thin keyline.
+function shopPanel(x,y,w,h,o){
+  o=o||{}; const r=o.r==null?5:o.r;
+  ctx.save();
+  if(o.shadow!==false){ ctx.shadowColor='rgba(0,0,0,0.55)'; ctx.shadowBlur=o.shadowBlur||6; ctx.shadowOffsetY=2; }
+  shopRR(x,y,w,h,r); ctx.fillStyle=o.fill||SUI.panel; ctx.fill();
+  ctx.restore();
+  if(o.sheen!==false){
+    ctx.save(); shopRR(x+1,y+1,w-2,h-2,Math.max(1,r-1)); ctx.clip();
+    const g=ctx.createLinearGradient(0,y,0,y+14);
+    g.addColorStop(0,'rgba(255,255,255,0.07)'); g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g; ctx.fillRect(x,y,w,14); ctx.restore();
+  }
+  ctx.save();
+  if(o.glow){ ctx.shadowColor=o.glow; ctx.shadowBlur=o.glowBlur||7; }
+  shopRR(x+.5,y+.5,w-1,h-1,r); ctx.lineWidth=1; ctx.strokeStyle=o.border||SUI.border; ctx.stroke();
+  ctx.restore();
+}
+// A glossy rounded control (EQUIPPED/EQUIP/UNLOCK); base is a solid accent or a dark outline.
+function shopButton(rc,label,o){
+  o=o||{}; const x=rc.x,y=rc.y,w=rc.w,h=rc.h,r=o.r==null?Math.min(6,h/2):o.r;
+  ctx.save(); ctx.shadowColor='rgba(0,0,0,0.4)'; ctx.shadowBlur=4; ctx.shadowOffsetY=1.5;
+  shopRR(x,y,w,h,r);
+  if(o.outline){ ctx.fillStyle=o.fill||'rgba(11,16,28,0.9)'; ctx.fill(); }
+  else{ const g=ctx.createLinearGradient(0,y,0,y+h); g.addColorStop(0,o.top||shopShade(o.accent,.14)); g.addColorStop(1,o.bottom||shopShade(o.accent,-.28)); ctx.fillStyle=g; ctx.fill(); }
+  ctx.restore();
+  if(!o.outline){ ctx.save(); shopRR(x+1,y+1,w-2,h-2,Math.max(1,r-1)); ctx.clip(); ctx.fillStyle='rgba(255,255,255,0.24)'; ctx.fillRect(x,y+1,w,Math.max(2,h*.42)); ctx.restore(); }
+  shopRR(x+.5,y+.5,w-1,h-1,r); ctx.lineWidth=1; ctx.strokeStyle=o.border||(o.outline?o.accent:shopShade(o.accent,.3)); ctx.stroke();
+  if(label!=null) txt(label,x+w/2,y+Math.round((h-7)/2),1,o.textCol||(o.outline?o.accent:'#08301F'),'center');
+}
+function shopBackdrop(){                    // clean deep-navy field behind the whole Shop
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,SUI.bg0); g.addColorStop(1,SUI.bg1);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+function shopArrow(r,dir,col){              // bold rounded chevron (‹ ›)
+  const cx=r.x+r.w/2, cy=r.y+r.h/2, s=dir<0?-1:1;
+  ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(cx+s*2,cy-3.4); ctx.lineTo(cx-s*2,cy); ctx.lineTo(cx+s*2,cy+3.4); ctx.stroke();
+  ctx.restore();
+}
+function shopChevron(x,y,col){             // small right chevron over a ~10px cell
+  ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.4; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+3,y+4.5); ctx.lineTo(x,y+9); ctx.stroke();
+  ctx.restore();
 }
 function shopStageBackdrop(r) {
   const x=r.x+1,y=r.y+1,w=r.w-2,h=r.h-2;
-  ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+  ctx.save();shopRR(x,y,w,h,5);ctx.clip();
   const bands=['#071124','#0A1935','#0D2447','#143058','#293963','#5A4168','#A75E72'];
   for(let i=0;i<bands.length;i++){
     const y0=Math.round(y+i*h/bands.length),y1=Math.round(y+(i+1)*h/bands.length);
@@ -7582,81 +7643,89 @@ function shopVisibleCharacter(slot) {
   return CHARACTER_REGISTRY[(previewIdx+slot)%CHARACTER_REGISTRY.length];
 }
 function drawShopSkinTile(tile,sk,selected) {
-  const accent=selected?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.18)';
-  pixelFrame(tile.x,tile.y,tile.w,tile.h,selected?'rgba(98,232,181,0.08)':'rgba(5,8,20,0.72)',accent,selected);
+  shopPanel(tile.x,tile.y,tile.w,tile.h,{r:3,shadow:false,
+    fill:selected?'rgba(98,232,181,0.12)':'#0E1626',
+    border:selected?SUI.mint:SUI.borderSoft,
+    glow:selected?'rgba(98,232,181,0.7)':null, glowBlur:6});
   const labelH=tile.h>=42?9:7,previewH=tile.h-labelH-3,bw=Math.max(7,tile.w-5),bh=Math.max(3,Math.floor((previewH-4)/3));
   for(let i=0;i<3;i++){
     const col=sk.base(i,tierHueAt(i));
     drawBlock(Math.round(tile.x+tile.w/2-bw/2),tile.y+2+(2-i)*(bh+1),bw,bh,col,false,0,sk.style);
   }
   const label=tile.w>=17?sk.name:sk.name.slice(0,3);
-  txt(label,tile.x+tile.w/2,tile.y+tile.h-labelH+(tile.h>=42?2:1),.5,selected?'#FFF6E8':'rgba(255,246,232,0.72)','center');
+  txt(label,tile.x+tile.w/2,tile.y+tile.h-labelH+(tile.h>=42?2:1),.5,selected?'#FFF6E8':SUI.muted,'center');
 }
-function drawShopPassiveIcon(x,y,col) {
-  ctx.fillStyle='rgba(255,246,232,0.16)';ctx.fillRect(x-5,y-5,11,11);
-  ctx.fillStyle=col;ctx.fillRect(x-3,y-1,7,3);ctx.fillRect(x-1,y-3,3,7);
-  ctx.fillStyle='#0B0E1A';ctx.fillRect(x,y,1,1);
+function drawShopPassiveIcon(x,y,col) {     // silver cog with a colored core
+  ctx.save();
+  ctx.fillStyle='#93A6C2';
+  for(let a=0;a<8;a++){ ctx.save(); ctx.translate(x,y); ctx.rotate(a*Math.PI/4); ctx.fillRect(-1,-6.2,2,2.4); ctx.restore(); }
+  pixDisc(x,y,5,'#7E90AD'); pixDisc(x,y,4,'#B9C8DE');
+  ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.fillRect(x-3,y-3,2,1);
+  pixDisc(x,y,2.4,'#101A2E');
+  ctx.fillStyle=col; ctx.fillRect(x-1.75,y-.5,3.5,1); ctx.fillRect(x-.5,y-1.75,1,3.5);
+  ctx.restore();
 }
 function drawShopBoostChip(c) {
-  const on=loadout[c.id],afford=canAfford(c.cost),accent=on?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.20)';
-  pixelFrame(c.x,c.y,c.w,c.h,on?'rgba(98,232,181,0.12)':'rgba(5,8,20,0.74)',accent,on);
-  const iconY=c.y+5,iconX=c.x+7;
-  pixDisc(iconX+4,iconY+4,5,on?'#08301F':POW[c.id].c2);
-  pixDisc(iconX+4,iconY+4,4,'rgba(7,8,15,0.58)');
+  const on=loadout[c.id],afford=canAfford(c.cost),pc=POW[c.id];
+  shopPanel(c.x,c.y,c.w,c.h,{r:4,shadow:false,
+    fill:on?'rgba(98,232,181,0.12)':'#0E1626',
+    border:on?SUI.mint:SUI.borderSoft, glow:on?'rgba(98,232,181,0.55)':null, glowBlur:5});
+  const iconY=c.y+5,iconX=c.x+6;
+  pixDisc(iconX+4,iconY+4,5.4,on?'#0C3A28':shopShade(pc.c2,-.12));
+  ctx.save(); shopRR(iconX-.6,iconY-.6,10,10,5); ctx.lineWidth=.75; ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.stroke(); ctx.restore();
   drawIcon(c.id,iconX,iconY,true);
-  txt(POW_NAME[c.id],c.x+16,c.y+5,.75,on?VISUAL_SYSTEM.palette.mint:'#FFF6E8','left');
+  txt(POW_NAME[c.id],c.x+16,c.y+5,.75,on?SUI.mint:SUI.text,'left');
   const pipY=c.y+c.h-6;
-  for(let i=0;i<3;i++){ctx.fillStyle=i<(on?3:afford?2:1)?(on?VISUAL_SYSTEM.palette.mint:POW[c.id].c):'rgba(255,246,232,0.13)';ctx.fillRect(c.x+16+i*5,pipY,3,3);}
+  for(let i=0;i<3;i++){ shopRR(c.x+16+i*5,pipY,3,3,1); ctx.fillStyle=i<(on?3:afford?2:1)?(on?SUI.mint:pc.c):'rgba(255,246,232,0.13)'; ctx.fill(); }
 }
 function renderShop() {
-  // Approved v184 Skin Shop: one strong preview, one readable choice rail, no retired Bases entry.
-  pixelFrame(SHOP_HEADER.x,SHOP_HEADER.y,SHOP_HEADER.w,SHOP_HEADER.h,'rgba(5,8,20,0.90)','#34415E',false);
-  shopArrow(SHOP_BACK_BTN,-1,'#FFD75E');
-  txt('SHOP',W/2,SHOP_HEADER.y+(SHOP_HEADER.h>=22?4:5),SHOP_HEADER.h>=22?2:1,'#FFD75E','center');
+  // v185 premium Skin Shop: deep-navy field, rounded raised panels with soft shadows,
+  // one SKINS plate (Bases retired). Layout geometry unchanged; only the chrome is new.
+  shopBackdrop();
+  shopPanel(SHOP_HEADER.x,SHOP_HEADER.y,SHOP_HEADER.w,SHOP_HEADER.h,{r:5});
+  shopArrow(SHOP_BACK_BTN,-1,SUI.gold);
+  txt('SHOP',W/2,SHOP_HEADER.y+(SHOP_HEADER.h>=22?4:5),SHOP_HEADER.h>=22?2:1,SUI.gold,'center');
   const coinText=coins>99999?Math.floor(coins/1000)+'K':coins,coinW=String(coinText).length*6-1,coinX=SHOP_HEADER.x+SHOP_HEADER.w-7-coinW-9;
   drawCoin(coinX,SHOP_HEADER.y+Math.round(SHOP_HEADER.h/2)-2.5);
   txt(coinText,coinX+9,SHOP_HEADER.y+Math.round((SHOP_HEADER.h-7)/2),1,'#FFF6E8','left');
   const tab=SHOP_TABS[0];
-  pixelFrame(tab.x,tab.y,tab.w,tab.h,'rgba(11,14,26,0.88)','#FFD75E',true);
+  shopPanel(tab.x,tab.y,tab.w,tab.h,{r:4,fill:SUI.panelActive,border:SUI.gold,glow:'rgba(255,215,94,0.45)',glowBlur:5});
   txt('SKINS',tab.x+tab.w/2,tab.y+Math.round((tab.h-7)/2),1,'#FFD75E','center');
 
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
   shopStageBackdrop(SHOP_STAGE);
-  pixelFrame(SHOP_STAGE.x,SHOP_STAGE.y,SHOP_STAGE.w,SHOP_STAGE.h,'rgba(0,0,0,0)',RARE_COL[sk.rare],false);
+  ctx.save(); shopRR(SHOP_STAGE.x+.5,SHOP_STAGE.y+.5,SHOP_STAGE.w-1,SHOP_STAGE.h-1,6); ctx.lineWidth=1; ctx.strokeStyle=SUI.border; ctx.stroke(); ctx.restore();
   drawShopTower(sk,SHOP_STAGE);
 
-  pixelFrame(SHOP_IDENTITY.x,SHOP_IDENTITY.y,SHOP_IDENTITY.w,SHOP_IDENTITY.h,'rgba(5,8,20,0.91)','#34415E',false);
+  shopPanel(SHOP_IDENTITY.x,SHOP_IDENTITY.y,SHOP_IDENTITY.w,SHOP_IDENTITY.h,{r:5});
   const nameMax=EQUIP_BTN.x-SHOP_IDENTITY.x-10;
   txtFit(sk.name,SHOP_IDENTITY.x+7,SHOP_IDENTITY.y+(SHOP_IDENTITY.h>=35?5:4),SHOP_IDENTITY.h>=35?2:1,'#FFF6E8','left',nameMax,1);
   txt(sk.rare+' - '+sk.role,SHOP_IDENTITY.x+7,SHOP_IDENTITY.y+SHOP_IDENTITY.h-10,.75,RARE_COL[sk.rare],'left');
 
   if (isEquipped) {
-    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(98,232,181,0.88)',VISUAL_SYSTEM.palette.mint,true);
-    txt('EQUIPPED',EQUIP_BTN.x+EQUIP_BTN.w/2,EQUIP_BTN.y+Math.round((EQUIP_BTN.h-7)/2),1,'#08301F','center');
+    shopButton(EQUIP_BTN,'EQUIPPED',{accent:VISUAL_SYSTEM.palette.mint});
   } else if (isOwned) {
-    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.88)',VISUAL_SYSTEM.palette.mint,true);
-    txt('EQUIP',EQUIP_BTN.x+EQUIP_BTN.w/2,EQUIP_BTN.y+Math.round((EQUIP_BTN.h-7)/2),1,VISUAL_SYSTEM.palette.mint,'center');
+    shopButton(EQUIP_BTN,'EQUIP',{outline:true,accent:VISUAL_SYSTEM.palette.mint,textCol:VISUAL_SYSTEM.palette.mint});
   } else {
     const afford = coins >= sk.cost;
-    pixelFrame(EQUIP_BTN.x,EQUIP_BTN.y,EQUIP_BTN.w,EQUIP_BTN.h,'rgba(11,14,26,0.88)',afford?VISUAL_SYSTEM.palette.gold:'rgba(255,246,232,0.22)',afford);
     if (afford) {
-      const ic = VISUAL_SYSTEM.palette.gold;
-      txt('UNLOCK',EQUIP_BTN.x+EQUIP_BTN.w/2,EQUIP_BTN.y+Math.round((EQUIP_BTN.h-7)/2),1,ic,'center');
-    } else coinsToGo(sk.cost);   // v120: coins-to-go gauge until you can afford it
+      shopButton(EQUIP_BTN,'UNLOCK',{outline:true,accent:VISUAL_SYSTEM.palette.gold,textCol:VISUAL_SYSTEM.palette.gold});
+    } else { shopButton(EQUIP_BTN,null,{outline:true,accent:'rgba(255,246,232,0.22)'}); coinsToGo(sk.cost); }   // v120: coins-to-go gauge until you can afford it
   }
 
-  pixelFrame(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,'rgba(5,8,20,0.91)',isEquipped?VISUAL_SYSTEM.palette.mint:'rgba(255,246,232,0.20)',false);
+  shopPanel(SHOP_DETAIL_BTN.x,SHOP_DETAIL_BTN.y,SHOP_DETAIL_BTN.w,SHOP_DETAIL_BTN.h,{r:5,border:isEquipped?VISUAL_SYSTEM.palette.mint:SUI.border});
   const passiveCy=Math.round(SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h/2);
-  drawShopPassiveIcon(SHOP_DETAIL_BTN.x+12,passiveCy,isEquipped?VISUAL_SYSTEM.palette.mint:RARE_COL[sk.rare]);
-  txt(passive.name,SHOP_DETAIL_BTN.x+23,SHOP_DETAIL_BTN.y+4,1,isEquipped?VISUAL_SYSTEM.palette.mint:'#FFF6E8','left');
-  txt(passive.benefit+' - '+passive.tradeoff,SHOP_DETAIL_BTN.x+23,SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h-9,.5,'rgba(255,246,232,0.62)','left');
+  drawShopPassiveIcon(SHOP_DETAIL_BTN.x+13,passiveCy,isEquipped?VISUAL_SYSTEM.palette.mint:RARE_COL[sk.rare]);
+  txt(passive.name,SHOP_DETAIL_BTN.x+25,SHOP_DETAIL_BTN.y+4,1,isEquipped?VISUAL_SYSTEM.palette.mint:'#FFF6E8','left');
+  txt(passive.benefit+' - '+passive.tradeoff,SHOP_DETAIL_BTN.x+25,SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h-9,.5,'rgba(255,246,232,0.62)','left');
   shopChevron(SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-10,passiveCy-5,'#5EC8F2');
 
-  pixelFrame(SHOP_RAIL.x,SHOP_RAIL.y,SHOP_RAIL.w,SHOP_RAIL.h,'rgba(5,8,20,0.90)','#34415E',false);
+  shopPanel(SHOP_RAIL.x,SHOP_RAIL.y,SHOP_RAIL.w,SHOP_RAIL.h,{r:5});
   shopArrow(SKIN_L,-1,'#FFD75E');shopArrow(SKIN_R,1,'#FFD75E');
   for(const tile of SHOP_SKIN_TILES)drawShopSkinTile(tile,shopVisibleCharacter(tile.slot),tile.slot===0);
 
-  pixelFrame(SHOP_IDENTITY.x,BOOST_TOP,SHOP_IDENTITY.w,BOOST_CARD_H,'rgba(5,8,20,0.91)',VISUAL_SYSTEM.palette.gold,false);
+  shopPanel(SHOP_IDENTITY.x,BOOST_TOP,SHOP_IDENTITY.w,BOOST_CARD_H,{r:5,border:SUI.gold});
+  ctx.fillStyle='rgba(255,215,94,0.5)'; ctx.fillRect(W/2-52,BOOST_TOP+6,15,1); ctx.fillRect(W/2+37,BOOST_TOP+6,15,1);
   txt('RUN BOOSTS',W/2,BOOST_TOP+3,1,'#FFD75E','center');
   if (!canUseLoadout(mode) && mode === 'pure') {
     txt('PURE: LOADOUT OFF',W/2,LOAD_CHIPS[0].y+8,1,'rgba(255,246,232,0.52)','center');

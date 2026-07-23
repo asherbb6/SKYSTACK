@@ -2149,7 +2149,7 @@ check('v184 coins-to-go gauge remains wired to the reachable Skin unlock button'
   /const frac = clamp\(coins \/ cost, 0, 1\)/.test(src) &&
   /ctx\.fillRect\(EQUIP_BTN\.x \+ 1, EQUIP_BTN\.y \+ 1, Math\.round\(\(EQUIP_BTN\.w - 2\) \* frac\), EQUIP_BTN\.h - 2\)/.test(src) &&
   /const lbl = coins \+ '\/' \+ cost/.test(src) &&
-  /} else coinsToGo\(sk\.cost\);/.test(src) &&
+  /coinsToGo\(sk\.cost\);/.test(src) &&
   /drawCoin\(x0, EQUIP_BTN\.y \+ 5\.5\)/.test(src));
 check('v120 a locked, unaffordable shop item shows a have/cost gauge label; affordable keeps UNLOCK', () => {
   const g = makeGame();
