@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "generated": "2026-07-23",
+  "license": "CC0-1.0",
+  "sheets": {
+    "platformer": {
+      "file": "kenney-pixel-platformer.png",
+      "sourceArchive": "../../third_party/upstream/kenney/pixel-platformer/pixel-platformer.zip",
+      "sourcePath": "Tilemap/tilemap_packed.png",
+      "sha256": "A3BBFF36594BAA36C803A67E9152A20A80F2FAEB3C22CA84AC06E0A70F56553D",
+      "tile": 18,
+      "columns": 20,
+      "rows": 9,
+      "runtimeUse": ["forest edge habitat", "plants", "mushrooms", "small wildlife"]
+    },
+    "farm": {
+      "file": "kenney-farm-expansion.png",
+      "sourceArchive": "../../third_party/upstream/kenney/pixel-platformer-farm-expansion/pixel-platformer-farm-expansion.zip",
+      "sourcePath": "Tilemap/tilemap_packed.png",
+      "sha256": "786B530E175495563A3C60BD611FC650F3C5953C9B2D2721A11ACA557AC222D5",
+      "tile": 18,
+      "columns": 16,
+      "rows": 7,
+      "runtimeUse": ["forest flora", "flowers", "wind-reactive leaves", "grounded props"]
+    },
+    "dungeon": {
+      "file": "kenney-tiny-dungeon.png",
+      "sourceArchive": "../../third_party/upstream/kenney/tiny-dungeon/tiny-dungeon.zip",
+      "sourcePath": "Tilemap/tilemap_packed.png",
+      "sha256": "D24E60A41E4AC7A745C0304DFDE121143688557F40215F23221C29CFE683825F",
+      "tile": 16,
+      "columns": 12,
+      "rows": 11,
+      "runtimeUse": ["cave edge habitat", "ruins", "torches", "chests", "minerals"]
+    },
+    "ui": {
+      "file": "kenney-ui-pixel-adventure.png",
+      "sourceArchive": "../../third_party/upstream/kenney/ui-pack-pixel-adventure/ui-pack-pixel-adventure.zip",
+      "sourcePath": "Tilesheets/Small tiles/Thin outline/tilemap_packed.png",
+      "sha256": "E11A08ABB13DDEE96F01612CED167C944B30F3DF4E22B4E301F0464129C7F254",
+      "tile": 16,
+      "columns": 23,
+      "rows": 7,
+      "runtimeUse": ["developer preview controls", "compact focus states", "effect toggles"]
+    }
+  }
+}

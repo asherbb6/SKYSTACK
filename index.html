@@ -53,6 +53,45 @@ function computeSize() {
 }
 computeSize();
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Reactive-world source sheets: exact CC0 Kenney archive entries, loaded as optional presentation
+// only. Simulation never waits for them. Every draw returns false until its sheet is ready so the
+// existing authored/procedural renderer remains the guarded fallback in headless, offline, and
+// first-paint frames.
+const WORLD_QUERY = new URLSearchParams(location.search);
+const WORLD_DETAIL = reduceMotion ? 'reduced-motion' : (WORLD_QUERY.get('detail') === 'low' ? 'low' : 'full');
+const WORLD_PREVIEW = {
+  assets: WORLD_QUERY.get('assets') !== '0',
+  ambient: WORLD_QUERY.get('ambient') !== '0',
+  light: WORLD_QUERY.get('light') !== '0'
+};
+const WORLD_FX_LIMITS = deepFreeze({
+  full:{ambientFamilies:2,ambientSprites:10,eventSprites:6},
+  low:{ambientFamilies:1,ambientSprites:5,eventSprites:3},
+  'reduced-motion':{ambientFamilies:1,ambientSprites:4,eventSprites:1}
+});
+function worldFxLimit(key) { return WORLD_FX_LIMITS[WORLD_DETAIL][key] || 0; }
+const WORLD_SHEETS = {
+  platformer:{src:'assets/reactive-world/kenney-pixel-platformer.png',tile:18,cols:20,rows:9,img:null,ready:false},
+  farm:{src:'assets/reactive-world/kenney-farm-expansion.png',tile:18,cols:16,rows:7,img:null,ready:false},
+  dungeon:{src:'assets/reactive-world/kenney-tiny-dungeon.png',tile:16,cols:12,rows:11,img:null,ready:false},
+  ui:{src:'assets/reactive-world/kenney-ui-pixel-adventure.png',tile:16,cols:23,rows:7,img:null,ready:false}
+};
+if (typeof Image !== 'undefined') for (const S of Object.values(WORLD_SHEETS)) {
+  const im = new Image();
+  im.onload = () => { S.img=im; S.ready=true; };
+  im.onerror = () => { S.img=null; S.ready=false; };
+  im.src = S.src;
+}
+function drawWorldTile(sheet, id, x, y, scale, flip, alpha) {
+  const S=WORLD_SHEETS[sheet];
+  if (!WORLD_PREVIEW.assets || !S || !S.ready || !S.img || id < 0 || id >= S.cols*S.rows) return false;
+  const sc=Math.max(1,Math.round(scale||1)),dw=S.tile*sc,dh=S.tile*sc,sx=(id%S.cols)*S.tile,sy=Math.floor(id/S.cols)*S.tile;
+  ctx.save(); ctx.globalAlpha=alpha==null?1:alpha; ctx.imageSmoothingEnabled=false;
+  if (flip) { ctx.translate(Math.round(x)+dw,Math.round(y)); ctx.scale(-1,1); ctx.drawImage(S.img,sx,sy,S.tile,S.tile,0,0,dw,dh); }
+  else ctx.drawImage(S.img,sx,sy,S.tile,S.tile,Math.round(x),Math.round(y),dw,dh);
+  ctx.restore();
+  return true;
+}
 
 function fitCanvas() {
   // logical aspect matches the window by construction, so 100% fill keeps pixels square.
@@ -2773,7 +2812,8 @@ const NAV_H = 24;
 let NAV_TABS, NAV_Y, MODE_BTN, MAP_BTN, DIFF_BTN, DIFF_ROWS, PICK_ROWS, CHALLENGE_ROWS, PLAY_BTN, HERO_CARD, MISS_PANEL, INSTALL_BTN,
     SHOP_TABS, SKIN_L, SKIN_R, EQUIP_BTN, SHOP_DETAIL_BTN, LOAD_CHIPS, ME_TABS, ME_BADGES_BTN, TOGGLES, MIX_ROWS, SND_BTN, PAUSE_BTN, PAUSE_ROWS, SHARE_BTN,
     WIN_ROWS, FAIL_ROWS, FAIL_REV, REVIVE_BTN, NOTIFY_Y, BOOST_CARD_H, ME_PROG, SHOP_TOP, BOOST_TOP,
-    DEV_LEVEL_L, DEV_LEVEL_R, DEV_LEVEL_PLAY, DEV_TARGET_L, DEV_TARGET_R, DEV_TARGET_PLAY, DEV_EXIT, DEV_HUD_BTN, DEV_TOP;
+    DEV_LEVEL_L, DEV_LEVEL_R, DEV_LEVEL_PLAY, DEV_TARGET_L, DEV_TARGET_R, DEV_TARGET_PLAY,
+    DEV_ART_BTN, DEV_AMBIENT_BTN, DEV_LIGHT_BTN, DEV_EXIT, DEV_HUD_BTN, DEV_TOP;
 // every UI rect derives from the CURRENT W/H so layout can re-run after a live resize
 function relayout() {
   GROUND_Y = H - 20;
@@ -2838,13 +2878,17 @@ function relayout() {
   const missY=H<=280?MAP_BTN.y+MAP_BTN.h+2:Math.min(NAV_Y-4-missH,MAP_BTN.y+MAP_BTN.h+homeGap);
   MISS_PANEL = { x: Math.round((W-missW)/2), y:missY, w:missW, h:missH, rowGap:missRowGap };   // compact summary; full list opens on tap
   INSTALL_BTN = { x:W/2-42, y:Math.min(NAV_Y-18,MISS_PANEL.y+MISS_PANEL.h+(H<=280?4:homeGap)), w:84, h:14 };
-  // URL-only DEV LAB: two compact selectors fit even the 242x300 technical minimum.
-  const devW=Math.min(W-28,220),devX=Math.round((W-devW)/2); DEV_TOP=Math.max(34,Math.round((H-258)/2));
+  // URL-only DEV LAB: selectors plus three presentation-only world toggles fit the 242x300 minimum.
+  const devW=Math.min(W-28,220),devX=Math.round((W-devW)/2); DEV_TOP=Math.max(12,Math.round((H-286)/2));
   DEV_LEVEL_L={x:devX+8,y:DEV_TOP+48,w:26,h:22}; DEV_LEVEL_R={x:devX+devW-34,y:DEV_TOP+48,w:26,h:22};
   DEV_LEVEL_PLAY={x:devX+42,y:DEV_TOP+74,w:devW-84,h:20};
   DEV_TARGET_L={x:devX+8,y:DEV_TOP+135,w:26,h:22}; DEV_TARGET_R={x:devX+devW-34,y:DEV_TOP+135,w:26,h:22};
   DEV_TARGET_PLAY={x:devX+42,y:DEV_TOP+161,w:devW-84,h:20};
-  DEV_EXIT={x:devX+42,y:DEV_TOP+210,w:devW-84,h:20}; DEV_HUD_BTN={x:W-54,y:H-20,w:50,h:16};
+  { const gap=4,bw=Math.floor((devW-16-gap*2)/3),bx=devX+8;
+    DEV_ART_BTN={x:bx,y:DEV_TOP+198,w:bw,h:18};
+    DEV_AMBIENT_BTN={x:bx+bw+gap,y:DEV_TOP+198,w:bw,h:18};
+    DEV_LIGHT_BTN={x:bx+(bw+gap)*2,y:DEV_TOP+198,w:devW-16-(bw+gap)*2,h:18}; }
+  DEV_EXIT={x:devX+42,y:DEV_TOP+238,w:devW-84,h:20}; DEV_HUD_BTN={x:W-54,y:H-20,w:50,h:16};
   // shop — v99: the two cards float vertically CENTERED between the tabs and the nav (SHOP_OFF),
   // the tab pair splits around center with a 6px gap (still aligned with the cards' inner edges
   // at the phone width), and every button keeps 4-5px clearance from its card frame
@@ -2985,6 +3029,9 @@ function pressDown(e) {
     if (inR(p,DEV_TARGET_L,3)) { devSelectedTarget=(devSelectedTarget+DEV_TARGETS.length-1)%DEV_TARGETS.length;sfx.tap();return; }
     if (inR(p,DEV_TARGET_R,3)) { devSelectedTarget=(devSelectedTarget+1)%DEV_TARGETS.length;sfx.tap();return; }
     if (inR(p,DEV_TARGET_PLAY,3)) { notePress(DEV_TARGET_PLAY);startDeveloperTarget(devSelectedTarget);return; }
+    if (inR(p,DEV_ART_BTN,3)) { WORLD_PREVIEW.assets=!WORLD_PREVIEW.assets;sfx.tap();return; }
+    if (inR(p,DEV_AMBIENT_BTN,3)) { WORLD_PREVIEW.ambient=!WORLD_PREVIEW.ambient;sfx.tap();return; }
+    if (inR(p,DEV_LIGHT_BTN,3)) { WORLD_PREVIEW.light=!WORLD_PREVIEW.light;sfx.tap();return; }
     if (inR(p,DEV_EXIT,3)) { state='home';fadeT=1;sfx.tap();return; }
     return;
   }
@@ -5546,6 +5593,38 @@ function drawCaveCreatures(cy, ph) {
   ctx.globalAlpha = 1;
 }
 
+// Approved reactive-world slice: a few exact Tiny Dungeon sprites inhabit authored cave altitudes.
+// They are deliberately props, not replacements for the current geology. Each sprite is seated
+// inside the real wall edge across its full height, so it rises out of view with the cave and can
+// never drift into the stacking corridor. Missing sheets simply leave the proven v183 cave intact.
+const CAVE_ARCHIVE_PROPS = [
+  {a:5.5, side:0, tile:90, light:0},   // sealed chest
+  {a:10.5,side:1, tile:16, light:1},   // ember shrine
+  {a:16.5,side:0, tile:65, light:0},   // worn marker
+  {a:22.5,side:1, tile:32, light:2},   // green crystal flame
+  {a:28.5,side:0, tile:89, light:0}    // deep cache
+];
+function drawArchiveLight(x,y,color,strength) {
+  if (!WORLD_PREVIEW.light || strength <= 0) return;
+  const g=ctx.createRadialGradient(x,y,1,x,y,18);
+  g.addColorStop(0,color); g.addColorStop(.35,color.replace(/[\d.]+\)$/,'0.18)')); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle=g; ctx.fillRect(x-18,y-18,36,36); ctx.restore();
+}
+function drawCaveArchiveHabitat(cy) {
+  const baseW=Math.round(W*.17),max=worldFxLimit('ambientSprites');
+  let shown=0;
+  for (const p of CAVE_ARCHIVE_PROPS) {
+    if (shown>=max) break;
+    const y=worldY(p.a,cy)-8;
+    if (y<-20||y>H+8) continue;
+    const edge=caveWallEdgeSpan(p.side,y,y+16,GROUND_Y-cy,baseW);
+    const x=p.side?edge:edge-16;
+    if (p.light===1) drawArchiveLight(x+(p.side?6:10),y+8,'rgba(255,151,70,0.34)',1);
+    else if (p.light===2) drawArchiveLight(x+(p.side?6:10),y+8,'rgba(80,255,181,0.28)',1);
+    if (drawWorldTile('dungeon',p.tile,x,y,1,!!p.side,1)) shown++;
+  }
+}
+
 // a distant forest wall on the horizon behind the rooted trees — dark canopy silhouettes,
 // world-locked to the surface line (1.0x, NO parallax) so the whole world scrolls as one piece
 function drawTreeline(cy) {
@@ -5784,6 +5863,37 @@ function drawSurfaceLife(ph, yCeil) {
     ctx.fillStyle = '#E8A33C'; ctx.fillRect(bx + (p ? 2 : -1), by + hop, 1, 1);   // beak (its own colour, never a butterfly's)
   }
 }
+// Licensed forest pieces add recognizable micro-detail while the existing trees, wildlife physics,
+// and world ownership remain authoritative. The canopy leaves read the SAME `windWaveAt` field as
+// the block force: they lead and follow real gusts instead of playing a decorative loop.
+const FOREST_ARCHIVE_FLORA = [
+  {sheet:'platformer',tile:148,x:.08,side:0},
+  {sheet:'farm',tile:40,x:.92,side:1},
+  {sheet:'farm',tile:58,x:.16,side:0},
+  {sheet:'farm',tile:72,x:.84,side:1}
+];
+const FOREST_ARCHIVE_LEAVES = [
+  {a:42,x:.06,tile:124},{a:47,x:.93,tile:125},{a:52,x:.10,tile:127},
+  {a:57,x:.90,tile:124},{a:61,x:.14,tile:125},{a:65,x:.86,tile:127}
+];
+function drawForestArchiveHabitat(cy,ph,yCeil) {
+  const max=worldFxLimit('ambientSprites');
+  let shown=0;
+  if (yCeil>-30&&yCeil<H+30) for (const p of FOREST_ARCHIVE_FLORA) {
+    if (shown>=max) break;
+    const x=Math.round(W*p.x)-(p.side?14:4),y=Math.round(yCeil-17);
+    if (drawWorldTile(p.sheet,p.tile,x,y,1,!!p.side,.92)) shown++;
+  }
+  if (!WORLD_PREVIEW.ambient) return;
+  for (let i=0;i<FOREST_ARCHIVE_LEAVES.length&&shown<max;i++) {
+    const p=FOREST_ARCHIVE_LEAVES[i],y0=worldY(p.a,cy)-9;
+    if (y0<-20||y0>H+10) continue;
+    const baseX=W*p.x,gw=wind?windWaveAt(baseX):0;
+    const drift=wind?wind.dir*gw*(8+i%3*2):0;
+    const breathe=reduceMotion?0:Math.sin(ph*.018+i*1.7)*2;
+    if (drawWorldTile('platformer',p.tile,Math.round(baseX+drift+(p.x<.5?breathe:-breathe))-9,y0,1,p.x>.5,.68+gw*.22)) shown++;
+  }
+}
 function drawDappledLight(ph, yCeil) {
   const I = sunShaftIntensity(yCeil); if (I <= 0.01) return;
   if (yCeil < -24 || yCeil > H + 12) return;
@@ -5823,10 +5933,12 @@ function drawGroundWorld(cy, ph) {
   if (yCeil > 0) drawCave(ph, Math.min(yCeil, H), yCeil >= H ? -999 : yCeil, cy);              // the living cave below the ceiling
   else if (worldY(0, cy) > 0) drawCave(ph, 0, -999, cy);                                       // (transition safety) rock still below
   drawSunShafts(ph, yCeil);                                                                    // v146: daylight pouring in, faded in by surface proximity (no on/off pop) — beams from the true mouth even when it's still above the screen
+  drawCaveArchiveHabitat(cy);                                                                   // CC0 edge props, world-owned and guarded by sheet readiness
   drawCaveCreatures(cy, ph);                                                                   // bats/beetles/worms (self-cull to the cave band)
   if (yCeil > -8 && yCeil < H + 8) drawSurfaceGround(ph, yCeil);
   drawDappledLight(ph, yCeil);                                                                 // v150: warm light pools where the canopy breaks
   if (yCeil > -40 && yCeil < H + 40) { drawFallenLog(ph, yCeil); drawUndergrowth(ph, yCeil); drawSurfaceLife(ph, yCeil); }   // v158
+  drawForestArchiveHabitat(cy,ph,yCeil);                                                        // licensed flora + leaves coupled to the real wind field
   drawDaylightBlend(ph, yCeil);                                                              // v146: overexpose the surface line so grass + shafts read as one continuous daylight
   drawForestBand(cy, ph);                                                                      // canopy flanks, leaf-fall, first wisps (A 40..82)
   drawLowerSkyAir(cy, ph);                                                                     // v156: open air gets banks + a flock (A 58..84)
@@ -6642,7 +6754,11 @@ function renderDeveloper() {
   txt(T.altitude*METERS_PER+'M - NO FAIL',W/2,DEV_TOP+153,1,'rgba(98,232,181,0.75)','center');
   pixelButton(DEV_TARGET_L,'<',false); pixelButton(DEV_TARGET_R,'>',false); pixelButton(DEV_TARGET_PLAY,'JUMP HERE',true);
 
-  txt('DEV BUTTON RETURNS HERE',W/2,DEV_TOP+193,1,'rgba(255,246,232,0.42)','center');
+  txt('WORLD LAYERS - TAP TO TOGGLE',W/2,DEV_TOP+188,1,'rgba(255,246,232,0.42)','center');
+  pixelButton(DEV_ART_BTN,'ART',WORLD_PREVIEW.assets);
+  pixelButton(DEV_AMBIENT_BTN,'AIR',WORLD_PREVIEW.ambient);
+  pixelButton(DEV_LIGHT_BTN,'RAYS',WORLD_PREVIEW.light);
+  txt('DEV BUTTON RETURNS HERE',W/2,DEV_TOP+225,1,'rgba(255,246,232,0.42)','center');
   pixelButton(DEV_EXIT,'EXIT TO HOME',false);
 }
 

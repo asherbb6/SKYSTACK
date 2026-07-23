@@ -4,6 +4,7 @@
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
+const crypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
@@ -4893,6 +4894,60 @@ check('v182 an announced gust reaches a non-trivial force floor after its short 
   const g=makeGame();
   return g.run('(() => { mode="endless";resetRun();state="playing";wind={dir:1,str:.25,dur:150,t:10};' +
     'return windForceEnvelope()>=WIND_FORCE_FLOOR&&driftForce()>0&&WIND_SLIDER_MUL>1&&DRIFT_ACCEL>.6; })()');
+});
+
+// ---------- reactive-world overhaul: licensed atlas + world-owned Caves/Forest slice ----------
+check('overhaul runtime atlas is an exact, licensed, manifest-verified Kenney subset', () => {
+  const dir=path.join(ROOT,'assets','reactive-world');
+  const manifest=JSON.parse(fs.readFileSync(path.join(dir,'manifest.json'),'utf8'));
+  const expected={
+    platformer:['kenney-pixel-platformer.png','A3BBFF36594BAA36C803A67E9152A20A80F2FAEB3C22CA84AC06E0A70F56553D',18,20,9],
+    farm:['kenney-farm-expansion.png','786B530E175495563A3C60BD611FC650F3C5953C9B2D2721A11ACA557AC222D5',18,16,7],
+    dungeon:['kenney-tiny-dungeon.png','D24E60A41E4AC7A745C0304DFDE121143688557F40215F23221C29CFE683825F',16,12,11],
+    ui:['kenney-ui-pixel-adventure.png','E11A08ABB13DDEE96F01612CED167C944B30F3DF4E22B4E301F0464129C7F254',16,23,7]
+  };
+  if(manifest.license!=='CC0-1.0'||!fs.existsSync(path.join(dir,'KENNEY-CC0-LICENSE.txt'))) return 'license record missing';
+  for(const [id,[file,hash,tile,columns,rows]] of Object.entries(expected)){
+    const item=manifest.sheets[id],bytes=fs.readFileSync(path.join(dir,file));
+    if(!item||item.file!==file||item.tile!==tile||item.columns!==columns||item.rows!==rows) return id+' manifest geometry drifted';
+    if(crypto.createHash('sha256').update(bytes).digest('hex').toUpperCase()!==hash||item.sha256!==hash) return id+' is no longer the exact cataloged archive entry';
+  }
+  return true;
+});
+check('overhaul atlas loader is optional, nearest-neighbor, and leaves simulation unblocked', () => fresh.run(
+  'WORLD_DETAIL==="full"&&Object.keys(WORLD_SHEETS).join(",")==="platformer,farm,dungeon,ui"&&' +
+  'Object.values(WORLD_SHEETS).every(s=>s.ready===false)&&drawWorldTile("dungeon",90,0,0,1,false,1)===false&&' +
+  'WORLD_FX_LIMITS.full.ambientSprites>WORLD_FX_LIMITS.low.ambientSprites&&' +
+  'WORLD_FX_LIMITS.low.ambientSprites>WORLD_FX_LIMITS["reduced-motion"].ambientSprites'));
+check('overhaul tile renderer guards invalid IDs and explicitly disables image smoothing', () => {
+  const body=src.slice(src.indexOf('function drawWorldTile'),src.indexOf('\n\nfunction fitCanvas'));
+  return /id < 0 \|\| id >= S\.cols\*S\.rows/.test(body)&&/ctx\.imageSmoothingEnabled=false/.test(body)&&
+    /Math\.round\(x\)/.test(body)&&/Math\.round\(y\)/.test(body)
+    ? true : 'atlas rendering lost its pixel or bounds guard';
+});
+check('overhaul cave props remain world-owned and seated inside authored wall edges', () => {
+  const body=src.slice(src.indexOf('const CAVE_ARCHIVE_PROPS'),src.indexOf('\n\n// a distant forest wall'));
+  return /worldY\(p\.a,cy\)/.test(body)&&/caveWallEdgeSpan\(p\.side,y,y\+16/.test(body)&&
+    /drawWorldTile\('dungeon'/.test(body)&&fresh.run('CAVE_ARCHIVE_PROPS.every(p=>p.a<SURF_A)')
+    ? true : 'cave archive props can drift or escape the cave biome';
+});
+check('overhaul forest leaves share gameplay wind while preserving authored altitude', () => {
+  const body=src.slice(src.indexOf('const FOREST_ARCHIVE_FLORA'),src.indexOf('\nfunction drawDappledLight'));
+  return /worldY\(p\.a,cy\)/.test(body)&&/windWaveAt\(baseX\)/.test(body)&&/wind\.dir\*gw/.test(body)&&
+    /WORLD_PREVIEW\.ambient/.test(body)&&fresh.run('FOREST_ARCHIVE_LEAVES.every(p=>p.a>=42&&p.a<=65)')
+    ? true : 'forest leaf art is decorative instead of world and wind coupled';
+});
+check('overhaul Caves and Forest habitats render safely at minimum, phone, and wide layouts', () => fresh.run(
+  '(() => { for(const [w,h] of [[180,390],[242,300],[390,844],[640,360]]){W=w;H=h;relayout();' +
+  'drawCaveArchiveHabitat(GROUND_Y);drawForestArchiveHabitat(GROUND_Y,120,worldY(SURF_A,GROUND_Y));}return true; })()'));
+check('overhaul DEV LAB exposes compact independent art, air, and ray controls', () => {
+  const g=makeGame(null,false,false,null,'?dev=1');
+  return g.run('(() => { W=242;H=300;relayout();state="devmenu";renderDeveloper();' +
+    'const before=[WORLD_PREVIEW.assets,WORLD_PREVIEW.ambient,WORLD_PREVIEW.light];' +
+    'const tap=r=>pressDown({clientX:(r.x+2)*320/W,clientY:(r.y+2)*480/H});' +
+    'tap(DEV_ART_BTN);tap(DEV_AMBIENT_BTN);tap(DEV_LIGHT_BTN);' +
+    'return DEV_ART_BTN.y+DEV_ART_BTN.h<=DEV_EXIT.y&&DEV_EXIT.y+DEV_EXIT.h<=H&&' +
+    'WORLD_PREVIEW.assets===!before[0]&&WORLD_PREVIEW.ambient===!before[1]&&WORLD_PREVIEW.light===!before[2]; })()');
 });
 
 // ---------- report ----------
