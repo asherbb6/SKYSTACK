@@ -76,6 +76,14 @@ addEventListener('resize', () => {
   canvasRect = null; fitCanvas();
   clearTimeout(adaptTimer); adaptTimer = setTimeout(adaptToScreen, 180);   // settle, then re-adapt
 });
+// v185: some layout-box changes never fire a window 'resize' — a desktop browser side panel opening,
+// devtools docking, a container resizing. Without this the canvas could stay stuck letterboxed at a
+// stale aspect ratio (a solid bar down one side). Observe the real viewport box and re-adapt so it
+// always re-fills. #wrap is position:fixed/inset:0, so canvas style changes never feed back into it.
+if (typeof ResizeObserver !== 'undefined') {
+  const _ro = new ResizeObserver(() => { canvasRect = null; clearTimeout(adaptTimer); adaptTimer = setTimeout(adaptToScreen, 120); });
+  _ro.observe(document.getElementById('wrap'));
+}
 // exactly ONE animation loop, ever
 var rafId = 0;
 function kickLoop() { if (rafId) return; last = performance.now(); rafId = requestAnimationFrame(frame); }
