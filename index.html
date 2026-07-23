@@ -776,7 +776,7 @@ const MODE_REGISTRY = deepFreeze({
   time:     { id:'time',     name:'TIME 60',  blurb:'RUSH 60 SECONDS',    desc:'MAX HEIGHT IN 60 SECS',   wind:true, fail:true, hidden:true, time:3600, rules:{ lane:'assisted', assist:'adaptive', rewards:true, records:true, loadout:true, passives:true, modifiers:true, pickups:true, progress:true, revive:false } },
   challenge:{ id:'challenge',name:'CHALLENGE',blurb:'FOCUSED RUN',        desc:'ONE RULE - ONE GOAL',      wind:true, fail:true, hidden:true, rules:{ lane:'assisted', assist:'adaptive', rewards:true, records:true, loadout:false, passives:true, modifiers:true, pickups:false, progress:false, revive:false } },
   pure:     { id:'pure',     name:'PURE',     blurb:'SKILL ONLY - 1.5X',  desc:'NO POWERUPS - 1.5X PTS',  wind:true, fail:true, pure:true, mult:1.5, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, modifiers:false, pickups:false, progress:true, revive:false } },
-  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:'ONE RUN A DAY - STREAKS', wind:true, fail:true, daily:true, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, modifiers:false, pickups:true, progress:true, revive:false } }
+  daily:    { id:'daily',    name:'DAILY',    blurb:'SAME RUN FOR ALL',   desc:"TODAY'S FIXED RUN",       wind:true, fail:true, daily:true, rules:{ lane:'unassisted', assist:'off', rewards:true, records:true, loadout:false, passives:false, modifiers:false, pickups:true, progress:true, revive:false } }
 });
 const MODES = Object.freeze(['level','practice','endless','time','challenge','pure','daily'].map(id => MODE_REGISTRY[id]));
 const PERMISSION_REGISTRY = deepFreeze(Object.fromEntries(MODES.map(m => [m.id, m.rules])));
@@ -793,7 +793,7 @@ const CHALLENGE_REGISTRY = deepFreeze([
   { id:'seeded30', name:'SEEDED CLIMB', family:'seeded', desc:'SAME 30-BLOCK RUN EVERY RETRY', mode:'challenge', objective:{type:'height',target:30}, reward:35, modifiers:true, fixedSeed:0x534B5936 },
   { id:'recovery3', name:'RECOVERY', family:'recovery', desc:'CUT, THEN RECOVER PERFECT - 3 TIMES', mode:'challenge', objective:{type:'recoveries',target:3}, reward:30, modifiers:false },
   { id:'neon-trial', name:'NEON TRIAL', family:'characterTrial', desc:'NEON PRECISION - LAND 8 PERFECTS', mode:'challenge', objective:{type:'perfects',target:8}, reward:30, modifiers:false, characterId:'neon' },
-  { id:'cave-gate', name:'CAVE GATE', family:'milestone', desc:'REACH 99M WITH MODIFIERS', mode:'challenge', objective:{type:'height',target:32}, reward:40, modifiers:true }
+  { id:'cave-gate', name:'CAVE GATE', family:'milestone', desc:'REACH 99M WITH BONUSES', mode:'challenge', objective:{type:'height',target:32}, reward:40, modifiers:true }
 ]);
 function challengeById(id) { return CHALLENGE_REGISTRY.find(c=>c.id===id) || null; }
 function challengeRule(ctx,key,fallback) {
@@ -891,6 +891,7 @@ function saveRecords(diffId, rec) {
 let pendingLevel = -1;   // level chosen on the map, consumed by the next resetRun
 let pendingCheckpointId = null; // checkpoint choice is independent from the selected campaign goal
 let pendingRunSeed = null; // explicit retry only: replay the owned RNG/modifier schedule
+let pendingIntroKind = null; // v179: a retry is not a brand-new level entrance
 let pendingChallengeId = null; // selected hub contract, consumed into immutable RunContext
 let pendingDeveloper = null; // URL-only test launch; consumed without ever entering persistence
 let runLevel = -1;       // active level for the current run (-1 = free modes)
@@ -927,7 +928,7 @@ const ACH = deepFreeze([
   achievement('block1000','STACK 1K','silver',()=>stats.blocks>=1000),
   achievement('block5000','STACK 5K','gold',()=>stats.blocks>=5000),
   achievement('streak3','3 DAY STREAK','silver',()=>stats.streakBest>=3),
-  achievement('climb5','CLEAR 5 BIOMES','silver',()=>prog>=5),
+  achievement('climb5','CLEAR 5 LEVELS','silver',()=>prog>=5),
   achievement('summit','SKY CONQUERED','gold',()=>prog>=LEVEL_COUNT)
 ]);
 let achDone = store.get('skystack-ach', []);
@@ -943,7 +944,7 @@ const MDEF = {
   balloon: { text:t=>'POP '+t+' BALLOON'+'', targets:[1,2],      reward:25, achieve:()=>runBalloons },
   score:   { text:t=>'SCORE '+t+' PTS',       targets:[250,500,1000],reward:25,achieve:()=>score },
   combo:   { text:t=>'REACH COMBO X'+t,       targets:[3,5,7],      reward:25,achieve:()=>maxCombo },
-  modifier:{ text:t=>'CLEAR '+t+' MODIFIER'+(t>1?'S':''),targets:[1,2],reward:30,achieve:()=>modifierWins },
+  modifier:{ text:t=>'WIN '+t+' BONUS'+(t>1?'ES':''),targets:[1,2],reward:30,achieve:()=>modifierWins },
   skybreak:{ text:t=>'TRIGGER A SKYBREAK',    targets:[1],          reward:35,achieve:()=>runSkybreaks },
   precision:{text:t=>'LAND '+t+'% PERFECT',   targets:[40,55,70],   reward:30,achieve:()=>{const n=Math.max(0,blocks.length-runLaunch-1);return n?Math.round(runPerfects/n*100):0;} }
 };
@@ -981,6 +982,12 @@ const TIERS = [
   { n:360, name:'ORBIT',        c:'#FFD75E' },
   { n:540, name:'THE STARS',    c:'#FFF6E8' }
 ];
+// v179: TIERS are permanent art/physics ids, not automatically player-facing level names. The
+// campaign merged SURFACE + TREETOPS into THE FOREST in v151; these area names preserve both art
+// regions without pretending that TREETOPS is still a separate level.
+const AREA_NAMES = deepFreeze(['CAVES','FOREST FLOOR','HIGH CANOPY','LOWER SKY','CLOUD NINE','JET STREAM','STRATOSPHERE','AURORA','SPACE','ORBIT','THE STARS']);
+const AREA_TAGS = deepFreeze(['ESCAPE THE DEEP','ENTER THE FOREST','THE FOREST CONTINUES','LEAVE THE TREES','ENTER THE CLOUD SEA','RIDE THE FAST WIND','CLIMB INTO THIN AIR','RISE THROUGH THE LIGHTS','LEAVE THE ATMOSPHERE','ABOVE THE WORLD','REACH THE FINAL GATE']);
+const AREA_RULES = deepFreeze(['THE LANE NARROWS UNDERGROUND','','PERFECTS SPRING WIDER','GUSTS PUSH FALLING BLOCKS','CLOUDS SOFTEN CUT LANDINGS','STRONG GUSTS PUSH FALLING BLOCKS','','OFF-CENTER LANDINGS SLIDE','STAR ROUTES SWEEP; ASTEROIDS PULL','LEAD EACH DROP INTO ITS COAST','PULSES REVERSE THE WAITING BLOCK']);
 // v134: the place palette is LOCKED. One designed hue per tier (taken from the tier colours
 // above), never Math.random() — colour identifies place (ART_BIBLE), and no deliberate game
 // rolls its palette on load. Blocks, previews and the splash tower all draw from this table.
@@ -1015,6 +1022,8 @@ const levelStartA = i => { const L = levelBand(i); return L.t0 <= 0 ? 0 : TIERS[
 const levelName   = i => levelBand(i).name || TIERS[levelBand(i).t1].name;
 const levelColor  = i => TIERS[levelBand(i).t0].c;                                             // a level wears its OPENING biome's colour
 const levelArtTier = i => levelBand(i).t0;                                                     // which biome's art represents the level on cards/HUD
+const LEVEL_TAGS = deepFreeze(['CLIMB TO DAYLIGHT','FOREST FLOOR TO CANOPY','LEAVE THE TREES','CROSS THE CLOUD SEA','RIDE THE FAST WIND','CLIMB THROUGH THIN AIR','RISE THROUGH THE LIGHTS','SURVIVE THE HAZARD FIELD','MASTER THE ORBITAL COAST','REACH THE FINAL GATE']);
+const LEVEL_RULES = deepFreeze(['THE LANE NARROWS UNDERGROUND','PERFECTS SPRING WIDER IN THE CANOPY','GUSTS PUSH FALLING BLOCKS','CLOUDS SOFTEN CUT LANDINGS','STRONG GUSTS PUSH FALLING BLOCKS','PRECISION RISES IN THIN AIR','OFF-CENTER LANDINGS SLIDE','STAR ROUTES SWEEP; ASTEROIDS PULL','LEAD EACH DROP INTO ITS COAST','PULSES REVERSE THE WAITING BLOCK']);
 function tierHueAt(a) { for (let i = 0; i < TIERS.length; i++) if (a < TIERS[i].n) return TIER_HUES[i]; return TIER_HUES[TIER_HUES.length - 1]; }
 
 // v124: the PLAYER-facing difficulty. A pure multiplier layer over the raw knobs — the adaptive
@@ -1278,7 +1287,7 @@ const LEVEL_BLUEPRINTS = deepFreeze([
   { identity:'FOUNDATION',      focus:'STEADY STONE',       duration:{min:90,target:110,max:130}, difficulty:1,  pace:'INTRO',    speedScale:1 },
   // v151: FIRST LIGHT and CANOPY RHYTHM are ONE level now - out of the cave, across the forest
   // floor, up into the canopy. Its duration band is the two old bands added together.
-  { identity:'FIRST LIGHT',     focus:'WIND INTO THE CANOPY',duration:{min:44,target:55,max:72}, difficulty:2,  pace:'STANDARD', speedScale:1 },
+  { identity:'FIRST LIGHT',     focus:'FOREST FLOOR TO CANOPY',duration:{min:44,target:55,max:72}, difficulty:2,  pace:'STANDARD', speedScale:1 },
   { identity:'OPEN AIR',        focus:'READABLE DRIFT',     duration:{min:27,target:33,max:42},   difficulty:3,  pace:'QUICK',    speedScale:1 },
   { identity:'SOFT FOOTING',    focus:'CLOUD WOBBLE',       duration:{min:32,target:40,max:50},   difficulty:4,  pace:'QUICK',    speedScale:1 },
   { identity:'CROSSWIND',       focus:'FAST STEEL + WIND',  duration:{min:36,target:44,max:55},   difficulty:5,  pace:'QUICK',    speedScale:1 },
@@ -1363,9 +1372,9 @@ const levelStartN = i => LEVEL_REGISTRY[clamp(i | 0, 0, LEVEL_REGISTRY.length - 
 const MODIFIER_REGISTRY = deepFreeze([
   { id:'deep-rhythm', biome:'DEEP CAVE', family:'precision', name:'STONE RHYTHM', start:7, duration:7, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.42,label:'OPEN CENTER'}, rule:'3 PERFECTS IN A ROW' },
   { id:'main-recovery', biome:'MAIN CAVE', family:'recovery', name:'ROOT RECOVERY', start:21, duration:8, lead:4, target:1, rewardCoins:6, safeLane:{center:.5,width:.46,label:'SHELTERED CENTER'}, rule:'FIX A CUT PERFECTLY' },
-  { id:'surface-gold', biome:'SURFACE / FOREST', family:'goldRush', name:'GOLDEN GROVE', start:36, duration:6, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.5,label:'OPEN GROVE'}, rule:'PERFECTS PAY EXTRA' },
-  { id:'canopy-rhythm', biome:'TREETOPS / LOWER SKY', family:'precision', name:'CANOPY RHYTHM', start:49, duration:8, lead:4, target:3, rewardCoins:6, safeLane:{center:.5,width:.4,label:'CENTER BOUGH'}, rule:'3 PERFECTS IN A ROW' },
-  { id:'lower-gust', biome:'TREETOPS / LOWER SKY', family:'gust', name:'OPEN-AIR GUST', start:66, duration:9, lead:5, target:7, rewardCoins:7, safeLane:{center:.5,width:.38,label:'CENTER LANE'}, rule:'PLACE 7 IN THE WIND' },
+  { id:'surface-gold', biome:'FOREST FLOOR', family:'goldRush', name:'GOLDEN GROVE', start:36, duration:6, lead:3, target:3, rewardCoins:5, safeLane:{center:.5,width:.5,label:'OPEN GROVE'}, rule:'PERFECTS PAY EXTRA' },
+  { id:'canopy-rhythm', biome:'HIGH CANOPY', family:'precision', name:'CANOPY RHYTHM', start:49, duration:8, lead:4, target:3, rewardCoins:6, safeLane:{center:.5,width:.4,label:'CENTER BOUGH'}, rule:'3 PERFECTS IN A ROW' },
+  { id:'lower-gust', biome:'LOWER SKY', family:'gust', name:'OPEN-AIR GUST', start:66, duration:9, lead:5, target:7, rewardCoins:7, safeLane:{center:.5,width:.38,label:'CENTER LANE'}, rule:'PLACE 7 IN THE WIND' },
   { id:'cloud-window', biome:'CLOUDS', family:'visibility', name:'CLEAR WINDOW', start:90, duration:10, lead:4, target:5, rewardCoins:7, safeLane:{center:.5,width:.36,label:'CLEAR CENTER'}, rule:'5 IN THE CLEAR LANE' },
   { id:'jet-gust', biome:'UPPER SKY', family:'gust', name:'JET CROSSWIND', start:115, duration:10, lead:5, target:8, rewardCoins:8, safeLane:{center:.5,width:.34,label:'CENTER LANE'}, rule:'PLACE 8 IN THE WIND' },
   { id:'thin-air', biome:'UPPER SKY', family:'limitedMiss', name:'THIN-AIR CONTROL', start:146, duration:10, lead:4, target:8, maxMisses:1, rewardCoins:8, safeLane:{center:.5,width:.36,label:'CENTER LANE'}, rule:'MAX 1 MISS' },
@@ -1397,7 +1406,7 @@ const CHECKPOINT_REGISTRY = deepFreeze([
   { id:'ground', name:'GROUND', short:'GROUND', startAltitude:0, region:0, unlock:{requiresClearedLevel:null}, scoreMultiplier:1, rewardScope:'full-climb', recordScope:'ground-up' },
   // v151: still ONE checkpoint per biome (they are landmarks), but the gate is the LEVEL that
   // contains the biome, not the biome index - those stopped being the same number at the merge.
-  ...TIERS.map((t,i)=>({ id:'checkpoint-'+i, name:t.name, short:t.name.split(' ')[0], startAltitude:t.n, region:i,
+  ...TIERS.map((t,i)=>({ id:'checkpoint-'+i, name:AREA_NAMES[i], short:AREA_NAMES[i].split(' ')[0], startAltitude:t.n, region:i,
     unlock:{requiresClearedLevel:TIER_LEVEL[i]}, scoreMultiplier:CHECKPOINT_SCORE_MULTIPLIER, rewardScope:'campaign-segment', recordScope:'checkpoint' }))
 ]);
 function checkpointById(id) { return CHECKPOINT_REGISTRY.find(c=>c.id===id) || CHECKPOINT_REGISTRY[0]; }
@@ -1405,13 +1414,14 @@ function checkpointAtAltitude(a) { return CHECKPOINT_REGISTRY.find(c=>c.startAlt
 function checkpointForLevel(i) { return i > 0 ? CHECKPOINT_REGISTRY[clamp(levelBand(i).t0,1,CHECKPOINT_REGISTRY.length-1)] : CHECKPOINT_REGISTRY[0]; }
 function checkpointUnlocked(cp, cleared) { return cp.unlock.requiresClearedLevel===null || (cleared===undefined?prog:cleared)>cp.unlock.requiresClearedLevel; }
 function startingStructureFor(cp) { return cp.startAltitude > 0 ? { id:'landmark-'+cp.region, kind:'landmark', region:cp.region } : { id:'natural-cave-ground', kind:'ground', region:0 }; }
-function startLevel(i, checkpointId, retrySeed) { pendingDeveloper=null; pendingLevel=i; pendingCheckpointId=checkpointId||checkpointForLevel(i).id; pendingRunSeed=Number.isInteger(retrySeed)?retrySeed>>>0:null; mode='level'; startRun(); }
+function startLevel(i, checkpointId, retrySeed) { pendingDeveloper=null; pendingLevel=i; pendingCheckpointId=checkpointId||checkpointForLevel(i).id; pendingRunSeed=Number.isInteger(retrySeed)?retrySeed>>>0:null; pendingIntroKind=Number.isInteger(retrySeed)?'retry':'level'; mode='level'; startRun(); }
 function developerRunActive() { return !!(DEV_MODE&&runContext&&runContext.developer); }
 function startDeveloper(campaignLevel, altitude, levelRun) {
   if (!DEV_MODE) return false;
   const lv=clamp(campaignLevel|0,0,LEVEL_COUNT-1), a=Math.max(0,altitude|0);
   pendingDeveloper={ campaignLevel:lv, altitude:a, levelRun:!!levelRun };
   pendingLevel=levelRun?lv:-1; pendingCheckpointId=checkpointForLevel(lv).id; pendingRunSeed=0xD3A110;
+  pendingIntroKind=levelRun?'level':'area';
   mode=levelRun?'level':'endless'; startRun(); return true;
 }
 function startDeveloperLevel(i) { const lv=clamp(i|0,0,LEVEL_COUNT-1); devSelectedLevel=lv; return startDeveloper(lv,levelStartA(lv),true); }
@@ -1509,9 +1519,9 @@ let skybreakT = 0;                             // golden sky flash after SKYBREA
 let balance = 0, swayX = 0;
 const mascot = { hop: 0, expr: 'normal', exprT: 0 };
 let timeLeft = 0;
-function note(text, accent, pri, dur) {
-  const n = { text: String(text), accent: accent || '#FFD75E', pri: pri || 0, dur: dur || 120, t: 0 };
-  if (n.pri >= 3 && curNote) { curNote = n; return; }          // danger interrupts the showing note
+function note(text, accent, pri, dur, delay) {
+  const n = { text: String(text), accent: accent || '#FFD75E', pri: pri || 0, dur: dur || 120, delay:Math.max(0,delay||0), t: 0 };
+  if (n.pri>=3&&n.delay<=0) { if(regionIntro)regionIntro=null; if(curNote){curNote=n;return;} } // danger outranks presentation
   notes.push(n);
   if (notes.length > 6) {                                       // drop the oldest lowest-priority queued note
     let di = 0;
@@ -1520,6 +1530,16 @@ function note(text, accent, pri, dur) {
   }
 }
 function toast(m) { if (m) note(m, 'rgba(255,246,232,0.4)', 0, 96); }
+function updateNotes(dt) {
+  for (const n of notes) if (n.delay>0) n.delay=Math.max(0,n.delay-dt);
+  if (regionIntro) return; // one voice at a time: entry card first, queued decision text afterward
+  if (curNote) { curNote.t += dt; if (curNote.t >= curNote.dur) curNote = null; }
+  if (!curNote && notes.length) {
+    let bi=-1;
+    for (let i=0;i<notes.length;i++) if (notes[i].delay<=0 && (bi<0||notes[i].pri>notes[bi].pri)) bi=i;
+    if (bi>=0) { curNote=notes.splice(bi,1)[0];curNote.t=0; }
+  }
+}
 let modifierProgress = {}, modifierResults = [], modifierWins = 0, modifierBonusCoins = 0;
 let challengeRuntime = null, challengeCleared = false, challengeReward = 0, challengeRecorded = false;
 function initModifierRuntime() {
@@ -2026,10 +2046,10 @@ function driftForce() {
   return wind.dir * wind.str * env * DRIFT_ACCEL * activeDifficulty().drift;
 }
 function spaceHazardsEnabled() {
-  return !!(runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&spacePhaseAt(blocks.length));
+  return !!(!regionIntro&&runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&spacePhaseAt(blocks.length));
 }
 function orbitCoastEnabled() {
-  return !!(runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&orbitPhaseAt(blocks.length));
+  return !!(!regionIntro&&runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&orbitPhaseAt(blocks.length));
 }
 function updateOrbitCoastPhase() {
   const phase=orbitPhaseAt(blocks.length);
@@ -2042,7 +2062,7 @@ function updateOrbitCoastPhase() {
   }
 }
 function starsPulseEnabled() {
-  return !!(runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&starsPhaseAt(blocks.length));
+  return !!(!regionIntro&&runContext&&runContext.modifierPermissions.enabled&&(state==='playing'||state==='dropping')&&starsPhaseAt(blocks.length));
 }
 function updateStarsPulse(dt) {
   const phase=starsPhaseAt(blocks.length);
@@ -2456,23 +2476,24 @@ function afterPlace(f, updateBalance, placedCenter, outcome) {
   if (updateChallengeForPlacement(placedOutcome)) return;
   if (runLevel >= 0 && h >= levelGoalA(runLevel)) { levelComplete(); return; }   // campaign goal reached
   if (tier < TIERS.length && h >= TIERS[tier].n) {
-    const t = TIERS[tier]; let bTxt = t.n*METERS_PER + 'M - ' + t.name;
     let reward = 5 + tier * 3;
     // v151: crossing a BIOME line is a milestone; it only CLEARS A LEVEL when that biome is the last
     // one in its level band (SURFACE now sits mid-level, so passing it must not bank a level).
     const lvOfTier = TIER_LEVEL[tier], endsLevel = LEVEL_BANDS[lvOfTier].t1 === tier;
+    let milestoneText='';
     if (runContext.rewardPermissions.progress && endsLevel && lvOfTier + 1 > prog) {
       prog = lvOfTier + 1; store.set('skystack-tiers', prog);
-      bTxt = 'LEVEL CLEAR - ' + levelName(lvOfTier); reward += 15;
-      if (prog === LEVEL_COUNT) { bTxt = 'SKY CONQUERED!'; reward += 200; }   // beat the game
+      reward += 15; milestoneText='LEVEL CLEAR: '+levelName(lvOfTier);
+      if (prog === LEVEL_COUNT) { milestoneText='SKY CONQUERED!'; reward += 200; }   // beat the game
     }
-    note(bTxt, '#FFD75E', 1, 140);
     if (canEarnRewards(runContext)) {
       addCoins(reward, W/2, 40);
-      floaters.push({ text:'+'+reward, x:W/2, y:towerTopY()-BH-18, vy:-.35, life:1.4, color:'#FFD75E' });
+      floaters.push({ text:'+'+reward+' COINS', x:W/2, y:towerTopY()-BH-18, vy:-.35, life:1.4, color:'#FFD75E' });
     }
     burst(W/2, towerTopY()-BH, 24, f.col, true); shake = Math.max(shake, reduceMotion?2:4);
-    sfx.milestone(); tier++; startRegionIntro(tier);   // entering the next region — play its intro
+    sfx.milestone(); tier++;
+    const intro=startRegionIntro(tier,'area'); // area card owns the transition first; progress/reward follows
+    if (milestoneText) note(milestoneText+' +'+reward+' COINS','#FFD75E',1,140,intro?Math.max(0,intro.dur-8):0);
   }
   const bh2 = activeChallenge()?challengeRecord(activeChallenge().id).bestBlocks:bestBlocksFor(runContext.mode);
   if (canWriteRecords(runContext) && h > bh2 && !newHeight && bh2 > 0) {
@@ -2827,7 +2848,7 @@ function adaptToScreen() {
 // ---------- input ----------
 function pos(e) { if (!canvasRect) canvasRect = canvas.getBoundingClientRect(); const r = canvasRect; return { x:(e.clientX-r.left)/r.width*W, y:(e.clientY-r.top)/r.height*H }; }
 function inR(p, r, pad) { pad = pad||0; return p.x>=r.x-pad && p.x<=r.x+r.w+pad && p.y>=r.y-pad && p.y<=r.y+r.h+pad; }
-function startRun(retrySeed) { if(Number.isInteger(retrySeed))pendingRunSeed=retrySeed>>>0; resetRun(); startRegionIntro(tier); state = 'playing'; sfx.start(); }
+function startRun(retrySeed) { if(Number.isInteger(retrySeed))pendingRunSeed=retrySeed>>>0;const introKind=pendingIntroKind;pendingIntroKind=null;resetRun();startRegionIntro(tier,introKind||(runLevel>=0?'level':'area'));state='playing';sfx.start(); }
 function navHit(p) {
   if (p.y < NAV_Y) return false;
   for (const t of NAV_TABS) if (p.x >= t.x && p.x < t.x + t.w) {
@@ -3065,12 +3086,7 @@ function update(dt) {
   if (shake > 0) shake = Math.max(0, shake - .25*dt);
   if (squash > 0) squash = Math.max(0, squash - .07*dt);
   if (flashT > 0) flashT = Math.max(0, flashT - .05*dt);
-  if (curNote) { curNote.t += dt; if (curNote.t >= curNote.dur) curNote = null; }
-  if (!curNote && notes.length) {
-    let bi = 0;
-    for (let i = 1; i < notes.length; i++) if (notes[i].pri > notes[bi].pri) bi = i;
-    curNote = notes.splice(bi, 1)[0]; curNote.t = 0;
-  }
+  updateNotes(dt);
   if (regionIntro) { regionIntro.t += dt; if (regionIntro.t >= regionIntro.dur) regionIntro = null; }
   if (coinPop > 0) coinPop = Math.max(0, coinPop - .05*dt);
   if (fadeT > 0) fadeT = Math.max(0, fadeT - .06*dt);
@@ -5808,20 +5824,28 @@ function drawBiomeDecor(cy) {
   }
 }
 
-// ---------- region entry cinematics ----------
-// A short, non-blocking overlay that fires when you ENTER a region (run start + each crossing).
-// The board keeps playing underneath. reduceMotion -> a plain static title card.
-function startRegionIntro(ti) {
-  if (ti < 0 || ti >= TIERS.length) return;
-  regionIntro = { ti, t: 0, dur: reduceMotion ? 55 : 100 };
+// ---------- level + area entry cinematics ----------
+// v179: campaign LEVELS and world-art AREAS are separate vocabulary. A campaign run opens with the
+// real ten-level chapter name; later art transitions are shorter NEW AREA beats. Gameplay continues
+// underneath, but a delayed milestone note now waits until the card has finished instead of talking
+// over it. reduceMotion keeps the same resting card with a shorter static hold.
+function startRegionIntro(ti,kind) {
+  if (ti < 0 || ti >= TIERS.length) return null;
+  kind=kind==='level'||kind==='retry'?kind:'area';
+  const isLevel=kind!=='area';
+  regionIntro={ti,t:0,kind,level:isLevel?runLevel:null,dur:reduceMotion?(kind==='level'?50:kind==='retry'?30:38):(kind==='level'?96:kind==='retry'?44:68)};
   if (state === 'playing' || state === 'dropping') sfx.region(ti);
+  return regionIntro;
 }
-// v131: a mechanic nobody is told about cannot be noticed — each biome with a signature rule states
-// it on arrival. Biomes without one stay silent, so silence keeps meaning "nothing special here".
-const BIOME_RULES = ['CAVES: A CRAMPED LANE', '', 'TREETOPS: PERFECT LANDINGS SPRING WIDER',
-  'LOWER SKY: GUSTS PUSH YOUR DROP', 'CLOUD: SOFT LANDINGS STICK', 'JET STREAM: WIND PUSHES YOUR DROP',
-  '', 'ICE: SLOPPY LANDINGS SLIP', 'LOW GRAVITY: BLOCKS FALL SLOWLY', 'LOW GRAVITY: BLOCKS FALL SLOWLY', ''];
-const INTRO_TAGS = ['ESCAPE THE DEEP','INTO THE LIGHT','OVER THE CANOPY','INTO OPEN AIR','INTO THE CLOUDS','RIDE THE WIND','GOLDEN HOUR','POLAR LIGHTS','LEAVE THE SKY','ABOVE THE WORLD','THE SUMMIT'];
+function regionIntroCopy(R) {
+  if (!R) return {eyebrow:'',title:'',tag:'',rule:'',color:'#FFF6E8'};
+  if ((R.kind==='level'||R.kind==='retry')&&R.level>=0) {
+    const lv=clamp(R.level|0,0,LEVEL_COUNT-1);
+    return {eyebrow:R.kind==='retry'?'RETRY':'LEVEL '+(lv+1),title:levelName(lv),tag:R.kind==='retry'?'CLIMB AGAIN':LEVEL_TAGS[lv],rule:LEVEL_RULES[lv],color:levelColor(lv)};
+  }
+  const ti=clamp(R.ti|0,0,TIERS.length-1);
+  return {eyebrow:'NEW AREA',title:AREA_NAMES[ti],tag:AREA_TAGS[ti],rule:AREA_RULES[ti],color:TIERS[ti].c};
+}
 // the per-region signature flourish (screen-space, procedural — no persistent particle arrays)
 function drawIntroFx(ti, p, env, ph) {
   if (ti === 0) {                                                                    // CAVES — darkness recedes through warm torch embers
@@ -5867,18 +5891,18 @@ function drawIntroFx(ti, p, env, ph) {
   ctx.globalAlpha = 1;
 }
 function renderRegionIntro() {
-  const R = regionIntro, T = TIERS[R.ti], p = clamp(R.t / R.dur, 0, 1);
+  const R=regionIntro,C=regionIntroCopy(R),p=clamp(R.t/R.dur,0,1);
   const env = Math.min(clamp(R.t / (R.dur*0.18), 0, 1), clamp((R.dur - R.t) / (R.dur*0.3), 0, 1));
   if (!reduceMotion) drawIntroFx(R.ti, p, env, tick);
-  const cx = Math.round(W/2), ty = Math.round(H*0.32), nameW = T.name.length*12 + 24;
-  ctx.globalAlpha = env * 0.4; ctx.fillStyle = '#000'; ctx.fillRect(cx - nameW/2, ty - 14, nameW, 30);
-  ctx.globalAlpha = env; ctx.fillStyle = T.c; ctx.fillRect(cx - nameW/2, ty - 14, nameW, 2); ctx.fillRect(cx - nameW/2, ty + 14, nameW, 2);
-  txt(T.name, cx, ty - 8, 2, T.c, 'center');
-  ctx.globalAlpha = env * 0.85; txt(INTRO_TAGS[R.ti], cx, ty + 20, 1, 'rgba(255,246,232,0.9)', 'center');
-  if (BIOME_RULES[R.ti]) {   // v131: this biome's signature rule, stated on arrival
-    ctx.globalAlpha = env * 0.95;
-    txtFit(BIOME_RULES[R.ti], cx, ty + 32, 1, VISUAL_SYSTEM.palette.gold, 'center', W - 24);
-  }
+  const cx=Math.round(W/2),cy=Math.round(H*.30),cardH=C.rule?61:49,
+        wanted=Math.max(124,C.title.length*12+20,C.tag.length*6+20,C.rule.length*6+20),cardW=Math.min(W-16,wanted),x=Math.round(cx-cardW/2),y=Math.round(cy-cardH/2);
+  ctx.globalAlpha=env*.76;ctx.fillStyle='rgba(11,14,26,0.9)';ctx.fillRect(x,y,cardW,cardH);
+  ctx.globalAlpha=env;ctx.fillStyle=C.color;
+  ctx.fillRect(x,y,cardW,2);ctx.fillRect(x,y+cardH-2,cardW,2);ctx.fillRect(x,y,2,cardH);ctx.fillRect(x+cardW-2,y,2,cardH);
+  txt(C.eyebrow,cx,y+6,1,'rgba(255,246,232,0.62)','center');
+  txtFit(C.title,cx,y+18,2,C.color,'center',cardW-18);
+  ctx.globalAlpha=env*.88;txtFit(C.tag,cx,y+37,1,'rgba(255,246,232,0.9)','center',cardW-14);
+  if (C.rule) {ctx.globalAlpha=env*.98;txtFit(C.rule,cx,y+50,1,VISUAL_SYSTEM.palette.gold,'center',cardW-14,2);}
   ctx.globalAlpha = 1;
 }
 
@@ -5993,7 +6017,7 @@ function render() {
 
   if (paused && (state === 'playing' || state === 'dropping')) renderPause();
 
-  if (curNote) {
+  if (curNote&&!regionIntro) {
     const p = curNote.t / curNote.dur;                       // fast fade-in, hold, fade-out tail
     const a = Math.min(1, p * 8) * (p > .85 ? (1 - p) / .15 : 1);
     drawNotifyStrip(curNote.text, Math.max(0, a), curNote.accent);
@@ -6558,7 +6582,7 @@ function renderHome() {
   pixelFrame(hc.x,hc.y,hc.w,hc.h,'rgba(17,17,25,0.82)',nt.color,true);
   ctx.fillStyle=nt.color;ctx.globalAlpha=.10;ctx.fillRect(hc.x+3,hc.y+3,hc.w-6,23);ctx.globalAlpha=1;
   drawJourneyProgress(nl,hc.x+12,hc.y+5,hc.w-24);
-  txt(conquered?'JOURNEY COMPLETE':'CHAPTER '+String(nl+1), hc.x+9, chapterY, 1, 'rgba(255,246,232,0.55)', 'left');
+  txt(conquered?'JOURNEY COMPLETE':'LEVEL '+String(nl+1), hc.x+9, chapterY, 1, 'rgba(255,246,232,0.55)', 'left');
   txt((nl+1)+' / '+LEVEL_COUNT,hc.x+hc.w-8,chapterY,1,nt.color,'right');
   if (conquered) {
     txtFit('SKY CONQUERED!', W/2, nameY + 5, 2, VISUAL_SYSTEM.palette.gold, 'center', hc.w - 16);   // v131: sits low in its band, clear of the chapter row
@@ -7347,7 +7371,7 @@ function modeCompactDesc(id){
   return ({practice:'GUIDED - NO FAIL',endless:'CLASSIC - POWERUPS',pure:'SKILL ONLY - 1.5X',daily:'SEEDED DAILY - STREAKS',challenges:'8 FOCUSED RUNS'})[id]||'';
 }
 function challengeCompactDesc(id){
-  return ({time60:'60 SECONDS - MAX HEIGHT',precision10:'10 PERFECTS - ONE MISS', 'three-lives':'24 BLOCKS - 3 LIVES',unstable20:'20 BLOCKS - FAST LEAN',seeded30:'FIXED 30-BLOCK RUN',recovery3:'CUT + RECOVER - 3 TIMES','neon-trial':'NEON - LAND 8 PERFECTS','cave-gate':'REACH 99M - MODIFIERS'})[id]||'';
+  return ({time60:'60 SECONDS - MAX HEIGHT',precision10:'10 PERFECTS - ONE MISS', 'three-lives':'24 BLOCKS - 3 LIVES',unstable20:'20 BLOCKS - FAST LEAN',seeded30:'FIXED 30-BLOCK RUN',recovery3:'CUT + RECOVER - 3 TIMES','neon-trial':'NEON - LAND 8 PERFECTS','cave-gate':'REACH 99M - BONUSES'})[id]||'';
 }
 function challengeAccent(family){
   return ({timed:'#FFD75E',precision:'#8FB8FF',limitedLives:'#FF8A8A',unstable:'#E0863A',seeded:'#C77EFF',recovery:'#62E8B5',characterTrial:'#FF7AD9',milestone:'#FFD75E'})[family]||UI_HEX();
@@ -7679,6 +7703,19 @@ function drawNavSplit(rw, accent) {   // one plate, two tap targets: left HOME, 
   txt('HOME', Math.round(rw.x + rw.w/4), rw.y + 7, 1, '#FFF6E8', 'center');
   txt(('SKY MAP'.length*6-1 > half-8) ? 'MAP' : 'SKY MAP', Math.round(rw.x + rw.w*3/4), rw.y + 7, 1, '#FFF6E8', 'center');
 }
+function bonusSummaryText() {
+  const total=modifierResults.length,noun=total===1?'BONUS':'BONUSES';
+  let s=modifierWins===total?(total===1?'BONUS WON':'ALL BONUSES WON'):modifierWins+' OF '+total+' '+noun+' WON';
+  if(modifierBonusCoins>0)s+=' +'+modifierBonusCoins+' COINS';
+  return s;
+}
+function rewardLine(prefix,name,reward,maxW) {
+  const tail=' +'+reward+' COINS',limit=Math.max(1,Math.floor((maxW+1)/6));
+  let head=(prefix?prefix+': ':'')+name;
+  if(head.length+tail.length>limit)head=String(name);
+  if(head.length+tail.length>limit)head=head.slice(0,Math.max(1,limit-tail.length-1))+'-';
+  return head+tail;
+}
 function renderLevelWin() {
   const t = LEVEL_REGISTRY[runLevel], num = runLevel + 1;
   // full themed backdrop: the exact slice of sky you just climbed — launch pad at the
@@ -7788,7 +7825,7 @@ function renderLevelWin() {
   }
   if (showBonus) {   // optional bonus challenge result — plain wording, own row
     const allWon = modifierWins === modifierResults.length;
-    const bt = (allWon ? 'BONUS DONE' : modifierWins+' OF '+modifierResults.length+' BONUS') + (modifierBonusCoins > 0 ? ' +'+modifierBonusCoins : '');
+    const bt=bonusSummaryText();
     txt(bt, W/2, sy, 1, allWon ? '#62E8B5' : 'rgba(255,246,232,0.55)', 'center'); sy += 11;
   }
   if (winT > 48) {   // reward counts up
@@ -7797,7 +7834,7 @@ function renderLevelWin() {
     txt('+' + shown, W/2 - 9, sy + 1, 1, '#FFD75E', 'left'); sy += 13;
     // v152: prog counts LEVELS, so it can never reach TIERS.length (11 biomes) — SKY CONQUERED! was
     // unreachable. A level is a BAND of biomes since v151; never use TIERS.length as a level count.
-    if (showUnlock) txt(prog >= LEVEL_COUNT ? 'SKY CONQUERED!' : 'NEW STAGE UNLOCKED!', W/2, sy, 1, '#62E8B5', 'center');
+    if (showUnlock) txt(prog >= LEVEL_COUNT ? 'SKY CONQUERED!' : 'NEW LEVEL UNLOCKED!', W/2, sy, 1, '#62E8B5', 'center');
   }
   if (winT > 24) {
     // v152: was TIERS.length — on the FINAL level the button read NEXT LEVEL while the handler
@@ -7882,7 +7919,7 @@ function renderLevelFail() {
 
 // ---------- in-run HUD ----------
 function renderModifierHUD(h) {
-  if (!runContext||!runContext.modifierPermissions.enabled) return;
+  if (regionIntro||!runContext||!runContext.modifierPermissions.enabled) return;
   const m=runContext.modifiers.find(x=>{const p=modifierRuntime(x);return p&&(p.status==='active'||p.status==='announced');});
   if (!m) return;
   const p=modifierRuntime(m), active=p.status==='active';
@@ -7905,6 +7942,7 @@ function renderModifierHUD(h) {
   }
 }
 function renderSpacePhaseHUD(h) {
+  if (regionIntro) return;
   const phase=spacePhaseAt(h);
   if (!phase||!spaceHazardsEnabled()) return;
   const roman=['I','II','III'][phase.index], label='SPACE '+roman+' - '+phase.name;
@@ -7913,6 +7951,7 @@ function renderSpacePhaseHUD(h) {
   ctx.globalAlpha=1;
 }
 function renderOrbitPhaseHUD(h) {
+  if (regionIntro) return;
   const phase=orbitPhaseAt(h);
   if (!phase||!orbitCoastEnabled()) return;
   const coast=orbitCoastPlan(h,runContext.seed,activeDifficulty(),shield>0), roman=['I','II','III'][phase.index];
@@ -7927,6 +7966,7 @@ function renderOrbitPhaseHUD(h) {
   ctx.globalAlpha=1;
 }
 function renderStarsPhaseHUD(h) {
+  if (regionIntro) return;
   const phase=starsPhaseAt(h);
   if (!phase||!starsPulseEnabled()) return;
   const roman=['I','II','III'][phase.index], secs=Math.max(0,starsPulseTimer/60).toFixed(1)+'S';
@@ -7942,7 +7982,7 @@ function renderStarsPhaseHUD(h) {
 }
 function drawStarsPulseSignal() {
   const phase=starsPhaseAt(blocks.length);
-  if (!phase||!starsPulseEnabled()||state!=='playing') return;
+  if (regionIntro||!phase||!starsPulseEnabled()||state!=='playing') return;
   const warning=starsPulseTimer<=phase.warn?clamp(1-starsPulseTimer/phase.warn,0,1):0,
         flash=clamp(starsPulseFlash,0,1);
   if (warning<=0&&flash<=0) return;
@@ -8031,7 +8071,7 @@ function renderHUD(h) {
   renderStarsPhaseHUD(h);
   renderModifierHUD(h);
   // first-run / PRACTICE onboarding: one compact line in the shared notification lane (v109)
-  if (tutStep >= 0 && !curNote) {
+  if (tutStep >= 0 && !curNote && !regionIntro) {
     const lesson = TUT_LESSONS[Math.min(tutStep, TUT_LESSONS.length-1)];
     const pre = m.practice ? 'PRACTICE ' : '';
     const fits = s => s.length * 6 + 16 <= W - 16;        // drawNotifyStrip's real limit
@@ -8056,7 +8096,7 @@ function renderHUD(h) {
 }
 
 // ---------- game over ----------
-const CAUSE_TXT = { miss:'MISSED!', topple:'TOPPLED!', precision:'NOT PERFECT', time:"TIME'S UP", challenge:'CHALLENGE CLEAR!', quit:'GAVE UP' };
+const CAUSE_TXT = { miss:'MISSED!', topple:'TOPPLED!', precision:'NOT PERFECT', time:"TIME'S UP", challenge:'GOAL COMPLETE', quit:'RUN ENDED' };
 function renderGameOver() {
   ctx.fillStyle = 'rgba(11,14,26,0.66)'; ctx.fillRect(0, 0, W, H);
   const shadow = 'rgba(0,0,0,0.35)';
@@ -8086,8 +8126,8 @@ function renderGameOver() {
   at(26); drawCoin(W/2-24, 127.5); txt('+'+runCoins, W/2-14, 127, 1, '#FFD75E', 'left');   // coin fades in place (stays centered on its digits)
   if (runSettled) txt('+'+xpThisRun+' XP', W/2+12, 127, 1, '#62E8B5', 'left');
   if (maxCombo > 1) { s = at(31); txt('MAX COMBO X'+maxCombo, W/2, 141+s, 1, 'rgba(255,246,232,0.8)', 'center'); }
-  if(challengeReward){ s = at(34); txt('CHALLENGE REWARD +'+challengeReward,W/2,151+s,pop(34),'#FFD75E','center'); }
-  if (modifierResults.length) { s = at(36); txt('MODIFIERS '+modifierWins+'/'+modifierResults.length+' - BONUS +'+modifierBonusCoins,W/2,(challengeReward?162:151)+s,1,'#62E8B5','center'); }
+  if(challengeReward){ s = at(34); txt('CHALLENGE REWARD +'+challengeReward+' COINS',W/2,151+s,pop(34),'#FFD75E','center'); }
+  if (modifierResults.length) { s=at(36);txt(bonusSummaryText(),W/2,(challengeReward?162:151)+s,1,'#62E8B5','center'); }
   if (reviveOffered) {   // XP/missions settle after the offer — this space is the revive's
     ctx.globalAlpha = rev(14);   // the revive button fades in early so it's ready when overLock frees taps
     const cost = reviveCost(), ok = coins >= cost;
@@ -8105,16 +8145,16 @@ function renderGameOver() {
     let y = modifierResults.length ? (challengeReward?178:167) : (challengeReward?167:156);
     let ct = 42;   // the reward cascade reveals last, one item at a time, each with its own accent
     if (levelUpsThisRun > 0) {   // v114/v115: the biggest reward gets the biggest treatment and the first spotlight
-      const so = at(ct); const label = 'LEVEL UP!  LV '+lvl.level+'  +'+ECONOMY_RULES.levelUpReward;
+      const so=at(ct),label='LEVEL UP! LV '+lvl.level+' +'+ECONOMY_RULES.levelUpReward+' COINS';
       const tw = label.length*6-1, pulse = Math.floor(tick/14)%2, yy = y+so;
       ctx.fillStyle = pulse ? 'rgba(255,215,94,0.24)' : 'rgba(255,215,94,0.15)';
       ctx.fillRect(W/2 - tw/2 - 8, yy-2, tw+16, 11);
       ctx.fillStyle = '#FFD75E'; ctx.fillRect(W/2 - tw/2 - 8, yy-2, tw+16, 1); ctx.fillRect(W/2 - tw/2 - 8, yy+8, tw+16, 1);
       txt(label, W/2, yy, 1, '#FFF6E8', 'center'); y += 14; ct += 7;
     }
-    for (let i = 0; i < achThisRun.length && i < 2; i++) { const so = at(ct); txt('ACHIEVEMENT: '+achThisRun[i].name+' +'+achThisRun[i].reward, W/2, y+so, pop(ct), '#C77EFF', 'center'); y += 11; ct += 6; }
-    for (let i = 0; i < collectionThisRun.length && i < 1; i++) { const so = at(ct); txt('COLLECTION: '+collectionThisRun[i].name+' +'+collectionThisRun[i].reward, W/2, y+so, pop(ct), '#FFD75E', 'center'); y += 11; ct += 6; }
-    for (let i = 0; i < completedThisRun.length && i < 2; i++) { const so = at(ct); txt('* '+completedThisRun[i].text+' +'+completedThisRun[i].reward, W/2, y+so, pop(ct), '#62E8B5', 'center'); y += 11; ct += 6; }
+    for(let i=0;i<achThisRun.length&&i<2;i++){const so=at(ct);txt(rewardLine('ACHIEVEMENT',achThisRun[i].name,achThisRun[i].reward,W-16),W/2,y+so,pop(ct),'#C77EFF','center');y+=11;ct+=6;}
+    for(let i=0;i<collectionThisRun.length&&i<1;i++){const so=at(ct);txt(rewardLine('COLLECTION',collectionThisRun[i].name,collectionThisRun[i].reward,W-16),W/2,y+so,pop(ct),'#FFD75E','center');y+=11;ct+=6;}
+    for(let i=0;i<completedThisRun.length&&i<2;i++){const so=at(ct);txt(rewardLine('ORDER',completedThisRun[i].text,completedThisRun[i].reward,W-16),W/2,y+so,pop(ct),'#62E8B5','center');y+=11;ct+=6;}
     if (runContext.mode === 'daily') { const so = at(ct); txt('DAILY STREAK ' + daily.streak, W/2, y+so, pop(ct), '#FF9E5E', 'center'); y += 11; }
   }
   ctx.globalAlpha = rev(30);

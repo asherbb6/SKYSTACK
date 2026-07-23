@@ -228,19 +228,19 @@ const lc = makeGame();
 lc.run('mode = "endless"; resetRun();');
 lc.run('while (blocks.length < TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
-check('endless first reach of stage 1: LEVEL CLEAR note queued', () => lc.run(
-  'notes.concat(curNote?[curNote]:[]).some(n=>n.text==="LEVEL CLEAR - CAVES")'));
+check('endless first reach of level 1: unit-named LEVEL CLEAR note queued after the area card', () => lc.run(
+  'notes.concat(curNote?[curNote]:[]).some(n=>n.text==="LEVEL CLEAR: CAVES +20 COINS" && n.delay>0)'));
 check('endless first reach of stage 1: prog -> 1', () => lc.run('prog === 1'));
 check('prog persisted to storage', () => saved(lc, 'skystack-tiers') === 1 ? true : 'stored: ' + saved(lc, 'skystack-tiers'));
 lc.run('resetRun(); while (blocks.length < TIERS[0].n) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
-check('endless re-reaching a cleared stage: plain milestone note', () => lc.run(
-  'notes.concat(curNote?[curNote]:[]).some(n=>n.text===(TIERS[0].n*METERS_PER)+"M - "+TIERS[0].name)'));
+check('endless re-reaching a cleared boundary uses only the new-area card', () => lc.run(
+  'regionIntroCopy(regionIntro).title==="FOREST FLOOR" && !notes.concat(curNote?[curNote]:[]).some(n=>/CAVES|LEVEL CLEAR/.test(n.text))'));
 lc.run('prog = LEVEL_COUNT - 1; resetRun(); tier = TIERS.length - 1;');
 lc.run('while (blocks.length < TIERS[TIERS.length-1].n) blocks.push({x:0,w:96,col:"#fff"});');
 lc.run('afterPlace({x:0,w:96,col:"#fff"}, false, W/2)');
 check('endless reaching THE STARS first time: SKY CONQUERED note queued', () => lc.run(
-  'notes.concat(curNote?[curNote]:[]).some(n=>n.text==="SKY CONQUERED!")'));
+  'notes.concat(curNote?[curNote]:[]).some(n=>n.text==="SKY CONQUERED! +250 COINS")'));
 check('game beaten: prog = all LEVELS', () => lc.run('prog === LEVEL_COUNT'));
 check('renderSkyMap champion state runs (crown/gate)', () => { lc.run('renderSkyMap()'); return true; });
 check('renderHome conquered state runs', () => { lc.run('state = "home"; renderHome()'); return true; });
@@ -408,7 +408,7 @@ check('home: next-level card shows the next level', () => {
   home.run('mode = "endless"; state = "home";');
   home.run('var __texts = []; var __txt0 = txt; txt = function(t,...a){ __texts.push(String(t)); return __txt0(t,...a); };');
   home.run('renderHome()');
-  return home.run('__texts.some(t => t === ("CHAPTER " + (prog+1))) && __texts.some(t => t === levelName(prog)) && __texts.some(t => t === "EXTRA MODES")');
+  return home.run('__texts.some(t => t === ("LEVEL " + (prog+1))) && __texts.some(t => t === levelName(prog)) && __texts.some(t => t === "EXTRA MODES")');
 });
 check('home PLAY starts the next level', () => home.run(
   '(() => { const p = {x: PLAY_BTN.x + 5, y: PLAY_BTN.y + 5}; pos = () => p; pressDown({}); return state === "playing" && runLevel === prog && runLaunch === levelStartA(prog); })()'));
@@ -709,8 +709,8 @@ check('reduced-motion: full cave + foreground still render without throwing', ()
   return true;
 });
 // ---- Phase 5: region entry cinematics ----
-check('region intro system exists, one tag per stage, arms on entry', () => bio.run(
-  '(() => { regionIntro = null; return typeof startRegionIntro === "function" && typeof renderRegionIntro === "function" && INTRO_TAGS.length === TIERS.length && (startRegionIntro(0), regionIntro !== null && regionIntro.ti === 0 && regionIntro.dur > 0); })()'));
+check('region intro system exists, one player-facing area tag per art tier, arms on entry', () => bio.run(
+  '(() => { regionIntro = null; return typeof startRegionIntro === "function" && typeof renderRegionIntro === "function" && AREA_TAGS.length === TIERS.length && (startRegionIntro(0,"area"), regionIntro !== null && regionIntro.ti === 0 && regionIntro.kind === "area" && regionIntro.dur > 0); })()'));
 check('startRegionIntro ignores out-of-range tiers', () => bio.run(
   '(() => { regionIntro = null; startRegionIntro(-1); startRegionIntro(TIERS.length); return regionIntro === null; })()'));
 check('renderRegionIntro renders every region at every phase without throwing', () => {
@@ -803,8 +803,8 @@ check('Me volume mixer touch controls adjust the selected channel only', () => f
 const fw = makeGame({ 'skystack-height': '90' });
 fw.run('mode = "endless"; resetRun(); state = "playing";');
 check('tier 3 is player-facing LOWER SKY (no city/rooftop language in visible tables)', () => fw.run(
-  'TIERS[3].name === "LOWER SKY" && MATERIALS[3].name === "BREEZE" && INTRO_TAGS[3] === "INTO OPEN AIR" && ' +
-  '!TIERS.some(t => /ROOF|CITY/.test(t.name)) && !INTRO_TAGS.some(t => /CITY|ROOF/.test(t)) && !MATERIALS.some(m => /BRICK/.test(m.name))'));
+  'TIERS[3].name === "LOWER SKY" && MATERIALS[3].name === "BREEZE" && AREA_TAGS[3] === "LEAVE THE TREES" && ' +
+  '!TIERS.some(t => /ROOF|CITY/.test(t.name)) && !AREA_TAGS.some(t => /CITY|ROOF/.test(t)) && !MATERIALS.some(m => /BRICK/.test(m.name))'));
 check('forest helpers exist (treeline, back trunks, canopy band)', () => fw.run(
   '["drawTreeline","backTrunk","drawForestBand","drawSurfaceGround"].every(f => eval("typeof "+f) === "function") && BACK_TREES.length > 0'));
 check('background trunks root at the surface and stay below the main canopy tops', () => fw.run(
@@ -1145,8 +1145,8 @@ check('S3 the shop renders with its tabs and controls above navigation at 242x30
   '(() => { W=242;H=300;relayout();state="shop";shopView="character";previewIdx=3;renderShop();return SHOP_TABS.length>=1&&SHOP_TABS.every(t=>t.x>=0&&t.x+t.w<=W&&t.y+t.h<NAV_Y)&&EQUIP_BTN.y+EQUIP_BTN.h<NAV_Y; })()'));
 
 // ---------- S4 biome gameplay identities + fair run modifiers ----------
-check('S4 defines frozen, explicit modifier contracts for all eight macro-biomes and six families', () => fresh.run(
-  'MODIFIER_REGISTRY.length===12&&Object.isFrozen(MODIFIER_REGISTRY)&&new Set(MODIFIER_REGISTRY.map(m=>m.biome)).size===8&&["gust","precision","goldRush","recovery","limitedMiss","target"].every(f=>MODIFIER_REGISTRY.some(m=>m.family===f))&&MODIFIER_REGISTRY.every(m=>Object.isFrozen(m)&&m.lead>=3&&m.duration>=6&&m.rule&&m.rewardCoins>0&&m.safeLane&&m.safeLane.width>0&&m.safeLane.width<=.5)'));
+check('S4 defines frozen, explicit modifier contracts for nine player-facing macro areas and six families', () => fresh.run(
+  'MODIFIER_REGISTRY.length===12&&Object.isFrozen(MODIFIER_REGISTRY)&&new Set(MODIFIER_REGISTRY.map(m=>m.biome)).size===9&&["gust","precision","goldRush","recovery","limitedMiss","target"].every(f=>MODIFIER_REGISTRY.some(m=>m.family===f))&&MODIFIER_REGISTRY.every(m=>Object.isFrozen(m)&&m.lead>=3&&m.duration>=6&&m.rule&&m.rewardCoins>0&&m.safeLane&&m.safeLane.width>0&&m.safeLane.width<=.5)'));
 check('S4 seeded schedules are reproducible without consuming the gameplay RNG stream', () => fresh.run(
   '(() => { const before=mulberry32(123),expected=[before(),before(),before()],a=buildModifierSchedule(123,"endless",-1,0),b=buildModifierSchedule(123,"endless",-1,0),c=buildModifierSchedule(124,"endless",-1,0),after=mulberry32(123),actual=[after(),after(),after()];return JSON.stringify(a)===JSON.stringify(b)&&JSON.stringify(a)!==JSON.stringify(c)&&JSON.stringify(actual)===JSON.stringify(expected); })()'));
 check('S4 campaign retry replays the exact owned seed, checkpoint, and modifier schedule', () => {
@@ -1739,8 +1739,8 @@ check('v107 level-win: no text/button overlaps or leaves the screen at any aspec
   resultSweep('renderLevelWin', winFixtures));
 check('v107 level-win: the cut-off checkpoint caption is gone', () =>
   !/cp\.name\+' CHECKPOINT - '\+cp\.scoreMultiplier/.test(src));   // the Sky Map keeps its own 'CP -' caption
-check('v107 level-win: bonus line uses plain BONUS wording, not MODS', () =>
-  /BONUS DONE/.test(src) && / OF '\+modifierResults\.length\+' BONUS/.test(src) && !/- MODS /.test(src));
+check('v107 level-win: bonus line uses plain unit-named BONUS wording, not MODS', () =>
+  /function bonusSummaryText/.test(src) && /ALL BONUSES WON/.test(src) && /COINS/.test(src.slice(src.indexOf('function bonusSummaryText'),src.indexOf('function rewardLine'))) && !/- MODS /.test(src));
 const failFixtures = [
   'prog=10; startLevel(0); score=300; while(blocks.length<20) blocks.push({x:0,w:96,col:"#fff"}); gameOver("topple"); failT=80;',
   'prog=10; startLevel(7); score=300; while(blocks.length<TIERS[6].n+10) blocks.push({x:0,w:96,col:"#fff"}); gameOver("fall"); failT=80;',
@@ -2011,7 +2011,7 @@ check('v114 top bar draws a live XP progress bar from lvl.xp / xpNeed()', () =>
   /const lw = 34, lx = W - PAD - lw, frac = clamp\(lvl\.xp \/ xpNeed\(\)/.test(src) &&
   /ctx\.fillRect\(lx, 11, fw, 3\)/.test(src));
 check('v114 level-up gets an emphasized plated moment, not a dim line', () =>
-  /LEVEL UP!  LV '\+lvl\.level\+'  \+'\+ECONOMY_RULES\.levelUpReward/.test(src) &&
+  /LEVEL UP! LV '\+lvl\.level\+' \+'\+ECONOMY_RULES\.levelUpReward\+' COINS'/.test(src) &&
   !/'LEVEL UP! NOW LV '\+lvl\.level\+' \+25'/.test(src));
 check('v114 top bar renders across levels/xp without throwing and tracks xpNeed', () => fresh.run(
   '(() => { const l0=lvl; let ok=true; for(const st of [{level:1,xp:0},{level:5,xp:499},{level:12,xp:250}]){ lvl=st; try{ topBar(""); }catch(e){ ok=false; } if(xpNeed()!==st.level*100) ok=false; } lvl=l0; return ok; })()') === true);
@@ -3071,11 +3071,11 @@ check('v131 the cloud catch grows INWARD so it cannot increase lean', () => {
   if (!(cloud[1] <= stone[1] + 0.001)) return 'cloud extended further out: ' + cloud[1] + ' vs ' + stone[1];
   return (cloud[1] - cloud[0]) > (stone[1] - stone[0]) ? true : 'cloud did not keep more block';
 });
-check('v132 only the biomes with a mechanic announce a rule on arrival', () =>
-  fresh.run('(() => { if (BIOME_RULES.length !== TIERS.length) return false;' +
+check('v132 only the areas with a mechanic announce a rule on arrival', () =>
+  fresh.run('(() => { if (AREA_RULES.length !== TIERS.length) return false;' +
     // v132 gave CAVES(0), TREETOPS(2) and LOWER SKY(3) their own mechanics, so they now speak too.
-    ' for (const i of [0,2,3,4,5,7,8,9]) if (!BIOME_RULES[i]) return false;' +
-    ' for (const i of [1,6,10]) if (BIOME_RULES[i]) return false;' +
+    ' for (const i of [0,2,3,4,5,7,8,9,10]) if (!AREA_RULES[i]) return false;' +
+    ' for (const i of [1,6]) if (AREA_RULES[i]) return false;' +
     ' return true; })()'));
 
 // ---------- v132: the EARLY levels finally have a signature of their own ----------
@@ -3371,7 +3371,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v178', () => /const CACHE = 'skystack-v178'/.test(sw));
+check('sw.js cache bumped to v179', () => /const CACHE = 'skystack-v179'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4665,7 +4665,7 @@ check('v178 developer level launch bypasses locks but owns neutral permissions',
 });
 check('v178 developer phase launch can enter otherwise non-campaign HIGH ORBIT', () => {
   const g=makeGame(undefined,false,false,undefined,'?dev=1');
-  return g.run('(() => { const i=DEV_TARGETS.findIndex(t=>t.id==="orbit-high"); if(i<0||!startDeveloperTarget(i))return false; return runLevel===-1 && blocks.length===325 && tier===9 && runContext.campaignLevel===8 && orbitCoastEnabled(); })()');
+  return g.run('(() => { const i=DEV_TARGETS.findIndex(t=>t.id==="orbit-high"); if(i<0||!startDeveloperTarget(i))return false; regionIntro=null; return runLevel===-1 && blocks.length===325 && tier===9 && runContext.campaignLevel===8 && orbitCoastEnabled(); })()');
 });
 check('v178 developer level completion cannot mutate any persistent save domain', () => {
   const g=makeGame({'skystack-tiers':'2','skystack-coins':'321','skystack-stats':JSON.stringify({games:4,blocks:9})},false,false,undefined,'?dev=1');
@@ -4700,15 +4700,15 @@ check('v178 THE STARS has three exact phases with progressively faster stronger 
   'STARS_PHASES[0].boost<STARS_PHASES[1].boost && STARS_PHASES[1].boost<STARS_PHASES[2].boost'));
 check('v178 stellar pulses respect modifier permissions but remain active in developer tests', () => fresh.run(
   '(() => { const mk=(mode,developer)=>createRunContext({mode,campaignLevel:9,startingAltitude:360,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{},developer});' +
-  'blocks=Array.from({length:360},()=>({x:70,w:96}));state="playing";slider={x:70,w:24,dir:1,speed:1};runContext=mk("level",false);const campaign=starsPulseEnabled();' +
+  'regionIntro=null;blocks=Array.from({length:360},()=>({x:70,w:96}));state="playing";slider={x:70,w:24,dir:1,speed:1};runContext=mk("level",false);const campaign=starsPulseEnabled();' +
   'runContext=mk("level",true);const dev=starsPulseEnabled();return campaign&&dev&&["practice","pure","daily"].every(mode=>{runContext=mk(mode,false);return !starsPulseEnabled();}); })()'));
 check('v178 a pulse reverses and flares the live slider after a visible countdown', () => fresh.run(
   '(() => { runContext=createRunContext({mode:"level",campaignLevel:9,startingAltitude:360,seed:178,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
-  'blocks=Array.from({length:360},()=>({x:70,w:96}));state="playing";slider={x:70,w:24,dir:1,speed:1};starsPhaseSeen=-1;updateStarsPulse(1);' +
+  'regionIntro=null;blocks=Array.from({length:360},()=>({x:70,w:96}));state="playing";slider={x:70,w:24,dir:1,speed:1};starsPhaseSeen=-1;updateStarsPulse(1);' +
   'const first=starsPulseTimer,dir=slider.dir;updateStarsPulse(first);return dir===1&&slider.dir===-1&&starsPulseCount===1&&starsPulseFlash===1&&starsPulseSpeedScale()>1; })()'));
 check('v178 a committed drop freezes the pulse and never alters its faller', () => fresh.run(
   '(() => { runContext=createRunContext({mode:"level",campaignLevel:9,startingAltitude:360,seed:179,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
-  'blocks=Array.from({length:360},()=>({x:70,w:96}));state="dropping";slider=null;faller={x:83,vx:.25,orbitV:0};starsPhaseSeen=0;starsPulseTimer=1;starsPulseBoost=0;' +
+  'regionIntro=null;blocks=Array.from({length:360},()=>({x:70,w:96}));state="dropping";slider=null;faller={x:83,vx:.25,orbitV:0};starsPhaseSeen=0;starsPulseTimer=1;starsPulseBoost=0;' +
   'starsPulseCount=0;updateStarsPulse(99);return starsPulseTimer===1&&faller.x===83&&faller.vx===.25&&starsPulseCount===0; })()'));
 check('v178 a normal campaign run can read and clear all three stellar pulse phases', () => {
   const normal=makeGame({'skystack-difficulty':JSON.stringify({level:'medium'})});
@@ -4726,6 +4726,65 @@ check('v178 THE STARS keeps its phase countdown and bounded pulse signal visible
   return /PULSE/.test(hud)&&/starsPulseTimer/.test(hud)&&/renderStarsPhaseHUD\(h\)/.test(src)&&
     /phase\.warn/.test(signal)&&/drawStarPix/.test(signal)&&/drawStarsPulseSignal\(\)/.test(src)
     ? true : 'THE STARS pulse is missing a persistent countdown or bounded world tell';
+});
+
+// ---------- v179 /polish — current level vocabulary and common-sense transition timing ----------
+check('v179 player-facing areas preserve art tiers without exposing TREETOPS as a level', () => fresh.run(
+  'AREA_NAMES.length===TIERS.length && AREA_NAMES[1]==="FOREST FLOOR" && AREA_NAMES[2]==="HIGH CANOPY" && ' +
+  'CHECKPOINT_REGISTRY[3].name==="HIGH CANOPY" && !AREA_NAMES.some(n=>n==="TREETOPS")'));
+check('v179 every campaign start announces the actual level and its purpose', () => fresh.run(
+  '(() => { if(LEVEL_TAGS.length!==LEVEL_COUNT||LEVEL_RULES.length!==LEVEL_COUNT)return false;' +
+  'for(let i=0;i<LEVEL_COUNT;i++){startLevel(i);const c=regionIntroCopy(regionIntro);' +
+  'if(regionIntro.kind!=="level"||regionIntro.level!==i||c.eyebrow!=="LEVEL "+(i+1)||c.title!==levelName(i)||!c.tag)return false;}' +
+  'return true; })()'));
+check('v179 THE FOREST continues into HIGH CANOPY as a shorter area beat', () => fresh.run(
+  '(() => { startLevel(1);const levelDur=regionIntro.dur,start=regionIntroCopy(regionIntro);' +
+  'startRegionIntro(2,"area");const area=regionIntroCopy(regionIntro);return start.title==="THE FOREST" && start.tag==="FOREST FLOOR TO CANOPY" && ' +
+  'area.eyebrow==="NEW AREA" && area.title==="HIGH CANOPY" && area.tag==="THE FOREST CONTINUES" && regionIntro.dur<levelDur; })()'));
+check('v179 transition cards state accurate mechanics for forest, SPACE, ORBIT, and THE STARS', () => fresh.run(
+  'LEVEL_RULES[1].includes("CANOPY") && LEVEL_RULES[7].includes("ASTEROIDS PULL") && ' +
+  'LEVEL_RULES[8].includes("LEAD") && LEVEL_RULES[9].includes("WAITING BLOCK") && ' +
+  'AREA_RULES[2].includes("SPRING") && AREA_RULES[9].includes("COAST") && AREA_RULES[10].includes("PULSES")'));
+check('v179 retry is labeled honestly and shorter than a new-level entrance', () => fresh.run(
+  '(() => { startLevel(1);const full=regionIntro.dur;startLevel(1,checkpointForLevel(1).id,runContext.seed);const c=regionIntroCopy(regionIntro);' +
+  'return regionIntro.kind==="retry"&&c.eyebrow==="RETRY"&&c.title==="THE FOREST"&&c.tag==="CLIMB AGAIN"&&regionIntro.dur<full; })()'));
+check('v179 delayed notifications wait their turn instead of competing with entry cards', () => fresh.run(
+  '(() => { notes=[];curNote=null;regionIntro=null;note("AFTER ENTRY","#fff",1,30,20);updateNotes(10);if(curNote||notes[0].delay!==10)return false;' +
+  'updateNotes(10);return curNote&&curNote.text==="AFTER ENTRY"&&notes.length===0; })()'));
+check('v179 urgent danger dismisses an entry card instead of hiding behind it', () => fresh.run(
+  '(() => { notes=[];curNote=null;startLevel(7);note("DANGER","#FF5E7E",3,30);updateNotes(1);' +
+  'return regionIntro===null&&curNote&&curNote.text==="DANGER"; })()'));
+check('v179 crossing THE FOREST midpoint shows one area card and a unit-named reward', () => {
+  const g=makeGame({'skystack-tiers':'1'});
+  return g.run('(() => { mode="endless";resetRun();state="playing";blocks=Array.from({length:43},()=>({x:70,w:96,col:{h:0,s:0,l:50}}));' +
+    'tier=1;notes=[];curNote=null;floaters=[];blocks.push({x:70,w:96,col:{h:0,s:0,l:50}});afterPlace({x:70,w:96,col:{h:0,s:0,l:50}},false,W/2);' +
+    'const c=regionIntroCopy(regionIntro);return prog===1&&c.title==="HIGH CANOPY"&&!notes.some(n=>/SURFACE|TREETOPS/.test(n.text))&&floaters.some(f=>/COINS$/.test(f.text)); })()');
+});
+check('v179 player-facing progress and bonus vocabulary matches the ten-level campaign', () => fresh.run(
+  'ACH.find(a=>a.id==="climb5").name==="CLEAR 5 LEVELS" && MDEF.modifier.text(1)==="WIN 1 BONUS" && ' +
+  'MDEF.modifier.text(2)==="WIN 2 BONUSES" && CHALLENGE_REGISTRY.find(c=>c.id==="cave-gate").desc.includes("BONUSES")'));
+check('v179 rendered home, unlock, challenge, and result copy no longer says chapter stage or modifiers', () => {
+  const visible=src.slice(src.indexOf('function renderHome'),src.indexOf('// ---------- loop ----------'));
+  return !/['"]CHAPTER ['"]/.test(visible)&&!/NEW STAGE UNLOCKED/.test(visible)&&
+    !/['"]MODIFIERS /.test(visible)&&!/WITH MODIFIERS/.test(src)&&!/ - MODIFIERS/.test(src)
+    ? true : 'stale chapter, stage, or modifier wording remains player-facing';
+});
+check('v179 level and area entry cards render safely at phone and wide sizes', () => {
+  const g=makeGame();
+  return g.run('(() => { for(const [w,h] of [[180,390],[242,300],[640,360]]){W=w;H=h;relayout();' +
+    'for(let i=0;i<LEVEL_COUNT;i++){startLevel(i);regionIntro.t=regionIntro.dur*.45;renderRegionIntro();}' +
+    'for(let i=0;i<TIERS.length;i++){startRegionIntro(i,"area");regionIntro.t=regionIntro.dur*.45;renderRegionIntro();}}return true; })()');
+});
+check('v179 SPACE-family mechanics and phase HUDs wait until the entry card clears', () => fresh.run(
+  '(() => { const rows=[];for(const lv of [7,8,9]){startLevel(lv);const paused=' +
+  '(lv===7?!spaceHazardsEnabled():lv===8?!orbitCoastEnabled():!starsPulseEnabled());regionIntro=null;const resumed=' +
+  '(lv===7?spaceHazardsEnabled():lv===8?orbitCoastEnabled():starsPulseEnabled());rows.push(paused&&resumed);}return rows.every(Boolean); })()'));
+check('v179 every SPACE-family phase HUD has an explicit intro-card guard', () => {
+  const hud=src.slice(src.indexOf('function renderSpacePhaseHUD'),src.indexOf('\nfunction drawStarsPulseSignal'));
+  return ['renderSpacePhaseHUD','renderOrbitPhaseHUD','renderStarsPhaseHUD'].every(name=>{
+    const start=hud.indexOf('function '+name),next=hud.indexOf('\nfunction ',start+10),seg=hud.slice(start,next<0?hud.length:next);
+    return /if \(regionIntro\) return;/.test(seg);
+  }) ? true : 'a SPACE-family phase HUD can overlap the entry card';
 });
 
 // ---------- report ----------
