@@ -42,7 +42,7 @@ function alphaCtx() {
   return p;
 }
 
-function makeGame(storageSeed, reducedMotion, audioEnabled, ctx2dOverride) {
+function makeGame(storageSeed, reducedMotion, audioEnabled, ctx2dOverride, locationSearch) {
   const mem = new Map(Object.entries(storageSeed || {}));
   const ctx2d = ctx2dOverride || anyProxy();
   const canvas = {
@@ -84,7 +84,7 @@ function makeGame(storageSeed, reducedMotion, audioEnabled, ctx2dOverride) {
       createElement: () => canvas
     },
     navigator: {},
-    location: { protocol: 'file:', href: 'file:///skystack', search: '' },
+    location: { protocol: 'file:', href: 'file:///skystack' + (locationSearch || ''), search: locationSearch || '' },
     URLSearchParams, URL, Blob: class {}, FileReader: class {},
     localStorage: {
       getItem: k => (mem.has(k) ? mem.get(k) : null),
@@ -3371,7 +3371,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v177', () => /const CACHE = 'skystack-v177'/.test(sw));
+check('sw.js cache bumped to v178', () => /const CACHE = 'skystack-v178'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -4648,6 +4648,84 @@ check('v177 the real campaign clears at 320 without weakening the coast mechanic
     'if(state==="playing"&&slider){const top=blocks[blocks.length-1],lead=c.vx*fallFramesFor(undefined,matAt(tier).grav),target=top.x+top.w/2-slider.w/2-lead;' +
     'if(Math.abs(slider.x-target)<=Math.max(3,slider.speed*1.5))releaseBlock();}update(1);}' +
     'return state==="levelwin"&&blocks.length===320&&flips>=2&&ORBIT_PHASES[0].speed===.85&&ORBIT_PHASES[1].speed===1.15; })()');
+});
+
+// ---------- v178 developer lab — URL-only, save-safe world testing ----------
+check('v178 developer tools stay unavailable on every normal game URL', () => {
+  const g=makeGame();
+  return g.run('!DEV_MODE && state==="splash" && startDeveloperLevel(0)===false && startDeveloperTarget(0)===false');
+});
+check('v178 ?dev=1 opens the dedicated developer lab', () => {
+  const g=makeGame(undefined,false,false,undefined,'?dev=1');
+  return g.run('DEV_MODE && state==="devmenu" && (()=>{renderDeveloper();return true;})()');
+});
+check('v178 developer level launch bypasses locks but owns neutral permissions', () => {
+  const g=makeGame({'skystack-tiers':'0'},false,false,undefined,'?dev=1');
+  return g.run('startDeveloperLevel(9) && runLevel===9 && runLaunch===360 && blocks.length===360 && runContext.developer===true && !runContext.rewardPermissions.earn && !runContext.rewardPermissions.progress && !runContext.recordPermissions.write && runContext.modifierPermissions.enabled && runContext.modifiers.length===0');
+});
+check('v178 developer phase launch can enter otherwise non-campaign HIGH ORBIT', () => {
+  const g=makeGame(undefined,false,false,undefined,'?dev=1');
+  return g.run('(() => { const i=DEV_TARGETS.findIndex(t=>t.id==="orbit-high"); if(i<0||!startDeveloperTarget(i))return false; return runLevel===-1 && blocks.length===325 && tier===9 && runContext.campaignLevel===8 && orbitCoastEnabled(); })()');
+});
+check('v178 developer level completion cannot mutate any persistent save domain', () => {
+  const g=makeGame({'skystack-tiers':'2','skystack-coins':'321','skystack-stats':JSON.stringify({games:4,blocks:9})},false,false,undefined,'?dev=1');
+  const before=JSON.stringify([...g.mem.entries()].sort());
+  g.run('startDeveloperLevel(0); while(blocks.length<levelGoalA(0))blocks.push({x:0,w:96,col:"#fff"}); levelComplete()');
+  const after=JSON.stringify([...g.mem.entries()].sort());
+  return before===after && g.run('state==="levelwin" && winReward===0 && winFirst===false');
+});
+check('v178 developer no-fail converts a total miss into a test landing', () => {
+  const g=makeGame(undefined,false,false,undefined,'?dev=1');
+  return g.run('(() => { startDeveloperTarget(0); const top=blocks[blocks.length-1]; state="dropping"; faller={x:top.x+top.w+40,x0:top.x+top.w+40,w:top.w,y:towerTopY()-BH,vx:0,vy:0,col:{h:0,s:0,l:50},golden:false}; const n=blocks.length; land(); return state==="playing"&&blocks.length===n+1&&developerRunActive(); })()');
+});
+check('v178 developer lab controls fit the minimum supported viewport', () => {
+  const g=makeGame(undefined,false,false,undefined,'?dev=1');
+  return g.run('(() => { W=242;H=300;relayout();renderDeveloper();const rs=[DEV_LEVEL_L,DEV_LEVEL_R,DEV_LEVEL_PLAY,DEV_TARGET_L,DEV_TARGET_R,DEV_TARGET_PLAY,DEV_EXIT];return rs.every(r=>r.x>=0&&r.y>=0&&r.x+r.w<=W&&r.y+r.h<=H); })()');
+});
+check('v178 developer target links can open a named world phase directly', () => {
+  const g=makeGame(undefined,false,false,undefined,'?dev=1&target=8');
+  return g.run('DEV_MODE && devSelectedTarget===7 && DEV_TARGETS[devSelectedTarget].id==="stars-mid" && startDeveloperTarget(devSelectedTarget) && blocks.length===420');
+});
+check('v178 developer runs can never offer or spend a campaign revive', () => {
+  const g=makeGame({'skystack-coins':'500'},false,false,undefined,'?dev=1');
+  return g.run('startDeveloperLevel(9) && (overCause="miss",canOfferRevive()===false)');
+});
+
+// ---------- v178 THE STARS — telegraphed pulses reverse only the waiting slider ----------
+check('v178 THE STARS has three exact phases with progressively faster stronger pulses', () => fresh.run(
+  'starsPhaseAt(359)===null && starsPhaseAt(360).id==="stellar-pulse" && starsPhaseAt(419).id==="stellar-pulse" && ' +
+  'starsPhaseAt(420).id==="constellation" && starsPhaseAt(479).id==="constellation" && ' +
+  'starsPhaseAt(480).id==="gate-resonance" && starsPhaseAt(539).id==="gate-resonance" && starsPhaseAt(540)===null && ' +
+  'STARS_PHASES[0].gap>STARS_PHASES[1].gap && STARS_PHASES[1].gap>STARS_PHASES[2].gap && ' +
+  'STARS_PHASES[0].boost<STARS_PHASES[1].boost && STARS_PHASES[1].boost<STARS_PHASES[2].boost'));
+check('v178 stellar pulses respect modifier permissions but remain active in developer tests', () => fresh.run(
+  '(() => { const mk=(mode,developer)=>createRunContext({mode,campaignLevel:9,startingAltitude:360,seed:17,skill:.35,loadout:{},characterId:"aurora",characterMastery:{},developer});' +
+  'blocks=Array.from({length:360},()=>({x:70,w:96}));state="playing";slider={x:70,w:24,dir:1,speed:1};runContext=mk("level",false);const campaign=starsPulseEnabled();' +
+  'runContext=mk("level",true);const dev=starsPulseEnabled();return campaign&&dev&&["practice","pure","daily"].every(mode=>{runContext=mk(mode,false);return !starsPulseEnabled();}); })()'));
+check('v178 a pulse reverses and flares the live slider after a visible countdown', () => fresh.run(
+  '(() => { runContext=createRunContext({mode:"level",campaignLevel:9,startingAltitude:360,seed:178,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:360},()=>({x:70,w:96}));state="playing";slider={x:70,w:24,dir:1,speed:1};starsPhaseSeen=-1;updateStarsPulse(1);' +
+  'const first=starsPulseTimer,dir=slider.dir;updateStarsPulse(first);return dir===1&&slider.dir===-1&&starsPulseCount===1&&starsPulseFlash===1&&starsPulseSpeedScale()>1; })()'));
+check('v178 a committed drop freezes the pulse and never alters its faller', () => fresh.run(
+  '(() => { runContext=createRunContext({mode:"level",campaignLevel:9,startingAltitude:360,seed:179,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});' +
+  'blocks=Array.from({length:360},()=>({x:70,w:96}));state="dropping";slider=null;faller={x:83,vx:.25,orbitV:0};starsPhaseSeen=0;starsPulseTimer=1;starsPulseBoost=0;' +
+  'starsPulseCount=0;updateStarsPulse(99);return starsPulseTimer===1&&faller.x===83&&faller.vx===.25&&starsPulseCount===0; })()'));
+check('v178 a normal campaign run can read and clear all three stellar pulse phases', () => {
+  const normal=makeGame({'skystack-difficulty':JSON.stringify({level:'medium'})});
+  return normal.run(
+    '(() => { startLevel(9,"checkpoint-9",0x178);let frames=0,phases=0,lastCount=0;' +
+    'while(frames++<32000&&state!=="levelwin"&&state!=="levelfail"&&state!=="gameover"){' +
+    'const p=starsPhaseAt(blocks.length);if(p&&starsPulseCount>lastCount){phases|=1<<p.index;lastCount=starsPulseCount;}' +
+    'if(state==="playing"&&slider){const top=blocks[blocks.length-1],target=top.x+top.w/2-slider.w/2;' +
+    'if(Math.abs(slider.x-target)<=Math.max(3,slider.speed*1.5))releaseBlock();}update(1);}' +
+    'return state==="levelwin"&&blocks.length===540&&phases===7&&starsPulseCount>=3; })()');
+});
+check('v178 THE STARS keeps its phase countdown and bounded pulse signal visible', () => {
+  const hud=src.slice(src.indexOf('function renderStarsPhaseHUD'),src.indexOf('\nfunction renderHUD'));
+  const signal=src.slice(src.indexOf('function drawStarsPulseSignal'),src.indexOf('\nfunction renderHUD'));
+  return /PULSE/.test(hud)&&/starsPulseTimer/.test(hud)&&/renderStarsPhaseHUD\(h\)/.test(src)&&
+    /phase\.warn/.test(signal)&&/drawStarPix/.test(signal)&&/drawStarsPulseSignal\(\)/.test(src)
+    ? true : 'THE STARS pulse is missing a persistent countdown or bounded world tell';
 });
 
 // ---------- report ----------
