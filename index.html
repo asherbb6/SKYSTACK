@@ -1271,8 +1271,10 @@ const BALANCE_REGISTRY = deepFreeze({
   harness:{ fps:60, corridorWidth:220, ordinaryTimingFactor:1.18, perfectEvery:3 },
   balloon:{ driftSpeed:0.35, minRowGap:8, spawnChance:0.5, margin:14, hitR:10,
     goodAltRows:3, badAltRows:6, badSpeedMul:1.6, goldenCoins:25, rushMul:1.8, rushFrames:120, scaleAlt:120,
-    wLow:{ gift:70, golden:6, dud:16, trap:8, gas:0 }, wHigh:{ gift:42, golden:6, dud:24, trap:18, gas:10 },
-    unlock:{ dud:2, trap:4, gas:6 }, gasAltBlocks:120,
+    wLow:{ gift:60, golden:6, repair:10, dud:16, trap:8, gas:0, storm:0 },
+    wHigh:{ gift:36, golden:6, repair:8, dud:20, trap:14, gas:8, storm:8 },
+    unlock:{ dud:2, trap:4, storm:5, gas:6 }, gasAltBlocks:120, stormAltBlocks:95,
+    repairPx:18, stormStrength:0.32, stormFrames:150,
     diffScale:{ minRating:3, maxRating:11, minShare:0.5 },
     gas:{ cloudFrames:360, shrinkPerFrame:0.18, minW:12, cloudRows:2.5 } },
   seed:{ dailyXor:0x9E3779B9 }, materials:MATERIALS
@@ -1436,12 +1438,19 @@ const POW = {
   coin:   { c1:'#FFD75E', c2:'#B8860B', label:'+5' },
   shield: { c1:'#5EC8F2', c2:'#1E6E94', label:'SHIELD' },
   wide:   { c1:'#62E8B5', c2:'#1E8A5C', label:'WIDE' },
+  repair: { c1:'#72F0D0', c2:'#197A69', label:'REPAIRED' },
   slow:   { c1:'#C77EFF', c2:'#6A2E9C', label:'SLOW' },
   aura:   { c1:'#FF9ED2', c2:'#A03C74', label:'PRECISION' },
   gold:   { c1:'#FFE28A', c2:'#B8860B', label:'GOLDEN' },
   fever:  { c1:'#FF7E6B', c2:'#A63222', label:'+4 COMBO' }
 };
-const GIFT_POOL = ['shield','wide','slow','aura','gold','fever'];
+const GIFT_POOL = ['shield','wide','repair','slow','aura','gold','fever'];
+const BALLOON_PROFILES = deepFreeze([
+  { id:'calm', bobAmp:2.2, bobRate:.045, pendulum:1.2 },
+  { id:'buoyant', bobAmp:4.2, bobRate:.072, pendulum:2.4 },
+  { id:'glider', bobAmp:2.8, bobRate:.032, pendulum:3.1 }
+]);
+const BALLOON_SKINS = deepFreeze(['panel','stripe','patch']);
 const POW_NAME = { shield:'SHIELD', aura:'AIM', slow:'SLOW' };
 const POW_DESC = {
   shield:'SURVIVE ONE TOTAL MISS',
@@ -1864,7 +1873,15 @@ function advanceTutorial(h) {
 
 const stars = []; for (let i = 0; i < 80; i++) stars.push({ x: Math.random()*W, y: Math.random()*5000-4600, tw: Math.random()*6.28, sz: Math.random()<.2?2:1 });
 const clouds = []; for (let i = 0; i < 6; i++) clouds.push({ x: Math.random()*W, y: Math.random()*1100-850, s:.05+Math.random()*.1, w:20+Math.random()*24 });
-const birds = []; for (let i = 0; i < 5; i++) birds.push({ x: Math.random()*W, y: 90+Math.random()*120, s:.7+Math.random()*.6, ph: Math.random()*6.28, sp:.25+Math.random()*.35, startle:0 });   // v130: startle = scattered by a heavy landing
+// v181: gameplay birds own absolute world altitudes, just like cave wildlife. The removed legacy
+// `birds` array stored a random SCREEN y, so the flock followed the camera into new biomes and then
+// vanished at a darkness cutoff. These authored flocks scroll out with their actual forest/sky home.
+const SKY_FLOCKS = deepFreeze([
+  { a:52, phase:.12, speed:.035, count:4, spread:14, color:'#3E4A36' },   // canopy edge
+  { a:70, phase:.48, speed:.050, count:6, spread:17, color:'#41607A' },   // lower-sky skein
+  { a:94, phase:.81, speed:.042, count:5, spread:19, color:'#647C96' }    // cloud-sea travelers
+]);
+let skyFlockStartle=0;
 // cave wildlife: bats, wall beetles + dirt worms live at absolute cave altitudes (a) so they stay underground
 const bats = []; for (let i = 0; i < 5; i++) bats.push({ a: 4+Math.random()*26, x: Math.random()*W, vx:(Math.random()<.5?-1:1)*(.4+Math.random()*.5), ph: Math.random()*6.28, wob: Math.random()*6.28 });
 const beetles = []; for (let i=0;i<7;i++) beetles.push({ a: 2+Math.random()*28, side: Math.random()<.5?0:1, ph: Math.random()*6.28 });
@@ -1979,6 +1996,7 @@ function resetRun() {
   initModifierRuntime();
   fever = false; feverT = 0; nova = false; novaT = 0; novaFlash = 0; skybreakT = 0;
   balance = 0; swayX = 0; paused = false; dropPending = 0; squashPow = 0; toppleHideTop = 0; resetStarRun();
+  skyFlockStartle=0;
   faller = null;   // v125: a fresh run must not inherit a stale faller — it now carries lateral drift state (vx/x0)
   timeLeft = activeChallenge()&&activeChallenge().duration?activeChallenge().duration:(m.time || 0);
   PERFECT_PX = BALANCE_REGISTRY.physics.perfectPx;
@@ -2157,7 +2175,7 @@ function releaseBlock() {
 function schedulePickups() {
   if (!canSpawnPickups(runContext)) return;
   while (nextPickupRow < blocks.length + 16) {
-    const type = pick(['coin','coin','coin','wide','slow','shield','aura','gold','fever']);
+    const type = pick(['coin','coin','coin','wide','repair','slow','shield','aura','gold','fever']);
     const SR = slideRange();                          // always reachable: spawn inside the block corridor
     const x = SR.l + 22 + rnd() * (SR.r - SR.l - 44);
     pickups.push({ row: nextPickupRow, x, type, got: false });
@@ -2177,6 +2195,17 @@ function applyPower(type, cx, cy2, silent) {
   if (type === 'coin') { addCoins(5, cx, cy2); }
   else if (type === 'shield') { shield = Math.min(shield + 1, 2); if (!silent) sfx.shield(); }
   else if (type === 'wide') { widenNext = true; if (!silent) sfx.power(); }
+  else if (type === 'repair') {
+    const top=blocks[blocks.length-1];
+    if (top) {
+      const gain=Math.min(BALANCE_REGISTRY.balloon.repairPx,Math.max(0,BASE_W-top.w));
+      const center=top.x+top.w/2;
+      top.w+=gain; top.x=clamp(center-top.w/2,0,W-top.w);
+      top.bal=(top.bal||0)*.45;
+    }
+    balance*=.45;
+    if (!silent) sfx.power();
+  }
   else if (type === 'slow') { slowBlocks = 4; if (!silent) sfx.power(); }
   else if (type === 'aura') { auraBlocks = 5; if (!silent) sfx.power(); }
   else if (type === 'gold') { goldenNext = true; if (slider) slider.golden = true; if (!silent) sfx.golden(); }
@@ -2201,12 +2230,15 @@ function enterFever() {
 function balloonKindWeights() {
   const B = BALANCE_REGISTRY.balloon, f = clamp(blocks.length / B.scaleAlt, 0, 1), w = {};
   for (const k in B.wLow) w[k] = B.wLow[k] + (B.wHigh[k] - B.wLow[k]) * f;
-  const bad = ['dud', 'trap', 'gas'];
+  const bad = ['dud', 'trap', 'gas', 'storm'];
   if (runLevel >= 0) {                                   // campaign: unlock gates + rating share
     const D = B.diffScale, rt = LEVEL_REGISTRY[runLevel].difficultyRating;
     const s = D.minShare + (1 - D.minShare) * clamp((rt - D.minRating) / (D.maxRating - D.minRating), 0, 1);
     for (const k of bad) w[k] = runLevel < B.unlock[k] ? 0 : w[k] * s;
-  } else if (blocks.length < B.gasAltBlocks) w.gas = 0;  // endless: gas only high up
+  } else {
+    if (blocks.length < B.gasAltBlocks) w.gas = 0;        // endless: hazards join only after their world altitude
+    if (blocks.length < B.stormAltBlocks) w.storm = 0;
+  }
   return w;
 }
 function pickBalloonKind() {
@@ -2215,7 +2247,7 @@ function pickBalloonKind() {
   return 'gift';
 }
 function balloonFlight(kind) {
-  const B = BALANCE_REGISTRY.balloon, bad = kind === 'dud' || kind === 'trap';
+  const B = BALANCE_REGISTRY.balloon, bad = kind === 'dud' || kind === 'trap' || kind === 'storm';
   return { altRows: bad ? B.badAltRows : B.goodAltRows, speed: B.driftSpeed * (bad ? B.badSpeedMul : 1) };
 }
 function maybeSpawnBalloon() {
@@ -2226,16 +2258,22 @@ function maybeSpawnBalloon() {
   if (rnd() > B.spawnChance) { lastBalloonRow = blocks.length; return; }
   const side = rnd() < 0.5 ? -1 : 1;                 // floats in from a screen edge — its own telegraph
   const kind = pickBalloonKind(), f = balloonFlight(kind);
-  const type = kind === 'golden' ? pick(['gold','fever']) : kind === 'gift' ? pick(GIFT_POOL) : 'coin';
+  const type = kind === 'golden' ? pick(['gold','fever']) : kind === 'repair' ? 'repair' : kind === 'gift' ? pick(GIFT_POOL) : 'coin';
+  const ph=rnd()*6.28,profile=BALLOON_PROFILES[Math.floor(ph*1000)%BALLOON_PROFILES.length],
+    skin=BALLOON_SKINS[Math.floor(ph*1700)%BALLOON_SKINS.length]; // variety without perturbing seeded gameplay
   balloon = {
     x: side < 0 ? -B.margin : W + B.margin,
     vx: side < 0 ? f.speed : -f.speed,
     wy: GROUND_Y - (blocks.length + f.altRows) * BH - BH/2,
-    ph: rnd() * 6.28, type, kind
+    ph, type, kind, profile:profile.id, skin,
+    bobAmp:profile.bobAmp,bobRate:profile.bobRate,pendulum:profile.pendulum,windV:0
   };
   lastBalloonRow = blocks.length;
 }
-function balloonWorldY() { return balloon.wy + Math.sin(tick * .06 + balloon.ph) * 3; }
+function balloonWorldY() {
+  const amp=balloon.bobAmp===undefined?3:balloon.bobAmp,rate=balloon.bobRate===undefined?.06:balloon.bobRate;
+  return balloon.wy + (reduceMotion?0:Math.sin(tick*rate+balloon.ph)*amp);
+}
 function balloonTouches(x, y, w, h) {                // circle-vs-rect: balloons are fragile, blocks are solid
   const R = BALANCE_REGISTRY.balloon.hitR, bx = balloon.x, by = balloonWorldY();
   const cx = clamp(bx, x, x + w), cy2 = clamp(by, y, y + h);
@@ -2260,7 +2298,14 @@ function popBalloon() {
     for (let i = 0; i < 14; i++) particles.push({ x: bx, y: by, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*3, life: 1.2, color:'#9BD44A' });
     shake = Math.max(shake, reduceMotion?2:4); sfx.pop(); balloon = null; return;
   }
-  runBalloons++; runPowerups++; stats.balloons++;         // gift + golden are the "good pops"
+  if (kind === 'storm') {                                 // short directional gust; announced and fully recoverable
+    const B=BALANCE_REGISTRY.balloon,dir=balloon.vx>=0?1:-1;
+    wind={dir,str:B.stormStrength,dur:B.stormFrames,t:0,balloon:true};
+    note(dir>0?'SQUALL >':'< SQUALL','#BFE8FF',3,120);
+    for (let i=0;i<14;i++) particles.push({x:bx,y:by,vx:dir*(.8+Math.random()*2.4),vy:(Math.random()-.5)*1.4,life:1,color:'#BFE8FF'});
+    shake=Math.max(shake,reduceMotion?1:3); sfx.wind(); sfx.pop(); balloon=null; return;
+  }
+  runBalloons++; runPowerups++; stats.balloons++;         // gift + golden + repair are the "good pops"
   if (kind === 'golden') {
     addCoins(BALANCE_REGISTRY.balloon.goldenCoins, bx, by);
     applyPower(balloon.type, bx, by);                     // type is a forced top power (gold/fever)
@@ -2277,8 +2322,8 @@ function popBalloon() {
 function landFx(w) {
   squash = 1;
   squashPow = clamp(0.42 + (w / BASE_W) * 0.30 + Math.min(combo, 10) * 0.028, 0.42, 1);
-  // v130: the sky notices a heavy landing — birds scatter in proportion to the slam
-  if (!reduceMotion) for (const b of birds) b.startle = Math.max(b.startle || 0, (squashPow - 0.5) * 1.6);
+  // v181: the world-altitude flocks scatter in proportion to the slam, then settle in place.
+  if (!reduceMotion) skyFlockStartle=Math.max(skyFlockStartle,(squashPow-.5)*1.6);
 }
 function land() {
   const top = blocks[blocks.length - 1], f = faller;
@@ -2834,7 +2879,6 @@ function adaptToScreen() {
   for (const cf of coinFx) { cf.x += dx; cf.y += dgy; }
   for (const st of stars) st.x *= kx;
   for (const cl of clouds) cl.x *= kx;
-  for (const bd of birds) bd.x *= kx;
   for (const fl of evFlakes) { fl.x *= kx; fl.y *= ky; }
   cameraY = towerTopY() - (H - 100); cameraTarget = cameraY; camVel = 0;
   canvasRect = null; fitCanvas();
@@ -3150,7 +3194,9 @@ function update(dt) {
   }
   if (balloon && (state === 'playing' || state === 'dropping')) {
     const B = BALANCE_REGISTRY.balloon;
-    balloon.x += balloon.vx * dt;
+    const gust=wind?windWaveAt(balloon.x)*wind.dir*wind.str*.72:0;
+    balloon.windV=(balloon.windV||0)+(gust-(balloon.windV||0))*Math.min(1,.055*dt);
+    balloon.x += (balloon.vx+balloon.windV) * dt;             // envelopes lag into gusts instead of sliding on rails
     if ((balloon.vx > 0 && balloon.x > W + B.margin) || (balloon.vx < 0 && balloon.x < -B.margin)) balloon = null;   // missed: floats off the far side
     else {
       if (state === 'dropping' && faller && balloonTouches(faller.x, faller.y, faller.w, BH)) popBalloon();          // sniped mid-air
@@ -3219,7 +3265,7 @@ function update(dt) {
   // clouds drift; active wind visibly blows them along
   const wEnv = wind ? Math.sin(Math.min(wind.t/wind.dur,1)*Math.PI) : 0;
   for (const c of clouds) { c.x += (c.s + (wind ? wind.dir * wEnv * 0.5 : 0))*dt; if (c.x > W+30) c.x = -30; if (c.x < -30) c.x = W+30; }
-  for (const b of birds) { b.x += (b.sp + (b.startle||0)) * dt; if (b.startle > 0) b.startle = Math.max(0, b.startle - .06*dt); if (b.x > W+16) b.x = -16; }   // v130
+  if (skyFlockStartle>0) skyFlockStartle=Math.max(0,skyFlockStartle-.06*dt);
   for (const b of bats) { b.x += b.vx*dt; b.ph += 0.32*dt; b.wob += 0.05*dt; if (b.x > W+14) b.x = -14; if (b.x < -14) b.x = W+14; }
   for (const bt of beetles) bt.ph += 0.02*dt;
   for (const wm of worms) wm.ph += 0.03*dt;
@@ -3353,6 +3399,11 @@ function drawIcon(type, x, y, bare) {
     ctx.fillRect(x+5.5,y+2.5,.5,.5); ctx.fillRect(x+6,y+3,.5,2); ctx.fillRect(x+6.5,y+3.5,.5,1); ctx.fillRect(x+5.5,y+5,.5,.5);
     ctx.fillStyle='#FFF'; ctx.fillRect(x+3,y+3.5,2,.5);
   }
+  else if (type === 'repair') {     // reinforced plus: rebuilds the current tower top
+    ctx.fillRect(x+3,y+1,2,6); ctx.fillRect(x+1,y+3,6,2);
+    ctx.fillStyle='#FFF'; ctx.fillRect(x+3.5,y+1.5,1,5); ctx.fillRect(x+1.5,y+3.5,5,1);
+    ctx.fillStyle=P.c2; ctx.fillRect(x+3.5,y+3.5,1,1);
+  }
   else if (type === 'slow') {       // clock: round fine disc, bezel notch, thin hands
     ctx.fillRect(x+3,y+1.5,2,.5); ctx.fillRect(x+2.5,y+2,3,.5); ctx.fillRect(x+2,y+2.5,4,.5);
     ctx.fillRect(x+1.5,y+3,5,2); ctx.fillRect(x+2,y+5,4,.5); ctx.fillRect(x+2.5,y+5.5,3,.5); ctx.fillRect(x+3,y+6,2,.5);
@@ -3386,12 +3437,25 @@ function pixDisc(cx2, cy2, r, color) {
     ctx.fillRect(cx2 - ww, cy2 + yy, ww*2 + 1, 1);
   }
 }
+function drawPowerSignature(type,cx2,cy3,pulse,row) {
+  const P=POW[type],a=.3+pulse*.25;
+  ctx.globalAlpha=a; ctx.fillStyle=P.c1;
+  if (type==='wide') { ctx.fillRect(cx2-10,cy3-1,3,2);ctx.fillRect(cx2+8,cy3-1,3,2);ctx.fillRect(cx2-11,cy3,1,1);ctx.fillRect(cx2+11,cy3,1,1); }
+  else if (type==='repair') { ctx.fillRect(cx2-1,cy3-11,2,3);ctx.fillRect(cx2-1,cy3+9,2,3);ctx.fillRect(cx2-11,cy3-1,3,2);ctx.fillRect(cx2+9,cy3-1,3,2); }
+  else if (type==='shield') { ctx.fillRect(cx2-8,cy3-7,2,2);ctx.fillRect(cx2+7,cy3-7,2,2);ctx.fillRect(cx2-8,cy3+6,2,2);ctx.fillRect(cx2+7,cy3+6,2,2); }
+  else if (type==='slow') { const a2=reduceMotion?row:tick*.035+row;ctx.fillRect(Math.round(cx2+Math.cos(a2)*10),Math.round(cy3+Math.sin(a2)*10),2,2); }
+  else if (type==='aura') { ctx.fillRect(cx2-1,cy3-11,2,2);ctx.fillRect(cx2-1,cy3+9,2,2);ctx.fillRect(cx2-11,cy3-1,2,2);ctx.fillRect(cx2+9,cy3-1,2,2); }
+  else if (type==='gold') { ctx.fillRect(cx2-9,cy3-7,1,1);ctx.fillRect(cx2+9,cy3+6,1,1);ctx.fillRect(cx2+7,cy3-9,1,1); }
+  else if (type==='fever') { ctx.fillRect(cx2-8,cy3+5,2,2);ctx.fillRect(cx2+7,cy3-7,2,2);ctx.fillRect(cx2-1,cy3-11,2,3); }
+  ctx.globalAlpha=1;
+}
 function drawPow(p, cy) {
   if (p.got) return;
   const y = GROUND_Y - p.row*BH - BH/2 - cy + Math.sin(tick*.08 + p.row)*2;
   if (y < -14 || y > H + 14) return;
   const P = POW[p.type], pulse = .5 + .5*Math.sin(tick*.12 + p.row);
   const cx2 = Math.round(p.x), cy3 = Math.round(y) + 4;
+  drawPowerSignature(p.type,cx2,cy3,pulse,p.row);                     // distinct silhouette before the player reads the icon
   pixDisc(cx2, cy3, 7, P.c2);                                          // rim base
   ctx.globalAlpha = .35 + pulse*.5; pixDisc(cx2, cy3, 7, P.c1); ctx.globalAlpha = 1;  // rim pulses bright
   pixDisc(cx2, cy3, 5, '#141022');                                     // dark coin face
@@ -3427,39 +3491,54 @@ function drawBalloon(cy) {
   const y = balloonWorldY() - cy;
   if (y < -40 || y > H + 60) return;
   const kind = balloon.kind || 'gift';
-  const sway = Math.sin(tick*.05 + balloon.ph);
-  const bx = Math.round(balloon.x), by = Math.round(y);
+  const sway = reduceMotion?0:Math.sin(tick*.05 + balloon.ph);
+  const lean=reduceMotion?0:clamp(Math.round((balloon.windV||0)*7),-2,2);
+  const bx = Math.round(balloon.x)+lean, by = Math.round(y);
   const PAL = { gift: POW[balloon.type] || POW.coin,
                 golden: { c1:'#FFE28A', c2:'#B8860B' },
+                repair: POW.repair,
                 dud: { c1:'#8A8F9C', c2:'#4A4F5C' },
                 trap: { c1:'#FF6B5A', c2:'#7A241C' },
-                gas: { c1:'#9BD44A', c2:'#3E5A1E' } };
+                gas: { c1:'#9BD44A', c2:'#3E5A1E' },
+                storm: { c1:'#9AC9E8', c2:'#304B6A' } };
   const P = PAL[kind];
-  // envelope: dark silhouette rim, bright body, sheen, taper + knot
+  const skin=balloon.skin||'panel';
+  // authored envelope: asymmetric wind lean, alternate seams, a crisp taper and knot
   ctx.fillStyle = P.c2;
-  ctx.fillRect(bx-5, by-7, 10, 10); ctx.fillRect(bx-6, by-6, 12, 8); ctx.fillRect(bx-4, by-8, 8, 12);
+  ctx.fillRect(bx-5, by-8, 10, 11); ctx.fillRect(bx-6, by-6, 12, 7); ctx.fillRect(bx-4, by-9, 8, 13);
   if (kind === 'trap') { ctx.fillRect(bx-7, by-3, 2, 2); ctx.fillRect(bx+5, by-3, 2, 2); ctx.fillRect(bx-1, by-10, 2, 2); }   // spikes
   ctx.fillStyle = P.c1;
   if (kind === 'dud') { ctx.fillRect(bx-3, by-5, 6, 7); ctx.fillRect(bx-4, by-4, 8, 5); }   // saggy, smaller body
-  else { ctx.fillRect(bx-4, by-7, 8, 10); ctx.fillRect(bx-5, by-6, 10, 8); ctx.fillRect(bx-3, by-8, 6, 2); }
+  else { ctx.fillRect(bx-4, by-8, 8, 11); ctx.fillRect(bx-5, by-6, 10, 7); ctx.fillRect(bx-3, by-9, 6, 2); }
+  ctx.globalAlpha=.35;ctx.fillStyle=P.c2;
+  if (skin==='stripe') { ctx.fillRect(bx-5,by-3,10,2);ctx.fillRect(bx-3,by-8,6,1); }
+  else if (skin==='patch') { ctx.fillRect(bx+1,by-6,3,4);ctx.fillStyle=P.c1;ctx.fillRect(bx+2,by-5,2,2); }
+  else { ctx.fillRect(bx-1,by-8,2,11);ctx.fillRect(bx-5,by-1,10,1); }
+  ctx.globalAlpha=1;
   ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(bx-3, by-6, 2, 3); ctx.fillRect(bx-2, by-7, 1, 1);
   ctx.fillStyle = P.c2; ctx.fillRect(bx-2, by+3, 4, 1); ctx.fillRect(bx-1, by+4, 2, 1);
   if (kind === 'golden' && !reduceMotion && Math.floor(tick/6)%2===0)   // sparkle
     { ctx.fillStyle='#FFF6E8'; ctx.fillRect(bx+4, by-6, 1, 1); ctx.fillRect(bx-6, by-2, 1, 1); }
   if (kind === 'gas' && !reduceMotion && Math.floor(tick/8)%2===0)      // toxic seep
     { ctx.fillStyle='#C4E87A'; ctx.fillRect(bx-6, by-1, 1, 1); ctx.fillRect(bx+5, by-4, 1, 1); }
-  // string sways as it bobs, badge hangs at the end
+  if (kind === 'storm' && !reduceMotion && Math.floor(tick/7)%2===0)
+    { ctx.fillStyle='#EAF7FF';ctx.fillRect(bx+3,by-5,2,1);ctx.fillRect(bx+2,by-4,1,2);ctx.fillRect(bx+1,by-2,2,1); }
+  // twin suspension lines lag behind the envelope; cargo behaves like a small pendulum
+  const pend=balloon.pendulum===undefined?2:balloon.pendulum;
   ctx.fillStyle = 'rgba(255,246,232,0.6)';
-  for (let s2 = 0; s2 < 6; s2++) ctx.fillRect(bx + Math.round(sway * s2/5 * 2), by + 5 + s2, 1, 1);
-  const gx = bx + Math.round(sway * 2), gy = by + 16;
+  for (let s2=0;s2<6;s2++) {
+    const line=Math.round(sway*s2/5*pend);
+    ctx.fillRect(bx-2+line,by+5+s2,1,1);ctx.fillRect(bx+2+line,by+5+s2,1,1);
+  }
+  const gx = bx + Math.round(sway*pend), gy = by + 16;
   pixDisc(gx, gy, 6, P.c2); pixDisc(gx, gy, 5, '#141022');
-  if (kind === 'gift') drawIcon(balloon.type, gx-4, gy-4, true);
+  if (kind === 'gift' || kind === 'repair') drawIcon(balloon.type, gx-4, gy-4, true);
   else if (kind === 'gas') {                              // pixel skull badge
     ctx.fillStyle='#E8F2D8';
     ctx.fillRect(gx-2,gy-3,4,3); ctx.fillRect(gx-3,gy-2,6,2); ctx.fillRect(gx-2,gy,1,2); ctx.fillRect(gx+1,gy,1,2);
     ctx.fillStyle='#141022'; ctx.fillRect(gx-2,gy-2,1,1); ctx.fillRect(gx+1,gy-2,1,1);
   }
-  else txt(kind === 'golden' ? '$' : kind === 'trap' ? '!' : '?', gx, gy-3, 1, P.c1, 'center');
+  else txt(kind === 'golden' ? '$' : kind === 'trap' ? '!' : kind === 'storm' ? 'Z' : '?', gx, gy-3, 1, P.c1, 'center');
 }
 const MASCOT_BODY = '#FFE7A8', MASCOT_SHADE = '#E8B860';
 function drawMascot(cx, topScreenY) {
@@ -5761,38 +5840,31 @@ function drawLowerSkyAir(cy, ph) {
       drawCloudBank(bx, Math.round(y), Math.round(D.halfW * (1 + gw * 0.28)), D.h, D.a, sd);    // and stretched by the gust
     }
   }
-  drawSkyFlock(cy, ph, A0, A1);
 }
-// A skein of birds crossing the open air. They are the biome's LIFE and its second wind tell: a
-// gust visibly shoves the whole flock sideways before it reaches your block.
-function drawSkyFlock(cy, ph, A0, A1) {
-  const A = A0 + (A1 - A0) * 0.62;
-  const y = worldY(A, cy);
-  if (y < -20 || y > H + 20) return;
-  const span = W + 90;
-  const fx0 = reduceMotion ? W * 0.5 : ((ph * 0.05) % span) - 45;
-  const gw = wind ? windWaveAt(fx0) : 0;
-  const fx = fx0 + (wind ? gw * wind.dir * 26 : 0);
-  // v157: the first cut packed five birds into 18px and read as a SAWTOOTH, not a skein. A flock
-  // needs air between its birds: wide ranks, a shallow V, and each bird just three pixels.
-  ctx.fillStyle = '#41607A';
-  for (let b = 0; b < 6; b++) {
-    const side = b % 2 ? 1 : -1, rank = (b + 1) >> 1;
-    const bxp = Math.round(fx - rank * 17 - (b % 2) * 5);                                      // ranks well apart, halves offset
-    const byp = Math.round(y + side * rank * 8);
-    if (bxp < -8 || bxp > W + 8) continue;
-    const flap = reduceMotion ? 0 : (Math.sin(ph * 0.19 + b * 1.7) > 0 ? 1 : 0);               // two-frame wing beat
-    ctx.globalAlpha = 0.46 - rank * 0.05;
-    ctx.fillRect(bxp - 1, byp + flap, 1, 1);                                                   // left wing
-    ctx.fillRect(bxp,     byp,        1, 1);                                                   // body
-    ctx.fillRect(bxp + 1, byp + flap, 1, 1);                                                   // right wing
+// Authored altitude-owned flocks: the camera can pass them, but they can never follow it between
+// biomes. Horizontal loops complete fully off-screen; vertical visibility comes only from worldY.
+function drawWorldFlocks(cy,ph) {
+  for (let fi=0;fi<SKY_FLOCKS.length;fi++) {
+    const F=SKY_FLOCKS[fi],y=worldY(F.a,cy);
+    if (y < -28 || y > H+28) continue;
+    const margin=56,span=W+margin*2;
+    const baseX=reduceMotion?W*(.32+F.phase*.36):((ph*(F.speed+skyFlockStartle*.035)+F.phase*span)%span)-margin;
+    const gw=wind?windWaveAt(baseX):0,lead=baseX+(wind?gw*wind.dir*26:0);
+    for (let b=0;b<F.count;b++) {
+      const side=b%2?1:-1,rank=(b+1)>>1;
+      const bx=Math.round(lead-rank*F.spread-(b%2)*5);
+      const scatter=reduceMotion?0:skyFlockStartle*(5+rank*3);
+      const by=Math.round(y+side*rank*(6+fi)+Math.sin(ph*.09+b*1.7)*scatter);
+      if (bx < -10 || bx > W+10) continue;
+      drawBird(bx,by,.48+fi*.06,ph*.22+b*.9,F.color);
+    }
   }
-  ctx.globalAlpha = 1;
 }
 
 function drawBiomeDecor(cy) {
   const ph = reduceMotion ? 0 : tick;
   drawGroundWorld(cy, ph);                                      // rooted caves/surface/trees — anchored, no fade
+  drawWorldFlocks(cy,ph);                                       // canopy/lower-sky/cloud birds — absolute world altitudes
 
   const { ti, wUp, wDn } = currentBiome(cy);                   // celestial sky bands only sit ABOVE the ground world
   if (ti >= 4) {
@@ -5984,7 +6056,12 @@ function render() {
       ctx.fillRect(cx+1.5,cyy+4.5,cw-3,.5); ctx.fillRect(cx+3,cyy+7,Math.floor(cw*.55),.5);  // shaded underbelly
     }
     ctx.globalAlpha = 1;
-    if (dark < .4 && (menu || h > SURF_A)) { for (const b of birds) drawBird(b.x, b.y, b.s, tick*.22 + b.ph, 'rgba(38,28,54,0.78)'); }   // birds ride the daytime sky, never underground
+    if (menu && dark < .4) {   // menu-only atmosphere; gameplay birds are altitude-owned in drawWorldFlocks
+      for (let b=0;b<3;b++) {
+        const span=W+80,x=reduceMotion?W*(.25+b*.2):((tick*(.22+b*.035)+b*71)%span)-40;
+        drawBird(x,84+b*26,.72+b*.08,tick*.22+b*1.7,'rgba(38,28,54,0.72)');
+      }
+    }
   }
   if (!menu) { ctx.save(); ctx.translate(0, cySub); drawBiomeDecor(cy); ctx.restore(); }   // per-tier biome sprites you climb past (matches the map)
   drawEventFx(menu);

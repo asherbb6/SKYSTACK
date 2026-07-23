@@ -547,14 +547,22 @@ check('drawGroundWorld renders across the whole climb without throwing', () => {
 });
 // ---- Phase 4: wildlife ----
 check('wildlife helpers + herds exist', () => bio.run(
-  '["drawBird","drawBat","drawCaveCreatures"].every(f => eval("typeof "+f) === "function") && birds.length > 0 && bats.length > 0 && beetles.length > 0 && worms.length > 0'));
+  '["drawBird","drawBat","drawCaveCreatures","drawWorldFlocks"].every(f => eval("typeof "+f) === "function") && SKY_FLOCKS.length > 0 && bats.length > 0 && beetles.length > 0 && worms.length > 0'));
 check('cave wildlife is anchored to cave altitudes (below the surface line)', () => bio.run(
   'bats.every(b => b.a < SURF_A) && beetles.every(b => b.a < SURF_A) && worms.every(w => w.a < SURF_A)'));
+check('sky wildlife owns authored forest/sky altitudes instead of screen y positions', () => bio.run(
+  'SKY_FLOCKS.every(f=>Number.isFinite(f.a)&&f.a>=TIERS[1].n&&f.a<TIERS[4].n&&f.y===undefined)'));
 check('drawBird/drawBat/drawCaveCreatures render across the climb without throwing', () => {
   bio.run('for (let p = 0; p < 6.3; p += 1.2) { drawBird(50, 80, 1, p, "#000"); drawBat(60, 90, p); }');
-  bio.run('for (let a = 0; a < 60; a += 8) { cameraY = GROUND_Y - a*BH - (H-100); drawCaveCreatures(cameraY, 30); }');
+  bio.run('for (let a = 0; a < 120; a += 8) { cameraY = GROUND_Y - a*BH - (H-100); drawCaveCreatures(cameraY, 30); drawWorldFlocks(cameraY,30); }');
   return true;
 });
+check('world flocks translate rigidly with camera motion instead of following the screen', () => bio.run(
+  '(() => { const old=drawBird,cap=cy=>{const out=[];drawBird=(x,y)=>out.push([x,y]);drawWorldFlocks(cy,120);return out;};' +
+  'const c1=GROUND_Y-70*BH-(H-100),a=cap(c1),b=cap(c1+13);drawBird=old;if(!a.length||a.length!==b.length)return false;' +
+  'return a.every((p,i)=>p[0]===b[i][0]&&p[1]-b[i][1]===13); })()'));
+check('legacy screen-fixed gameplay bird state and altitude cutoff are gone', () =>
+  !/const birds =/.test(src) && !/for \(const b of birds\)/.test(src) && !/h > SURF_A/.test(src.slice(src.indexOf('if (dark < .58'),src.indexOf('drawEventFx(menu)'))));
 // ---- living procedural cave (Level 1) ----
 check('cave renderer suite exists (backdrop/walls/ground/torch/weather/ceiling/orchestrator)', () => bio.run(
   '["drawCave","drawCaveBackdrop","drawCaveWalls","drawCaveGround","drawCaveTorchLight","drawCaveWeather","drawCaveCeiling"].every(f => eval("typeof "+f) === "function")'));
@@ -1783,7 +1791,7 @@ check('v108 kind weights interpolate toward more bad balloons as you climb', () 
   ' blocks.length=1; const lo=balloonKindWeights(); blocks.length=999; const hi=balloonKindWeights();' +
   ' return share(hi) > share(lo) + 0.1; })()'));
 check('v108 pickBalloonKind returns only valid kinds and shifts distribution with altitude', () => bl.run(
-  '(() => { const roll=(n)=>{ const c={gift:0,golden:0,dud:0,trap:0,gas:0}; for(let i=0;i<n;i++){const k=pickBalloonKind(); if(!(k in c))return null; c[k]++;} return c; };' +
+  '(() => { const roll=(n)=>{ const c={gift:0,golden:0,repair:0,dud:0,trap:0,gas:0,storm:0}; for(let i=0;i<n;i++){const k=pickBalloonKind(); if(!(k in c))return null; c[k]++;} return c; };' +
   ' blocks.length=1; const lo=roll(600); blocks.length=999; const hi=roll(600);' +
   ' if(!lo||!hi) return "invalid kind"; return (hi.dud+hi.trap) > (lo.dud+lo.trap); })()'));
 check('v108 spawn tags the balloon with a kind and matching flight', () => bl.run(
@@ -1792,7 +1800,7 @@ check('v108 spawn tags the balloon with a kind and matching flight', () => bl.ru
   ' if(!balloon) return "never spawned"; const B=BALANCE_REGISTRY.balloon;' +
   ' const f=balloonFlight(balloon.kind);' +
   ' const expWy=GROUND_Y-(blocks.length+f.altRows)*BH-BH/2;' +
-  ' return ["gift","golden","dud","trap","gas"].includes(balloon.kind) && balloon.wy===expWy && Math.abs(balloon.vx)===f.speed; })()'));
+  ' return ["gift","golden","repair","dud","trap","gas","storm"].includes(balloon.kind) && balloon.wy===expWy && Math.abs(balloon.vx)===f.speed; })()'));
 check('v108 pop: golden gives the coin jackpot AND a top power-up', () => { const g=makeGame();
   g.run('mode="endless"; resetRun(); state="playing"; while(blocks.length<12) blocks.push({x:60,w:96,col:"#fff"});');
   return g.run('(() => { const B=BALANCE_REGISTRY.balloon; coins=0; goldenNext=false; combo=0;' +
@@ -2995,13 +3003,11 @@ check('v129 no text spills the canvas on ANY screen across a swept viewport rang
 check('v130 a heavy landing startles the birds more than a light one, and it settles back', () => {
   const g = makeGame();
   return g.run('(() => { mode="endless"; resetRun(); state="playing";' +
-    ' for (const b of birds) b.startle = 0; combo = 0; landFx(20);' +
-    ' const light = Math.max(...birds.map(b => b.startle));' +
-    ' for (const b of birds) b.startle = 0; combo = 10; landFx(BASE_W);' +
-    ' const heavy = Math.max(...birds.map(b => b.startle));' +
+    ' skyFlockStartle=0; combo = 0; landFx(20); const light=skyFlockStartle;' +
+    ' skyFlockStartle=0; combo = 10; landFx(BASE_W); const heavy=skyFlockStartle;' +
     ' if (!(heavy > light)) return "heavy " + heavy + " vs light " + light;' +
     ' for (let i=0;i<80;i++) update(1);' +
-    ' return Math.max(...birds.map(b => b.startle)) === 0 ? true : "startle never settled"; })()') === true;
+    ' return skyFlockStartle === 0 ? true : "startle never settled"; })()') === true;
 });
 check('v130 a SKYBREAK shoves the clouds outward from centre', () => {
   const g = makeGame();
@@ -3030,8 +3036,8 @@ check('v130 the death beat runs slow, then resumes, and never changes the outcom
 check('v130 reduceMotion gets neither the startle nor the slow motion', () => {
   const g = makeGame(undefined, true);
   return g.run('(() => { mode="endless"; resetRun(); state="playing";' +
-    ' for (const b of birds) b.startle = 0; combo = 10; landFx(BASE_W);' +
-    ' if (Math.max(...birds.map(b => b.startle)) !== 0) return "startled under reduceMotion";' +
+    ' skyFlockStartle=0; combo = 10; landFx(BASE_W);' +
+    ' if (skyFlockStartle !== 0) return "startled under reduceMotion";' +
     ' for(let i=0;i<20;i++) blocks.push({x:W/2-48,w:96,col:{h:0,s:0,l:50}});' +
     ' balance = toppleLimit()+5; gameOver("topple"); goT = 0;' +
     ' return beatScale() === 1 ? true : "slow motion under reduceMotion"; })()') === true;
@@ -3373,7 +3379,7 @@ check('v151 a cleared card never runs its star objective under the CLEARED label
 
 // ---------- static checks ----------
 const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-check('sw.js cache bumped to v180', () => /const CACHE = 'skystack-v180'/.test(sw));
+check('sw.js cache bumped to v181', () => /const CACHE = 'skystack-v181'/.test(sw));
 check('v119 sw.js precaches the 11 biome cover PNGs', () =>
   /\.\/covers\/' \+ n \+ '\.png/.test(sw) &&
   /'caves','surface','treetops','lowersky','cloudnine','jetstream','stratosphere','aurora','space','orbit','thestars'/.test(sw) &&
@@ -3861,7 +3867,7 @@ check('v156 reduced motion holds the flock and banks still', () => {
 
 check('v157 cloud banks are continuous silhouettes, never stacked discs', () => {
   const i0 = src.indexOf('function drawLowerSkyAir');
-  const seg = src.slice(i0, src.indexOf('function drawSkyFlock', i0)).replace(/\/\/[^\n]*/g, '');
+  const seg = src.slice(i0, src.indexOf('function drawWorldFlocks', i0)).replace(/\/\/[^\n]*/g, '');
   if (/pixDisc/.test(seg)) return 'the air is drawing pixDiscs again (that read as bokeh)';
   // a real cumulus has a lumpy top: sample the profile and demand direction changes + asymmetry
   return fresh.run('(() => { const hw = 30, tops = [];' +
@@ -4802,6 +4808,47 @@ check('v180 active bonus progress lives in context without an activation popup',
   '(() => { runContext=createRunContext({mode:"level",campaignLevel:3,startingAltitude:60,seed:180,skill:.35,loadout:{},characterId:"aurora",characterMastery:{}});initModifierRuntime();' +
   'const m=runContext.modifiers[0],p=modifierRuntime(m);p.status="announced";notes=[];curNote=null;updateModifiersForPlacement(m.startAltitude,{perfect:true,cut:false,miss:false,center:W/2});' +
   'const info=modifierHUDInfo(m.startAltitude);return p.status==="active"&&notes.length===0&&curNote===null&&!!(info&&info.text); })()'));
+
+// ---------- v181: world-owned wildlife + varied balloons/power-ups ----------
+check('v181 repair power rebuilds the current top toward base width and calms its lean', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="endless";resetRun();state="playing";const top=blocks[blocks.length-1];top.x=80;top.w=54;top.bal=12;balance=10;' +
+    'const c0=top.x+top.w/2;applyPower("repair",W/2,100,true);return top.w===72&&Math.abs(top.x+top.w/2-c0)<1e-9&&top.bal===5.4&&balance===4.5; })()');
+});
+check('v181 repair balloon guarantees repair and counts as a good pop', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="endless";resetRun();state="playing";const top=blocks[0];top.w=50;top.x=90;' +
+    'balloon={x:W/2,wy:GROUND_Y-3*BH,ph:0,type:"repair",kind:"repair"};const rb=runBalloons;popBalloon();' +
+    'return balloon===null&&top.w===68&&runBalloons===rb+1; })()');
+});
+check('v181 storm balloons unlock late, create a directional squall, and award nothing', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="level";resetRun();state="playing";blocks=Array.from({length:120},()=>({x:70,w:80}));runLevel=4;const locked=balloonKindWeights().storm===0;' +
+    'runLevel=5;const open=balloonKindWeights().storm>0;const rb=runBalloons,rp=runPowerups;' +
+    'balloon={x:W/2,vx:-1,wy:GROUND_Y-10*BH,ph:0,type:"coin",kind:"storm"};popBalloon();' +
+    'const warned=(curNote&&curNote.text.indexOf("SQUALL")>=0)||notes.some(n=>n.text.indexOf("SQUALL")>=0);' +
+    'return locked&&open&&balloon===null&&wind&&wind.balloon===true&&wind.dir===-1&&warned&&runBalloons===rb&&runPowerups===rp; })()');
+});
+check('v181 balloon spawns carry deterministic motion personalities and visual skins', () => {
+  const g=makeGame();
+  return g.run('(() => { mode="endless";resetRun();state="playing";blocks=Array.from({length:40},()=>({x:70,w:80}));let n=0;' +
+    'while(!balloon&&n++<500){lastBalloonRow=0;maybeSpawnBalloon();}return balloon&&BALLOON_PROFILES.some(p=>p.id===balloon.profile)&&' +
+    'BALLOON_SKINS.includes(balloon.skin)&&balloon.bobAmp>0&&balloon.bobRate>0&&balloon.pendulum>0; })()');
+});
+check('v181 balloons respond to live wind while reduced motion removes vertical bob', () => {
+  const g=makeGame();
+  const reduced=makeGame(null,true);
+  const windMoved=g.run('(() => { mode="endless";resetRun();state="playing";balloon={x:W/2,vx:.35,windV:0,wy:100,ph:1,bobAmp:4,bobRate:.07,type:"repair",kind:"repair"};' +
+    'wind={dir:1,str:.4,dur:100,t:50};const x0=balloon.x;update(1);return balloon.x>x0+.35; })()');
+  const still=reduced.run('(() => { balloon={x:W/2,vx:.35,windV:0,wy:100,ph:1,bobAmp:4,bobRate:.07,type:"repair",kind:"repair"};' +
+    'const y1=balloonWorldY();tick+=100;return balloonWorldY()===y1; })()');
+  return windMoved&&still;
+});
+check('v181 all balloon kinds and power signatures render without throwing', () => {
+  const g=makeGame();
+  return g.run('(() => { try { for(const kind of ["gift","golden","repair","dud","trap","gas","storm"]){balloon={x:W/2,wy:100,ph:1,type:kind==="repair"?"repair":"shield",kind,skin:"stripe",bobAmp:3,bobRate:.05,pendulum:2,windV:.1};drawBalloon(0);}' +
+    'for(const type of Object.keys(POW))drawPowerSignature(type,40,40,.8,3);return true;}catch(e){return String(e);} })()');
+});
 
 // ---------- report ----------
 let pass = 0, fail = 0;
