@@ -7817,7 +7817,7 @@ function shopDivider(x,y,w){   // v187: engraved hairline between sections of th
 // v188: anti-aliased system font for small/dense labels (far more legible than the 5x7 bitmap at
 // tiny sizes). Big display text (SHOP, skin name) stays on the pixel font for brand. Returns width.
 function txtSmooth(text,x,y,px,color,align,weight){
-  ctx.save();
+  ctx.save(); px*=0.84;   // v189: dial the smooth labels back down (they read a touch large)
   ctx.font=(weight||600)+' '+px+'px system-ui,"Segoe UI",Roboto,Arial,sans-serif';
   ctx.textAlign=align||'left'; ctx.textBaseline='top'; ctx.fillStyle=color;
   ctx.fillText(text,Math.round(x*2)/2,Math.round(y*2)/2);
@@ -7898,8 +7898,9 @@ function renderShop() {
   }
   divAt((SHOP_RAIL.y+SHOP_RAIL.h+BOOST_TOP)/2);
 
-  // boosts (on the card) — small centred label + three boost buttons
+  // boosts (on the card) — small centred label with gold flanking rules + three boost buttons
   txtSmooth('RUN BOOSTS',W/2,BOOST_TOP+2,8,'#FFD75E','center',700);
+  ctx.fillStyle='rgba(255,215,94,0.5)'; ctx.fillRect(W/2-40,BOOST_TOP+5,14,1); ctx.fillRect(W/2+26,BOOST_TOP+5,14,1);
   if (!canUseLoadout(mode) && mode === 'pure') {
     txtSmooth('PURE: LOADOUT OFF',W/2,LOAD_CHIPS[0].y+8,8,'rgba(255,246,232,0.52)','center',600);
   } else if (!canUseLoadout(mode) && mode === 'practice') {
