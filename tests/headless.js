@@ -1474,9 +1474,8 @@ check('v180 in-run context uses one 0.82 backing surface', () =>
   /function renderContextHUD\(info\) \{[\s\S]*?drawNotifyStrip\(info\.text,info\.alpha,info\.accent\)/.test(src));
 
 // ---------- v98 icon/cloud/nav art detail ----------
-check('v98 shop nav glyph is a shopping cart with twin wheels, not a crate', () =>
-  /shopping cart: grip, slatted basket/.test(src) &&
-  /ctx\.fillRect\(cx-2\.5,y\+6\.5,1\.5,1\.5\);ctx\.fillRect\(cx\+1\.5,y\+6\.5,1\.5,1\.5\)/.test(src) &&
+check('v193 shop nav glyph is a shopping bag, not a crate', () =>
+  /shopping bag: body \+ handle \+ seam/.test(src) &&
   !/supply crate: chamfered plate/.test(src));
 check('v98 active nav underline sits 1px clear of the label glyphs', () =>
   /ctx\.fillRect\(cx-7,NAV_Y\+22,14,1\)/.test(src) && !/ctx\.fillRect\(cx-7,NAV_Y\+21,14,1\)/.test(src));
