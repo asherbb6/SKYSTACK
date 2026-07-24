@@ -509,6 +509,18 @@ const SKINS = [
 ];
 const RARE_COL = { COMMON:'#9FB4C7', RARE:'#5EC8F2', EPIC:'#C77EFF', LEGENDARY:'#FFD75E' };
 let coins = store.get('skystack-coins', 0);
+let premium = store.get('skystack-premium', false);   // v192 path-A: one-time remove-ads / premium unlock
+// v192 path-A monetization (STATIC): real purchases go through EXTERNAL hosted checkout at these links
+// — REPLACE the placeholders with Asher's Ko-fi/Gumroad/Stripe URLs; the buyer gets a code to redeem.
+const STORE_LINKS = { coins:'https://ko-fi.com/REPLACE_ME', premium:'https://ko-fi.com/REPLACE_ME', tip:'https://ko-fi.com/REPLACE_ME' };
+const COIN_PACKS_DEF = [{c:500,p:'$0.99'},{c:1500,p:'$1.99'},{c:4000,p:'$3.99'}];
+const REDEEM_CODES = { SKY500:{coins:500}, SKY1500:{coins:1500}, PREMIUM:{premium:true,coins:1000} };   // placeholder demo codes → real ones come from the checkout
+let COIN_WATCH, COIN_PACKS=[], COIN_PREMIUM, COIN_REDEEM, COIN_TIP;
+function openStore(u){ try{ window.open(u,'_blank','noopener'); }catch(e){} toast('OPENING STORE'); }
+function redeemPrompt(){ let c=null; try{ c=(window.prompt('Enter your code:')||'').trim().toUpperCase(); }catch(e){}
+  const r=c&&REDEEM_CODES[c];
+  if(r){ if(r.coins)transactCoins(r.coins,true); if(r.premium){premium=true;store.set('skystack-premium',true);} sfx.unlock(); toast('REDEEMED!'); }
+  else if(c){ sfx.deny(); toast('INVALID CODE'); } }
 let owned = store.get('skystack-skins', ['aurora', 'candy']);
 let skinId = store.get('skystack-skin', 'aurora');
 const skin = () => SKINS.find(s => s.id === skinId) || SKINS[0];
@@ -2868,10 +2880,10 @@ function relayout() {
   const headerH=titleH+tabH+2;                                    // v186: title row + page-tab row = one merged header unit
   const fixed=headerH+identityH+passiveH+railH+BOOST_CARD_H+gap*5;
   const stageH=Math.max(shopCompact?72:112,shopRoom-fixed);
-  let sy=3;
+  let sy=0;   // v192: header sits flush against the very top edge
   SHOP_HEADER={x:shopX,y:sy,w:shopW,h:headerH,titleH:titleH};
-  const tabW=Math.min(74,shopW-16), tabStripY=sy+titleH+1;
-  SHOP_TABS=[{id:'character',x:Math.round(W/2-tabW/2),y:tabStripY,w:tabW,h:tabH}];
+  const tabStripY=sy+titleH+1, tabW=Math.min(64,Math.floor((shopW-16-6)/2)), tabsX=Math.round(W/2-(tabW*2+6)/2);
+  SHOP_TABS=[{id:'character',x:tabsX,y:tabStripY,w:tabW,h:tabH},{id:'coins',x:tabsX+tabW+6,y:tabStripY,w:tabW,h:tabH}];
   sy+=headerH+gap;
   SHOP_STAGE={x:shopX,y:sy,w:shopW,h:stageH}; SHOP_TOP=sy; sy+=stageH+gap;
   SHOP_IDENTITY={x:shopX,y:sy,w:shopW,h:identityH}; sy+=identityH+gap;
@@ -3076,6 +3088,15 @@ function pressDown(e) {
     if (shopDetailOpen) { shopDetailOpen=false; sfx.tap(); return; }
     if (inR(p,SHOP_BACK_BTN,3)) { state='home'; fadeT=reduceMotion?0:1; sfx.tap(); return; }
     if (navHit(p)) return;
+    for (const t of SHOP_TABS) if (inR(p, t, 3)) { if (shopView!==t.id) { shopView=t.id; sfx.tap(); if(t.id==='character')railCenterOn(previewIdx); } return; }   // v192: SKINS / COINS page tabs
+    if (shopView==='coins') {   // v192 store-page taps
+      if (COIN_WATCH && inR(p,COIN_WATCH,3)) { transactCoins(50,true); sfx.coin(); toast('+50 COINS'); return; }   // TODO: gate behind a REAL rewarded-ad SDK before shipping (this is a stub)
+      if (COIN_PACKS) for (const r of COIN_PACKS) if (inR(p,r,2)) { openStore(STORE_LINKS.coins); return; }
+      if (COIN_PREMIUM && !premium && inR(p,COIN_PREMIUM,3)) { openStore(STORE_LINKS.premium); return; }
+      if (COIN_REDEEM && inR(p,COIN_REDEEM,3)) { redeemPrompt(); return; }
+      if (COIN_TIP && inR(p,COIN_TIP,3)) { openStore(STORE_LINKS.tip); return; }
+      return;
+    }
     if (inR(p, SHOP_RAIL, 4)) { railDrag={x:p.x, scroll:railScroll, moved:false}; railScrollV=0; return; }   // v186: drag to scroll; tap-to-select resolves on pressUp
     if (inR(p,SHOP_DETAIL_BTN,3)) { shopDetailOpen=true; sfx.tap(); return; }
     if (inR(p, EQUIP_BTN, 3)) {
@@ -7832,6 +7853,41 @@ function txtSmooth(text,x,y,px,color,align,weight){
   ctx.fillText(text,Math.round(x*2)/2,Math.round(y*2)/2);
   const w=ctx.measureText(text).width; ctx.restore(); return w;
 }
+function drawPlayGlyph(x,y,col){ ctx.save(); ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(x-3,y-4.5); ctx.lineTo(x+4.5,y); ctx.lineTo(x-3,y+4.5); ctx.closePath(); ctx.fill(); ctx.restore(); }
+function drawCoinPack(r,pk){
+  shopPanel(r.x,r.y,r.w,r.h,{r:2,shadow:false,fill:'#131D30',border:SUI.border});
+  drawCoin(r.x+9,r.y+Math.round(r.h/2)-3);
+  txtSmooth(pk.c.toLocaleString()+' COINS',r.x+21,r.y+Math.round(r.h/2)-5,9,'#FFF6E8','left',700);
+  const bw=42,bx=r.x+r.w-bw-4; shopButton({x:bx,y:r.y+4,w:bw,h:r.h-8},null,{accent:VISUAL_SYSTEM.palette.gold});
+  txtSmooth(pk.p,bx+bw/2,r.y+Math.round(r.h/2)-4,9,'#2A1E06','center',800);
+}
+function drawPremiumCard(r){
+  shopPanel(r.x,r.y,r.w,r.h,{r:2,shadow:false,fill:premium?'rgba(255,215,94,0.10)':'#17223C',border:VISUAL_SYSTEM.palette.gold,glow:'rgba(255,215,94,0.3)',glowBlur:5});
+  drawShopPassiveIcon(r.x+13,Math.round(r.y+r.h/2),VISUAL_SYSTEM.palette.gold);
+  txtSmooth(premium?'PREMIUM ACTIVE':'GO PREMIUM',r.x+25,r.y+6,10,VISUAL_SYSTEM.palette.gold,'left',800);
+  txtSmooth('remove ads  ·  +1,000 coins',r.x+25,r.y+r.h-11,7,'rgba(255,246,232,0.7)','left',500);
+  if(!premium){ const bw=42,bx=r.x+r.w-bw-4; shopButton({x:bx,y:r.y+5,w:bw,h:r.h-10},null,{accent:VISUAL_SYSTEM.palette.gold}); txtSmooth('$2.99',bx+bw/2,r.y+Math.round(r.h/2)-4,9,'#2A1E06','center',800); }
+}
+function renderCoinsContent(){   // v192 path-A store page (static): opt-in ad + hosted-checkout packs + redeem
+  const x=6, w=W-12; let cy=SHOP_STAGE.y+4;
+  txtSmooth('GET COINS',W/2,cy,13,VISUAL_SYSTEM.palette.gold,'center',800); cy+=20;
+  COIN_WATCH={x,y:cy,w,h:32};
+  shopButton(COIN_WATCH,null,{accent:VISUAL_SYSTEM.palette.mint});
+  drawPlayGlyph(x+16,cy+16,'#08301F');
+  txtSmooth('WATCH AN AD  ·  EARN +50',W/2+7,cy+11,9,'#08301F','center',800);
+  cy+=35;
+  txtSmooth('free  ·  opt-in  ·  never forced',W/2,cy,7,SUI.muted,'center',500); cy+=13;
+  shopDivider(0,cy,W); cy+=5;
+  txtSmooth('COIN PACKS',x+2,cy,8,SUI.muted,'left',700); cy+=12;
+  COIN_PACKS=[];
+  for(const pk of COIN_PACKS_DEF){ const r={x,y:cy,w,h:26}; COIN_PACKS.push(r); drawCoinPack(r,pk); cy+=30; }
+  cy+=3;
+  COIN_PREMIUM={x,y:cy,w,h:30}; drawPremiumCard(COIN_PREMIUM); cy+=35;
+  const halfW=Math.floor((w-6)/2);
+  COIN_REDEEM={x,y:cy,w:halfW,h:20}; COIN_TIP={x:x+halfW+6,y:cy,w:halfW,h:20};
+  shopButton(COIN_REDEEM,'REDEEM CODE',{outline:true,accent:SUI.blue,textCol:SUI.blue});
+  shopButton(COIN_TIP,premium?'THANK YOU':'SUPPORT',{outline:true,accent:'#FF7EA8',textCol:'#FF7EA8'});
+}
 function renderShop() {
   // v187 premium Skin Shop: a flat nav-style header + ONE unified content card with engraved
   // dividers (no floating cards), sharper corners. Layout geometry unchanged.
@@ -7847,9 +7903,12 @@ function renderShop() {
   drawCoin(coinX,SHOP_HEADER.y+Math.round(titleH/2)-2.5);
   txt(coinText,coinX+9,SHOP_HEADER.y+Math.round((titleH-7)/2),1,'#FFF6E8','left');
   ctx.fillStyle='rgba(255,246,232,0.07)'; ctx.fillRect(SHOP_HEADER.x+8,SHOP_HEADER.y+titleH,SHOP_HEADER.w-16,.75);
-  const tab=SHOP_TABS[0], tcx=Math.round(tab.x+tab.w/2);
-  txtSmooth('SKINS',tcx,tab.y+Math.round((tab.h-9)/2),9,SUI.gold,'center',700);
-  ctx.fillStyle=SUI.gold; ctx.fillRect(tcx-18,tab.y+tab.h-1,36,1.5);   // active underline, nav-style
+  const TAB_LBL={character:'SKINS',coins:'COINS'};
+  for(const t of SHOP_TABS){ const active=(t.id==='coins')?shopView==='coins':shopView!=='coins', tcx=Math.round(t.x+t.w/2);
+    txtSmooth(TAB_LBL[t.id],tcx,t.y+Math.round((t.h-9)/2),9,active?SUI.gold:SUI.muted,'center',active?700:600);
+    if(active){ ctx.fillStyle=SUI.gold; ctx.fillRect(tcx-16,t.y+t.h-1,32,1.5); } }
+
+  if (shopView==='coins') { renderCoinsContent(); return; }   // v192: the Get-Coins / Premium store page
 
   const sk = CHARACTER_REGISTRY[previewIdx], passive=PASSIVE_REGISTRY[sk.passiveId], isOwned = owned.indexOf(sk.id) !== -1, isEquipped = sk.id === skinId;
 

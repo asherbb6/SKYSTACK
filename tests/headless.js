@@ -1604,8 +1604,8 @@ check('v184 identity, passive, rail, boosts, and navigation occupy separate orde
 // ---------- v184 approved Skin Shop hierarchy ----------
 check('v184 the shop hierarchy fills the available phone column without dead zones', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[180,520],[320,480]]){W=w;H=h;relayout();' +
-  'if(SHOP_HEADER.y!==3||SHOP_HEADER.x!==Math.round((W-SHOP_HEADER.w)/2))return false;' +
-  'const bottom=NAV_Y-(BOOST_TOP+BOOST_CARD_H);if(bottom<3||bottom>7)return false;' +
+  'if(SHOP_HEADER.y!==0||SHOP_HEADER.x!==Math.round((W-SHOP_HEADER.w)/2))return false;' +
+  'const bottom=NAV_Y-(BOOST_TOP+BOOST_CARD_H);if(bottom<3||bottom>10)return false;' +
   'if(SHOP_STAGE.h<112)return false;}return true;})()'));
 check('v184 boost chips use one horizontal icon-name-status family', () => fresh.run(
   '(() => { for(const [w,h] of [[180,390],[180,427],[180,520],[320,480]]){W=w;H=h;relayout();' +
@@ -3177,14 +3177,15 @@ check('v133 the Base system is switched off but left completely intact', () => f
   ' if (typeof drawBaseBlock !== "function" || BASE_THEMES.length !== TIERS.length) return "themes gone";' +
   ' if (!FUTURE_SAVE_CONTRACTS.bases) return "save contract gone";' +
   ' return true; })()') === true);
-check('v133 the BASES shop tab is unreachable and leaves no empty tab behind', () => fresh.run(
+check('v192 the retired BASES tab stays gone; the shop tab strip is SKINS + COINS, centred', () => fresh.run(
   '(() => { const W0=W,H0=H; W=320;H=480; relayout();' +
-  ' const ids = SHOP_TABS.map(t=>t.id), n = SHOP_TABS.length, t = SHOP_TABS[0];' +
-  ' const centred = Math.abs((t.x + t.w/2) - W/2) <= 1;' +
+  ' const ids = SHOP_TABS.map(t=>t.id), n = SHOP_TABS.length, a=SHOP_TABS[0], last=SHOP_TABS[n-1];' +
+  ' const centred = Math.abs((a.x + (last.x+last.w))/2 - W/2) <= 1;' +
   ' W=W0;H=H0; relayout();' +
   ' if (ids.indexOf("base") >= 0) return "base tab still present";' +
-  ' if (n !== 1) return "unexpected tab count " + n;' +
-  ' return centred ? true : "lone tab not centred"; })()') === true);
+  ' if (ids.indexOf("character") < 0 || ids.indexOf("coins") < 0) return "missing skins/coins tab";' +
+  ' if (n !== 2) return "unexpected tab count " + n;' +
+  ' return centred ? true : "tab strip not centred"; })()') === true);
 check('v133 BASE GALLERY is not left in the collection list unachievable', () =>
   fresh.run('COLLECTION_REGISTRY.every(c => c.id !== "base-gallery")'));
 check('v133 disabling bases does not touch the saved base data', () => {
