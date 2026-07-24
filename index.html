@@ -7734,11 +7734,19 @@ function drawShopTower(sk,r) {                        // beveled, glossy 3D bloc
 function shopVisibleCharacter(slot) {
   return CHARACTER_REGISTRY[(previewIdx+slot)%CHARACTER_REGISTRY.length];
 }
-function drawShopSkinTile(x,y,w,h,sk,selected) {   // v187: sharper wide carousel tile, glossy blocks
+function drawLockGlyph(x,y,col){   // ~7px padlock centred at (x,y)
+  ctx.save();
+  ctx.strokeStyle=col; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x,y-1.5,2,Math.PI,0,false); ctx.stroke();   // shackle
+  shopRR(x-3,y-0.5,6,5,1); ctx.fillStyle=col; ctx.fill();                                                    // body
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(x-0.5,y+1,1,2);                                             // keyhole
+  ctx.restore();
+}
+function drawShopSkinTile(x,y,w,h,sk,selected) {   // v191: rarity-tinted border/glow + owned/locked state
+  const owned2=owned.indexOf(sk.id)!==-1, rareCol=RARE_COL[sk.rare], hot=sk.rare==='EPIC'||sk.rare==='LEGENDARY';
   shopPanel(x,y,w,h,{r:2,shadow:false,
     fill:selected?'rgba(98,232,181,0.16)':'#131D30',
-    border:selected?SUI.mint:SUI.border,
-    glow:selected?'rgba(98,232,181,0.6)':null, glowBlur:6});
+    border:selected?SUI.mint:rareCol,                                   // rarity always visible (drives desire)
+    glow:selected?'rgba(98,232,181,0.6)':(hot?rareCol:null), glowBlur:selected?6:4});
   const labelH=9, previewTop=y+4, previewH=h-labelH-6, bw=Math.max(10,w-10), bh=Math.max(4,Math.floor((previewH-4)/3)), bx=Math.round(x+w/2-bw/2);
   for(let i=0;i<3;i++){
     const col=sk.base(i,tierHueAt(i)), by=previewTop+(2-i)*(bh+2);
@@ -7748,7 +7756,8 @@ function drawShopSkinTile(x,y,w,h,sk,selected) {   // v187: sharper wide carouse
     ctx.fillStyle=g; ctx.fillRect(bx,by,bw,bh); ctx.restore();
     ctx.strokeStyle='rgba(0,0,0,0.28)'; ctx.lineWidth=.5; ctx.strokeRect(bx+.25,by+.25,bw-.5,bh-.5);
   }
-  txtSmooth(sk.name,x+w/2,y+h-labelH+1,7,selected?'#FFF6E8':SUI.muted,'center',700);
+  if(!owned2){ ctx.fillStyle='rgba(6,9,16,0.5)'; ctx.fillRect(x+1,previewTop-1,w-2,previewH+2); drawLockGlyph(x+w-9,y+7,rareCol); }   // locked: dim + padlock
+  txtSmooth(sk.name,x+w/2,y+h-labelH+1,7,(selected||owned2)?'#FFF6E8':SUI.muted,'center',700);
 }
 function drawShopPassiveIcon(x,y,col) {     // v187: crisp "perk" spark (the muddy gear is gone)
   ctx.save();
