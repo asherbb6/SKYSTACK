@@ -7832,9 +7832,9 @@ function drawShopBoostChip(c) {   // v196: icon left-middle, label to its right,
   shopPanel(c.x,c.y,c.w,c.h,{r:2,shadow:false,
     fill:on?'rgba(98,232,181,0.12)':'#0E1626',
     border:on?SUI.mint:SUI.borderSoft, glow:on?'rgba(98,232,181,0.55)':null, glowBlur:5});
-  const rowCy=c.y+Math.round((c.h-6)/2);   // icon+label row centred, ~6px reserved at bottom for pips
-  ctx.save(); ctx.translate(c.x+10,rowCy); ctx.scale(0.82,0.82); shopBoostIcon(c.id,0,0); ctx.restore();   // icon left-middle
-  txtSmooth(POW_NAME[c.id],c.x+18,rowCy-3.5,8,on?SUI.mint:SUI.text,'left',700);                            // label right of icon
+  const rowCy=c.y+Math.round(c.h/2)-1;   // v197: icon+label sit at the true vertical middle of the button
+  ctx.save(); ctx.translate(c.x+11,rowCy); ctx.scale(0.82,0.82); shopBoostIcon(c.id,0,0); ctx.restore();   // icon left-middle
+  txtSmooth(POW_NAME[c.id],c.x+21,rowCy-3.4,8,on?SUI.mint:SUI.text,'left',700);                            // label right of icon, nudged right
   const pw=3,pg=2,cx=Math.round(c.x+c.w/2),px0=cx-Math.round((pw*3+pg*2)/2),py=c.y+c.h-5;                  // pips bottom-middle
   for(let i=0;i<3;i++){ shopRR(px0+i*(pw+pg),py,pw,pw,1); ctx.fillStyle=i<(on?3:afford?2:1)?(on?SUI.mint:acc):'rgba(255,246,232,0.13)'; ctx.fill(); }
 }
@@ -7896,7 +7896,7 @@ function renderShop() {
   ctx.fillStyle='rgba(9,12,20,0.92)'; ctx.fillRect(SHOP_HEADER.x,SHOP_HEADER.y,SHOP_HEADER.w,SHOP_HEADER.h);   // full-width bar
   ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(SHOP_HEADER.x,SHOP_HEADER.y+SHOP_HEADER.h,SHOP_HEADER.w,1);   // bottom edge line, like the nav
   shopBackArrow(SHOP_BACK_BTN,SUI.gold);
-  txt('SHOP',W/2,SHOP_HEADER.y+Math.round((titleH-14)/2),2,SUI.gold,'center');
+  txtPixel('SHOP',W/2,SHOP_HEADER.y+Math.round((titleH-14)/2),2,SUI.gold,'center');
   const coinText=coins>99999?Math.floor(coins/1000)+'K':coins,coinW=String(coinText).length*6-1,coinX=SHOP_HEADER.x+SHOP_HEADER.w-7-coinW-9;
   drawCoin(coinX,SHOP_HEADER.y+Math.round(titleH/2)-2.5);
   txtSmooth(coinText,coinX+9,SHOP_HEADER.y+Math.round((titleH-7)/2)-1,9,'#FFF6E8','left',700);
