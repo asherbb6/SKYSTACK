@@ -247,7 +247,7 @@ const FONT_FINE = (() => {
   }
   return out;
 })();
-function txt(text, x, y, sc, color, align) {
+function txtPixel(text, x, y, sc, color, align) {   // the original 5x7 bitmap renderer (kept for big display text)
   text = String(text).toUpperCase();
   const cw = 6 * sc, totalW = text.length * cw - sc;
   let px = x;
@@ -259,6 +259,12 @@ function txt(text, x, y, sc, color, align) {
     if (g) for (let r = 0; r < 14; r++) { const runs = g[r]; for (let i = 0; i < runs.length; i++) ctx.fillRect(px + runs[i][0] * u, y + r * u, runs[i][1] * u, u); }
     px += cw;
   }
+}
+// v194: ALL UI text now renders in the smooth anti-aliased font by default (far more legible than the
+// 5x7 bitmap at UI sizes). Only the big pixel DISPLAY pieces call txtPixel: SKYSTACK wordmark, GET
+// COINS, skin name. txtSmooth is hoisted (declared later) so it resolves at render time.
+function txt(text, x, y, sc, color, align) {
+  txtSmooth(String(text).toUpperCase(), x, y, sc * 8.3, color, align, sc >= 2 ? 800 : 700);
 }
 // v127: draw at the largest scale that FITS maxW, stepping down instead of spilling out of the card.
 // Long biome names and headlines used to overflow their frame at narrow widths.
@@ -2764,7 +2770,7 @@ function renderShareCard() {
   const g = skyColor(blocks.length); ctx.fillStyle = 'rgb('+g[0]+','+g[1]+','+g[2]+')'; ctx.fillRect(0,0,W,H);
   for (let i = 0; i < Math.min(blocks.length, 16); i++) { const idx = blocks.length-1-i; const b = blocks[idx] || blocks[0]; const w = Math.max(16, 44 - i*1.5); drawBlock(Math.round(W/2-w/2), H-24-i*10, Math.round(w), 9, b.col, false, 0, skin().style); }
   ctx.fillStyle = 'rgba(11,14,26,0.5)'; ctx.fillRect(0,0,W,124);
-  txt('SKYSTACK', W/2, 14, 3, '#FFF6E8', 'center');
+  txtPixel('SKYSTACK', W/2, 14, 3, '#FFF6E8', 'center');
   txt(activeRunName() + (runContext && runContext.mode==='daily' ? ' - '+dayStr(0) : ''), W/2, 42, 1, '#FFD75E', 'center');
   txt('I REACHED', W/2, 58, 1, 'rgba(255,246,232,0.8)', 'center');
   txt(blocks.length*METERS_PER+'M', W/2, 70, 3, '#62E8B5', 'center');
@@ -6721,7 +6727,7 @@ function titleShine(str, y, scale) {
     for (const s2 of [-1, 1]) {
       const bx2 = cx3 + band[0] * s2 - (s2 < 0 ? 3 : 0);
       ctx.save(); ctx.beginPath(); ctx.rect(bx2, y - 1, 3, gh); ctx.clip();
-      txt(str, W/2, y, scale, 'rgba(255,255,255,' + (band[1] * fade).toFixed(3) + ')', 'center');
+      txtPixel(str, W/2, y, scale, 'rgba(255,255,255,' + (band[1] * fade).toFixed(3) + ')', 'center');
       ctx.restore();
       if (band[0] === 0) break;                      // center band once
     }
@@ -6733,8 +6739,8 @@ function renderHome() {
   const nl = Math.min(prog, LEVEL_COUNT - 1), nt = LEVEL_REGISTRY[nl], conquered = prog >= LEVEL_COUNT;
   const bob = reduceMotion?0:Math.sin(tick*.04)*1.5,titleScale=3,titleY=16;
   ctx.fillStyle=nt.color;ctx.fillRect(Math.round(W/2-18),titleY-8,36,1);
-  txt('SKYSTACK', W/2+1, titleY+1+bob, titleScale, shadow, 'center');
-  txt('SKYSTACK', W/2, titleY+bob, titleScale, VISUAL_SYSTEM.palette.paper, 'center');
+  txtPixel('SKYSTACK', W/2+1, titleY+1+bob, titleScale, shadow, 'center');
+  txtPixel('SKYSTACK', W/2, titleY+bob, titleScale, VISUAL_SYSTEM.palette.paper, 'center');
   titleShine('SKYSTACK', titleY+bob, titleScale);
   const tag = EV ? (Math.floor(tick/180)%2 ? '+25% COINS ALL WEEK' : EV.name) : 'STACK TO THE STARS';
   if (EV) {   // dark ribbon so the event title reads on any sky
@@ -6813,8 +6819,8 @@ function renderSplash() {
   const bob = settled ? Math.sin(tick*.04)*2 : 0;
   const titleY = Math.round(-36 + (cy2 + 36) * eb(p)) + bob;
   const acc = EV ? EV.acc : '#FFD75E';
-  txt('SKYSTACK', W/2+1, titleY+1, 3, 'rgba(0,0,0,0.35)', 'center');
-  txt('SKYSTACK', W/2, titleY, 3, '#FFF6E8', 'center');
+  txtPixel('SKYSTACK', W/2+1, titleY+1, 3, 'rgba(0,0,0,0.35)', 'center');
+  txtPixel('SKYSTACK', W/2, titleY, 3, '#FFF6E8', 'center');
   if (settled) titleShine('SKYSTACK', titleY, 3);
   const subA = Math.max(0, Math.min(1, (t-30)/18));
   if (subA > 0) {   // sits clear below the scale-3 glyphs (21px tall)
@@ -7859,7 +7865,7 @@ function drawPremiumCard(r){
 }
 function renderCoinsContent(){   // v192 path-A store page (static): opt-in ad + hosted-checkout packs + redeem
   const x=6, w=W-12; let cy=SHOP_STAGE.y+4;
-  txtSmooth('GET COINS',W/2,cy,13,VISUAL_SYSTEM.palette.gold,'center',800); cy+=20;
+  txtPixel('GET COINS',W/2,cy,2,VISUAL_SYSTEM.palette.gold,'center'); cy+=20;
   COIN_WATCH={x,y:cy,w,h:32};
   shopButton(COIN_WATCH,null,{accent:VISUAL_SYSTEM.palette.mint});
   drawPlayGlyph(x+16,cy+16,'#08301F');
@@ -7913,7 +7919,7 @@ function renderShop() {
 
   // identity (on the card, no sub-panel)
   const nameMax=EQUIP_BTN.x-SHOP_IDENTITY.x-10;
-  txtFit(sk.name,SHOP_IDENTITY.x+8,SHOP_IDENTITY.y+(SHOP_IDENTITY.h>=35?5:4),SHOP_IDENTITY.h>=35?2:1,'#FFF6E8','left',nameMax,1);
+  txtPixel(sk.name,SHOP_IDENTITY.x+8,SHOP_IDENTITY.y+(SHOP_IDENTITY.h>=35?5:4),SHOP_IDENTITY.h>=35?2:1,'#FFF6E8','left');
   const iy=SHOP_IDENTITY.y+SHOP_IDENTITY.h-11, ix=SHOP_IDENTITY.x+8;
   const rareW=txtSmooth(sk.rare,ix,iy,9,RARE_COL[sk.rare],'left',700);
   txtSmooth(' • '+sk.role,ix+rareW+1,iy,9,SUI.muted,'left',600);
