@@ -44,9 +44,11 @@ function computeSize() {
   // pixels (crisp), but the camera can glide in 1/RS-pixel steps instead of chunky 1px ticks.
   // v91: RS snaps to EVEN values (floor, never past the device fit) so the UI's half-pixel
   // fine grid (VISUAL_SYSTEM.frame.fine) always lands on whole backing pixels and stays crisp.
+  // v195: cap raised 4→8 so the backing can reach real device resolution — otherwise the
+  // anti-aliased UI text (v194) gets nearest-neighbour upscaled and looks low-res/blurry.
   const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 4));
   const fit = Math.min(innerWidth * dpr / Math.max(W, 1), innerHeight * dpr / Math.max(H, 1));
-  RS = Math.max(2, Math.min(4, 2 * Math.floor(fit / 2)));
+  RS = Math.max(2, Math.min(8, 2 * Math.ceil(fit / 2)));
   canvas.width = W * RS; canvas.height = H * RS;      // resets ctx state
   ctx.setTransform(RS, 0, 0, RS, 0, 0);               // all drawing stays in logical W×H units
   ctx.imageSmoothingEnabled = false;

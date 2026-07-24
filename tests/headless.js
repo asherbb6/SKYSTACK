@@ -1359,7 +1359,7 @@ check('Home, Shop, and Me share centered dark frames without entering navigation
 
 // ---------- v91 UI fine grid ----------
 check('v91 fine grid: supersample snaps even so half-pixel UI detail stays crisp', () =>
-  /RS = Math\.max\(2, Math\.min\(4, 2 \* Math\.floor\(fit \/ 2\)\)\)/.test(src) &&
+  /RS = Math\.max\(2, Math\.min\(8, 2 \* Math\.ceil\(fit \/ 2\)\)\)/.test(src) &&
   fresh.run('RS >= 2 && RS % 2 === 0 && VISUAL_SYSTEM.frame.fine === 0.5'));
 check('v91 fine type: every glyph has a cached corner-smoothed expansion with identical metrics', () => fresh.run(
   '(() => { if (!Object.keys(FONT).every(k => Array.isArray(FONT_FINE[k]) && FONT_FINE[k].length === 14 && FONT_FINE[k].every(r => r.every(run => run[0] >= 0 && run[0] + run[1] <= 10)))) return false;' +
