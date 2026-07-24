@@ -7827,14 +7827,15 @@ function shopBoostIcon(id,x,y){
   }
   ctx.restore();
 }
-function drawShopBoostChip(c) {   // v188: centred vertical stack — icon top, label middle, pips bottom-middle
-  const on=loadout[c.id],afford=canAfford(c.cost),acc=BOOST_ACCENT[c.id]||POW[c.id].c,cx=Math.round(c.x+c.w/2);
+function drawShopBoostChip(c) {   // v196: icon left-middle, label to its right, 3 pips bottom-middle
+  const on=loadout[c.id],afford=canAfford(c.cost),acc=BOOST_ACCENT[c.id]||POW[c.id].c;
   shopPanel(c.x,c.y,c.w,c.h,{r:2,shadow:false,
     fill:on?'rgba(98,232,181,0.12)':'#0E1626',
     border:on?SUI.mint:SUI.borderSoft, glow:on?'rgba(98,232,181,0.55)':null, glowBlur:5});
-  ctx.save(); ctx.translate(cx,c.y+7); ctx.scale(0.82,0.82); shopBoostIcon(c.id,0,0); ctx.restore();   // icon top-centre
-  txtSmooth(POW_NAME[c.id],cx,c.y+13,8,on?SUI.mint:SUI.text,'center',700);                              // label centred
-  const pw=3,pg=2,px0=cx-Math.round((pw*3+pg*2)/2),py=c.y+c.h-5;                                         // pips bottom-centre
+  const rowCy=c.y+Math.round((c.h-6)/2);   // icon+label row centred, ~6px reserved at bottom for pips
+  ctx.save(); ctx.translate(c.x+10,rowCy); ctx.scale(0.82,0.82); shopBoostIcon(c.id,0,0); ctx.restore();   // icon left-middle
+  txtSmooth(POW_NAME[c.id],c.x+18,rowCy-3.5,8,on?SUI.mint:SUI.text,'left',700);                            // label right of icon
+  const pw=3,pg=2,cx=Math.round(c.x+c.w/2),px0=cx-Math.round((pw*3+pg*2)/2),py=c.y+c.h-5;                  // pips bottom-middle
   for(let i=0;i<3;i++){ shopRR(px0+i*(pw+pg),py,pw,pw,1); ctx.fillStyle=i<(on?3:afford?2:1)?(on?SUI.mint:acc):'rgba(255,246,232,0.13)'; ctx.fill(); }
 }
 function shopDivider(x,y,w){   // v187: engraved hairline between sections of the one card
@@ -7941,7 +7942,7 @@ function renderShop() {
   const passiveCy=Math.round(SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h/2);
   drawShopPassiveIcon(SHOP_DETAIL_BTN.x+14,passiveCy,isEquipped?VISUAL_SYSTEM.palette.mint:RARE_COL[sk.rare]);
   txtSmooth(passive.name,SHOP_DETAIL_BTN.x+26,SHOP_DETAIL_BTN.y+4,10,isEquipped?VISUAL_SYSTEM.palette.mint:'#FFF6E8','left',700);
-  txtSmooth(passive.benefit+'  •  '+passive.tradeoff,SHOP_DETAIL_BTN.x+26,SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h-11,8,'rgba(255,246,232,0.66)','left',500);
+  txtSmooth(passive.benefit+'  •  '+passive.tradeoff,SHOP_DETAIL_BTN.x+26,SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h-9,7,'rgba(255,246,232,0.66)','left',500);
   shopChevron(SHOP_DETAIL_BTN.x+SHOP_DETAIL_BTN.w-12,passiveCy-5,'#5EC8F2');
   divAt((SHOP_DETAIL_BTN.y+SHOP_DETAIL_BTN.h+SHOP_RAIL.y)/2);
 
